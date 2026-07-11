@@ -130,7 +130,7 @@ func seedDemo(ctx context.Context, configuration config.DemoSeedConfig, output i
 	}
 	authResult, err := database.SeedAuthDemo(ctx, passwords, configuration.DemoAccountPassword, time.Now(), auth.RandomID)
 	if err != nil {
-		return err
+		return fmt.Errorf("auth demo seed failed after runtime seed committed: %w", err)
 	}
 	return writeSummary(output, "seed", struct {
 		Runtime store.SeedResult     `json:"runtime"`
@@ -216,7 +216,7 @@ func resetDemo(ctx context.Context, configuration config.DemoSeedConfig, output 
 	}
 	authResult, err := database.SeedAuthDemo(ctx, passwords, configuration.DemoAccountPassword, time.Now(), auth.RandomID)
 	if err != nil {
-		return err
+		return fmt.Errorf("auth demo seed failed after runtime seed committed: %w", err)
 	}
 	return writeSummary(output, "reset", struct {
 		Migration store.MigrationResult `json:"migration"`

@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/magicvr/allinme.core-api/internal/admin"
 	"github.com/magicvr/allinme.core-api/internal/config"
@@ -136,6 +138,48 @@ func TestExecuteDevelopmentSeedAndResetRequirePasswordBeforeDatabaseAccess(t *te
 	}
 }
 
+func TestExecuteSeedReportsCommittedRuntimeWhenAuthGroupFails(t *testing.T) {
+	dataDir := t.TempDir()
+	values := map[string]string{"DATA_DIR": dataDir, "DEMO_ACCOUNT_PASSWORD": "123456789012"}
+	if err := admin.Execute(context.Background(), mapLookup(values), []string{"migrate"}, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.Open(context.Background(), filepath.Join(dataDir, "allinme.db"), store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := database.SQL().Exec(`
+		INSERT INTO users(id, username, password_hash, role, created_at, updated_at)
+		VALUES ('conflict', 'viewer', 'invalid', 'viewer', ?, ?)
+	`, now, now); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	database.Close()
+	var output bytes.Buffer
+	err = admin.Execute(context.Background(), mapLookup(values), []string{"seed"}, &output, nil)
+	if err == nil || !strings.Contains(err.Error(), "runtime seed committed") {
+		t.Fatalf("seed error = %v", err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("failed seed reported overall success: %s", output.String())
+	}
+	database, err = store.Open(context.Background(), filepath.Join(dataDir, "allinme.db"), store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	var runtimeVersion int
+	if err := database.SQL().QueryRow(`SELECT version FROM seed_versions WHERE name = 'runtime'`).Scan(&runtimeVersion); err != nil || runtimeVersion != 1 {
+		t.Fatalf("runtime version = %d, error = %v", runtimeVersion, err)
+	}
+	var authVersions int
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM seed_versions WHERE name = 'auth_demo'`).Scan(&authVersions); err != nil || authVersions != 0 {
+		t.Fatalf("auth versions = %d, error = %v", authVersions, err)
+	}
+}
+
 func TestExecuteProductionBootstrapAdmin(t *testing.T) {
 	dataDir := t.TempDir()
 	values := map[string]string{
@@ -158,6 +202,95 @@ func TestExecuteProductionBootstrapAdmin(t *testing.T) {
 	values["DEMO_ACCOUNT_PASSWORD"] = "should-not-be-read"
 	if err := admin.Execute(context.Background(), mapLookup(values), []string{"seed"}, io.Discard, nil); err != nil {
 		t.Fatalf("production seed error = %v", err)
+	}
+}
+
+func TestExecuteBootstrapAdminRejectsInvalidBoundariesWithoutCreatingUser(t *testing.T) {
+	t.Run("development", func(t *testing.T) {
+		values := map[string]string{
+			"DATA_DIR": t.TempDir(), "BOOTSTRAP_ADMIN_USERNAME": "admin", "BOOTSTRAP_ADMIN_PASSWORD": "123456789012",
+		}
+		if err := admin.Execute(context.Background(), mapLookup(values), []string{"bootstrap-admin"}, io.Discard, nil); err == nil {
+			t.Fatal("development bootstrap error = nil")
+		}
+		if _, err := os.Stat(filepath.Join(values["DATA_DIR"], "allinme.db")); !os.IsNotExist(err) {
+			t.Fatalf("development bootstrap touched database: %v", err)
+		}
+	})
+
+	t.Run("invalid input", func(t *testing.T) {
+		for _, test := range []struct {
+			name     string
+			username string
+			password string
+		}{
+			{name: "missing username", password: "123456789012"},
+			{name: "blank username", username: "   ", password: "123456789012"},
+			{name: "short password", username: "admin", password: "short"},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				dataDir := t.TempDir()
+				values := map[string]string{
+					"APP_ENV": "production", "PORT": "8080", "DATA_DIR": dataDir,
+					"BOOTSTRAP_ADMIN_USERNAME": test.username, "BOOTSTRAP_ADMIN_PASSWORD": test.password,
+				}
+				if err := admin.Execute(context.Background(), mapLookup(values), []string{"bootstrap-admin"}, io.Discard, nil); err == nil {
+					t.Fatal("invalid bootstrap error = nil")
+				}
+				if _, err := os.Stat(filepath.Join(dataDir, "allinme.db")); !os.IsNotExist(err) {
+					t.Fatalf("invalid bootstrap touched database: %v", err)
+				}
+			})
+		}
+	})
+
+	t.Run("unmigrated database", func(t *testing.T) {
+		dataDir := t.TempDir()
+		path := filepath.Join(dataDir, "allinme.db")
+		database, err := store.Open(context.Background(), path, store.OpenCreate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		database.Close()
+		values := productionBootstrapValues(dataDir)
+		if err := admin.Execute(context.Background(), mapLookup(values), []string{"bootstrap-admin"}, io.Discard, nil); err == nil {
+			t.Fatal("unmigrated bootstrap error = nil")
+		}
+	})
+
+	t.Run("nonempty users table", func(t *testing.T) {
+		dataDir := t.TempDir()
+		values := productionBootstrapValues(dataDir)
+		if err := admin.Execute(context.Background(), mapLookup(values), []string{"migrate"}, io.Discard, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := admin.Execute(context.Background(), mapLookup(values), []string{"bootstrap-admin"}, io.Discard, nil); err != nil {
+			t.Fatal(err)
+		}
+		values["BOOTSTRAP_ADMIN_PASSWORD"] = "different-pass"
+		if err := admin.Execute(context.Background(), mapLookup(values), []string{"bootstrap-admin"}, io.Discard, nil); err == nil {
+			t.Fatal("nonempty bootstrap error = nil")
+		}
+		database, err := store.Open(context.Background(), filepath.Join(dataDir, "allinme.db"), store.OpenExisting)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer database.Close()
+		var users int
+		var username string
+		if err := database.SQL().QueryRow(`SELECT COUNT(*), MIN(username) FROM users`).Scan(&users, &username); err != nil {
+			t.Fatal(err)
+		}
+		if users != 1 || username != "admin" {
+			t.Fatalf("users = %d, username = %q", users, username)
+		}
+	})
+}
+
+func productionBootstrapValues(dataDir string) map[string]string {
+	return map[string]string{
+		"APP_ENV": "production", "PORT": "8080", "DATA_DIR": dataDir,
+		"BOOTSTRAP_ADMIN_USERNAME": "admin", "BOOTSTRAP_ADMIN_PASSWORD": "123456789012",
 	}
 }
 

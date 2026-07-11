@@ -26,14 +26,24 @@ type API struct {
 }
 
 func NewAPI(configuration config.Config, logger *slog.Logger) (*API, error) {
-	return newAPI(configuration, nil, logger)
+	return newAPI(configuration, nil, AuthDependencies{}, logger)
 }
 
 func NewAuthenticatedAPI(configuration config.APIConfig, logger *slog.Logger) (*API, error) {
-	return newAPI(configuration.Config, configuration.JWTSigningKey, logger)
+	return NewAuthenticatedAPIWithDependencies(configuration, AuthDependencies{}, logger)
 }
 
-func newAPI(configuration config.Config, signingKey []byte, logger *slog.Logger) (*API, error) {
+type AuthDependencies struct {
+	Clock        auth.Clock
+	NewID        auth.IDGenerator
+	LimiterClock httpapi.LimiterClock
+}
+
+func NewAuthenticatedAPIWithDependencies(configuration config.APIConfig, dependencies AuthDependencies, logger *slog.Logger) (*API, error) {
+	return newAPI(configuration.Config, configuration.JWTSigningKey, dependencies, logger)
+}
+
+func newAPI(configuration config.Config, signingKey []byte, authDependencies AuthDependencies, logger *slog.Logger) (*API, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -45,6 +55,14 @@ func newAPI(configuration config.Config, signingKey []byte, logger *slog.Logger)
 	dependencies := httpapi.Dependencies{Logger: logger, Readiness: probe, ReadinessTimeout: time.Second}
 	var database *store.DB
 	if len(signingKey) > 0 {
+		clock := authDependencies.Clock
+		if clock == nil {
+			clock = time.Now
+		}
+		newID := authDependencies.NewID
+		if newID == nil {
+			newID = auth.RandomID
+		}
 		database, err = store.Open(context.Background(), configuration.DatabasePath, store.OpenExisting)
 		if err != nil {
 			lock.Close()
@@ -56,20 +74,20 @@ func newAPI(configuration config.Config, signingKey []byte, logger *slog.Logger)
 			lock.Close()
 			return nil, passwordErr
 		}
-		tokens, tokenErr := auth.NewTokens(signingKey, time.Now)
+		tokens, tokenErr := auth.NewTokens(signingKey, clock)
 		if tokenErr != nil {
 			database.Close()
 			lock.Close()
 			return nil, tokenErr
 		}
-		service, serviceErr := auth.NewService(database, passwords, tokens, time.Now, auth.RandomID)
+		service, serviceErr := auth.NewService(database, passwords, tokens, clock, newID)
 		if serviceErr != nil {
 			database.Close()
 			lock.Close()
 			return nil, serviceErr
 		}
 		dependencies.Auth = service
-		dependencies.LoginLimiter = httpapi.NewLoginLimiter(nil)
+		dependencies.LoginLimiter = httpapi.NewLoginLimiter(authDependencies.LimiterClock)
 	}
 	return &API{
 		server: &http.Server{

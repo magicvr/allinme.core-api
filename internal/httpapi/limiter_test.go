@@ -94,3 +94,54 @@ func TestLoginLimiterCancelOnlyRemovesZeroFailureBucket(t *testing.T) {
 		t.Fatal("cancel removed prior authentication failure")
 	}
 }
+
+func TestLoginLimiterSuccessClearsOnlyCurrentKey(t *testing.T) {
+	limiter := NewLoginLimiter(nil)
+	for _, username := range []string{"viewer", "operator"} {
+		limiter.Check("192.0.2.1", username)
+		limiter.Failure("192.0.2.1", username)
+	}
+	limiter.Success("192.0.2.1", "viewer")
+	if bucket := limiter.buckets[loginKey{ip: "192.0.2.1", username: "viewer"}]; bucket != nil {
+		t.Fatal("successful key retained failure bucket")
+	}
+	if bucket := limiter.buckets[loginKey{ip: "192.0.2.1", username: "operator"}]; bucket == nil || bucket.failures != 1 {
+		t.Fatalf("other key bucket = %+v", bucket)
+	}
+	if allowed, _ := limiter.Check("192.0.2.1", "viewer"); !allowed {
+		t.Fatal("successful key remained rate limited")
+	}
+}
+
+func TestLoginLimiterSingleIPFloodDoesNotExhaustGlobalCapacity(t *testing.T) {
+	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
+	limiter := NewLoginLimiter(func() time.Time { return now })
+	for index := 0; index < loginIPBuckets; index++ {
+		if allowed, _ := limiter.Check("192.0.2.1", fmt.Sprintf("flood-%d", index)); !allowed {
+			t.Fatalf("flood key %d rejected early", index)
+		}
+	}
+	for index := loginIPBuckets; index < loginIPBuckets+1000; index++ {
+		if allowed, _ := limiter.Check("192.0.2.1", fmt.Sprintf("flood-%d", index)); allowed {
+			t.Fatalf("flood overflow key %d accepted", index)
+		}
+	}
+	if len(limiter.buckets) != loginIPBuckets {
+		t.Fatalf("single-IP flood bucket count = %d", len(limiter.buckets))
+	}
+	for index := 0; index < loginGlobalBuckets-loginIPBuckets; index++ {
+		ip := fmt.Sprintf("198.%d.%d.%d", index/62500+18, (index/250)%250, index%250+1)
+		if allowed, _ := limiter.Check(ip, "user"); !allowed {
+			t.Fatalf("other IP %d rejected", index)
+		}
+	}
+	if len(limiter.buckets) != loginGlobalBuckets {
+		t.Fatalf("global bucket count = %d", len(limiter.buckets))
+	}
+	if allowed, _ := limiter.Check("203.0.113.250", "new-user"); !allowed {
+		t.Fatal("new other IP rejected because of single-IP flood")
+	}
+	if len(limiter.buckets) != loginGlobalBuckets {
+		t.Fatalf("bucket count after eviction = %d", len(limiter.buckets))
+	}
+}

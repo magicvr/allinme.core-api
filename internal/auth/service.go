@@ -10,7 +10,20 @@ import (
 var (
 	ErrAuthenticationFailed = errors.New("authentication failed")
 	ErrUnauthenticated      = errors.New("unauthenticated")
+	ErrInternal             = errors.New("authentication internal error")
 )
+
+type internalError struct {
+	operation string
+	cause     error
+}
+
+func (err internalError) Error() string   { return "authentication internal error: " + err.operation }
+func (err internalError) Unwrap() []error { return []error{ErrInternal, err.cause} }
+
+func newInternalError(operation string, cause error) error {
+	return internalError{operation: operation, cause: cause}
+}
 
 type User struct {
 	ID           string
@@ -70,7 +83,7 @@ func (service *Service) Login(ctx context.Context, username, password string) (L
 	}
 	user, found, err := service.repository.UserByUsername(ctx, NormalizeUsername(username))
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("lookup login identity: %w", err)
+		return LoginResult{}, newInternalError("lookup login identity", err)
 	}
 	hash := ""
 	if found {
@@ -78,25 +91,25 @@ func (service *Service) Login(ctx context.Context, username, password string) (L
 	}
 	matched, err := service.passwords.Compare(hash, password)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("verify login password: %w", err)
+		return LoginResult{}, newInternalError("verify login password", err)
 	}
 	if !found || !matched || user.DisabledAt != nil {
 		return LoginResult{}, ErrAuthenticationFailed
 	}
 	tokenID, err := service.newID()
 	if err != nil {
-		return LoginResult{}, err
+		return LoginResult{}, newInternalError("generate token identifier", err)
 	}
 	sessionID, err := service.newID()
 	if err != nil {
-		return LoginResult{}, err
+		return LoginResult{}, newInternalError("generate session identifier", err)
 	}
 	encoded, expiresAt, err := service.tokens.Issue(user.ID, user.Role, tokenID)
 	if err != nil {
-		return LoginResult{}, err
+		return LoginResult{}, newInternalError("issue access token", err)
 	}
 	if err := service.repository.CreateSession(ctx, Session{ID: sessionID, UserID: user.ID, TokenID: tokenID, ExpiresAt: expiresAt, CreatedAt: service.clock().UTC()}); err != nil {
-		return LoginResult{}, fmt.Errorf("create login session: %w", err)
+		return LoginResult{}, newInternalError("create login session", err)
 	}
 	return LoginResult{AccessToken: encoded, ExpiresAt: expiresAt, User: user}, nil
 }
@@ -108,14 +121,14 @@ func (service *Service) Authenticate(ctx context.Context, encoded string) (Princ
 	}
 	session, found, err := service.repository.SessionByTokenID(ctx, claims.ID)
 	if err != nil {
-		return Principal{}, fmt.Errorf("lookup authentication session: %w", err)
+		return Principal{}, newInternalError("lookup authentication session", err)
 	}
 	if !found || session.RevokedAt != nil || session.UserID != claims.Subject || !service.clock().Before(session.ExpiresAt.Add(ClockLeeway)) {
 		return Principal{}, ErrUnauthenticated
 	}
 	user, found, err := service.repository.UserByID(ctx, claims.Subject)
 	if err != nil {
-		return Principal{}, fmt.Errorf("lookup authenticated user: %w", err)
+		return Principal{}, newInternalError("lookup authenticated user", err)
 	}
 	if !found || user.DisabledAt != nil || user.Role != claims.Role {
 		return Principal{}, ErrUnauthenticated
@@ -128,7 +141,7 @@ func (service *Service) Logout(ctx context.Context, principal Principal) error {
 		return ErrUnauthenticated
 	}
 	if err := service.repository.RevokeSession(ctx, principal.TokenID, service.clock().UTC()); err != nil {
-		return fmt.Errorf("revoke authentication session: %w", err)
+		return newInternalError("revoke authentication session", err)
 	}
 	return nil
 }
