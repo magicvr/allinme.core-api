@@ -11,4 +11,6 @@
 
 ## 当前决策
 
-- 当前尚无后端项目级 ADR。
+- [`0001-stateful-local-demo-runtime.md`](./0001-stateful-local-demo-runtime.md)：使用 SQLite 和本地文件构建可重置的有状态 demo。
+- [`0002-local-jwt-with-revocable-sessions.md`](./0002-local-jwt-with-revocable-sessions.md)：使用本地账号、JWT Bearer 和 SQLite 可撤销 session。
+- [`0003-backend-owned-page-configurations.md`](./0003-backend-owned-page-configurations.md)：后端维护 YAML 页面并通过 JSON API 下发。

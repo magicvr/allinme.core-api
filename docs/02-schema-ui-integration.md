@@ -1,7 +1,7 @@
 ---
 status: active
 owner: 后端团队
-last_updated: 2026-07-11
+last_updated: 2026-07-12
 applies_to: schema-ui-protocol v1.0
 ---
 
@@ -48,7 +48,7 @@ d2f0fc0877dc6550c9fe7e3635b25c7ec72b4ddd
 ## 4. 前后端对接规则
 
 - 页面 YAML/JSON、数据源、Action、Reaction 和响应映射以 Schema-UI 文档为共同语言。
-- API 返回结构必须满足协议 responseMapping 与分页契约；业务端点的额外规则记录在 [03-http-api.md](./03-http-api.md)。
+- API 返回结构必须满足协议 responseMapping 与分页契约；已实现业务端点记录在 [当前 HTTP API](./03-http-api.md)，待实现草案记录在 [目标 HTTP API](./03-http-api-target.md)。
 - 认证、授权、幂等、资源状态和业务不变量始终由后端执行，不能信任页面配置或前端状态。
 - 页面配置不得携带 token 或伪造用户身份；身份来自服务端验证的认证上下文。
 - 发现契约缺口时，在 `schema-ui-docs` 提交 ADR、规范、Schema、fixture 和版本变更，本仓随后升级固定 SHA。
@@ -57,6 +57,6 @@ d2f0fc0877dc6550c9fe7e3635b25c7ec72b4ddd
 
 1. 在 Schema-UI 仓完成变更和全部 reference/conformance 门禁。
 2. 选择永久可达的稳定 tag 或 main commit，不固定到临时分支提交。
-3. 更新 CI pin、README、本文件和必要实现。
+3. 更新 CI pin、本文件和必要实现，并在 CHANGELOG 记录；根 README 仅在叙述性接入说明变化时更新。
 4. 使用同一 checkout 运行 `go test ./...` 和 `go vet ./...`。
 5. 等待消费者当前提交的远端 CI 成功后，才把升级记录为完成。

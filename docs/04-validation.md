@@ -1,7 +1,7 @@
 ---
 status: active
 owner: 后端团队
-last_updated: 2026-07-11
+last_updated: 2026-07-12
 applies_to: allinme.core-api
 ---
 
@@ -46,15 +46,53 @@ go test ./...
 - 合法、缺失、格式错误、超限和未知字段输入；
 - 认证失败、权限不足、资源不存在、冲突和内部错误；
 - context 取消、超时、资源关闭和重复请求语义；
-- 响应结构与 [HTTP API](./03-http-api.md) 及 Schema-UI mapping 一致。
+- 设计阶段的响应结构与 [目标 HTTP API](./03-http-api-target.md) 及 Schema-UI mapping 一致；实现完成后与 [当前 HTTP API](./03-http-api.md) 一致。
 
-## 4. CI 与协议升级
+## 4. 目标 demo 验证矩阵
+
+以下门禁随对应能力实现启用；`enabled: no` 表示当前没有对应实现或自动化入口，不是当前发布门禁。能力落地时必须在同一变更中把对应行改为 `yes` 并记录实际命令或测试包。
+
+| 能力 | enabled | 启用入口 | 最低可执行证据 |
+|---|---|---|---|
+| SQLite | no | 阶段一新增 store 测试时 | 临时数据库完成空库迁移、重复迁移、事务回滚、外键、乐观锁和重启持久化测试 |
+| seed/reset | no | 阶段一新增开发命令测试时 | 独立数据目录可重复得到相同基线；生产模式拒绝 reset |
+| readiness | no | 阶段一实现 `/readyz` 时 | 数据依赖失败返回未就绪；`/healthz` 仍保持成功 |
+| 认证 | no | 阶段二新增 auth 集成测试时 | 真实 HTTP 覆盖登录、错误密码、禁用账号、过期/篡改 JWT、撤销 session 和角色越权 |
+| 订单 | no | 阶段三新增订单集成测试时 | 覆盖搜索/分页边界、金额计算、全部合法状态转换、非法转换和版本冲突 |
+| 幂等 | no | 首个幂等 endpoint 实现时 | 相同 key + 相同 body 重放同一结果；相同 key + 不同 body 返回冲突；并发请求只产生一次状态变化 |
+| 退款 | no | 阶段四新增退款集成测试时 | 覆盖可退金额、申请/审批分离、审批事务和订单支付状态一致性 |
+| 附件 | no | 阶段五新增文件集成测试时 | 临时目录覆盖超限、类型伪造、危险文件名、摘要、绑定权限、鉴权下载、失败清理和过期清理 |
+| 看板 | no | 阶段四新增看板测试时 | 固定 seed 下统计快照与订单/退款查询结果交叉一致 |
+| 页面 | no | 阶段六创建 `internal/pages/yaml/*.yaml` 时 | 全部 YAML 通过固定 Schema-UI 版本 L0-L4 校验，页面引用的 endpoint 与 Action 均存在集成测试 |
+
+集成测试不得共享开发数据库、签名密钥或附件目录。时间、ID 和文件适配器应可注入，以稳定验证过期、幂等和清理行为。
+
+## 5. 安全与并发验证
+
+- 对密码、JWT、session、上传和错误响应增加敏感信息泄露断言；日志测试不得记录 Authorization header 或密码。
+- 对登录增加速率限制测试，对 JSON/multipart 增加大小限制和未知字段测试。
+- 所有 SQL 排序、筛选和 ID 查询使用结构化参数与 allowlist；测试恶意 query 不得改变语句结构。
+- 实现 SQLite 写事务、session 撤销、幂等或并发 handler 后运行 `go test -race ./...`。
+- 文件测试必须使用临时根目录并断言解析后的路径始终位于该根目录内。
+
+## 6. 页面与前端联调
+
+`internal/pages/yaml/*.yaml` 落地后，Go 测试必须使用 CI 固定的 `schema-ui-docs` checkout 执行页面内容校验；API 启动时还要对嵌入页面执行解析与版本/capability 防御性校验。验收至少覆盖：
+
+1. 登录后取得角色可访问页面列表和 JSON 页面；
+2. 搜索表单驱动服务端分页表格；
+3. 表单 Reaction 不影响服务端校验；
+4. 行级 Action 成功刷新，权限/状态/版本失败可见且不改变数据；
+5. 上传返回附件 ID，随订单提交绑定并可鉴权下载；
+6. 看板在订单或退款变化后反映同一数据口径。
+
+## 7. CI 与协议升级
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) 从 `go.mod` 读取 Go 版本，固定 Schema-UI commit 后运行 test 和 vet。协议 pin 变化只有在以下证据齐全时完成：
 
 1. Schema-UI 固定对象永久可达；
 2. 本地测试使用同一 fixture checkout 通过；
 3. 当前消费者提交的远端 CI 成功；
-4. README、接入文档和 CHANGELOG 已同步。
+4. Schema-UI 接入文档和 CHANGELOG 已同步；根 README 仅在叙述性接入说明变化时更新。
 
 未执行的验证必须明确记录，不得写成“通过”。

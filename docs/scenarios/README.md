@@ -8,7 +8,7 @@
 |---|---|---|
 | HTTP 存活检查 | 已实现 | `internal/httpapi/handler_test.go` |
 | Schema-UI 六个官方场景算法编排 | 已由 conformance 覆盖 | `internal/protocol/scenario_execution_test.go` |
-| 页面配置与业务数据 API | 尚未实现 | 未来随业务端点补充 |
+| [订单运营完整演示](./order-operations-demo.md) | planned | 目标业务流程与验收标准已定义，代码尚未实现 |
 
 ## 新增场景规则
 
