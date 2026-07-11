@@ -16,11 +16,13 @@ applies_to: order operations demo target
 目标：建立可测试、可重置的数据与服务装配基础。
 
 - 定义配置加载与开发/生产模式，创建 SQLite 连接、migrations 和事务边界；
-- 增加 migrate、seed、reset 开发命令，seed 覆盖全部角色和关键业务状态；
+- 增加 migrate、seed、reset 开发命令和可扩展 seed runner；本阶段只写基础 seed 元数据；
 - 建立统一 JSON 错误结构、request ID、结构化日志与 panic recovery；
 - 将 handler 改为显式依赖注入，保留 liveness `GET /healthz`，新增 readiness `GET /readyz` 检查 migrations 与 SQLite。
 
 完成证据：空库迁移、重复迁移、reset/seed、进程重启持久化和错误映射测试通过。
+
+首个实施切片见 [阶段一 1A 计划](./audit/0001-2026-07-12-plan.md) 与 [checklist](./audit/0001-2026-07-12-checklist.md)。角色账号依赖认证 schema，在阶段二补入 seed；订单和关键业务状态依赖订单 schema，在阶段三补入 seed。
 
 ## 3. 阶段二：认证授权
 
@@ -29,6 +31,7 @@ applies_to: order operations demo target
 - 实现密码哈希、登录、当前用户和登出；
 - JWT 使用短时效、唯一 token ID，并关联 SQLite session；
 - 建立 `viewer`、`operator`、`approver`、`admin` 授权策略；
+- 扩展 seed runner，创建四类本地演示账号；
 - 覆盖错误密码、禁用账号、过期/篡改 token、撤销会话和越权访问。
 
 完成证据：认证集成测试使用真实 HTTP 与临时 SQLite，日志和响应不泄露密码、哈希或 token。
@@ -40,7 +43,8 @@ applies_to: order operations demo target
 - 实现订单搜索、筛选、排序、分页和详情；
 - 实现创建、编辑、确认、开始履约、发货、完成和取消；
 - 使用整数金额、事务和 `version` 乐观锁；
-- 返回基于当前主体和资源状态计算的 `canXxx` 展示字段。
+- 返回基于当前主体和资源状态计算的 `canXxx` 展示字段；
+- 扩展 seed runner，覆盖关键订单与支付状态，为退款阶段提供前置数据。
 
 完成证据：Schema-UI 搜索表格、联动表单和行级 Action 可调用真实 API；非法状态、权限和并发冲突均有测试。
 

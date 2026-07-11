@@ -14,6 +14,7 @@
 - 建立文档状态词汇和单一事实源规则，拆分当前 HTTP API 与 draft 目标 API。
 - 明确 liveness/readiness、目标门禁启用状态，以及 `internal/pages/yaml/*.yaml` 的包内嵌入与校验链路。
 - 收敛目标 API 的 baseline/draft 层级、场景错误语义和 endpoint 实现迁移流程。
+- 建立阶段一 1A 运行基础开发计划与可执行 checklist，明确 migration/seed/reset、readiness 和错误框架的实施证据。
 
 ### Changed
 
