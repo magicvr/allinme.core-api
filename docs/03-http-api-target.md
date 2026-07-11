@@ -34,6 +34,17 @@ applies_to: order operations demo HTTP API target
 
 `/readyz` 在阶段一实现。页面模块尚未启用时不应伪造页面检查成功，具体分阶段策略在实现时由测试固定。
 
+阶段一计划冻结以下响应契约；实现与测试通过后迁入当前 API：
+
+- ready：`200` + `{"status":"ready"}`；
+- not ready：`503` + `{"error":{"code":"NOT_READY","message":"service is not ready","requestId":"req_..."}}`；
+- wrong method：`405` + `Allow: GET` + 同一 envelope，机器码 `METHOD_NOT_ALLOWED`；
+- recovery：`500` + 同一 envelope，机器码 `INTERNAL_ERROR`。
+
+阶段一只冻结 `NOT_READY`、`METHOD_NOT_ALLOWED` 与 `INTERNAL_ERROR`；其他业务错误码留待对应 endpoint 实现时收敛。
+
+阶段一计划冻结以下 request ID 契约：所有响应均回写最终 `X-Request-ID`；错误响应体的 `requestId`、响应 header 与访问日志使用同一值。非法或空入站值不回显，由服务端生成替代值。实现与测试通过后迁入当前 API。
+
 ## 3. 认证（draft target）
 
 | Method | Path | 权限 | 行为 |
@@ -118,12 +129,12 @@ applies_to: order operations demo HTTP API target
 
 ## 10. 草案收敛条件
 
-每个 endpoint 从 `draft target` 收敛为目标契约前，至少具备：
+每个 endpoint 从 `draft target` 收敛为当前契约前，至少具备：
 
-- handler、业务用例和 repository 的请求/响应类型；
-- 正常、输入错误、认证、权限、状态、并发和内部错误测试；
-- 对应 Schema-UI datasource 或 Action 用例；
+- handler/transport 类型与正常、method/path、输入、context、超时、关闭和内部错误测试；
 - [验证规则](./04-validation.md)中对应门禁已启用；
-- 当前 API 文档、场景和 CHANGELOG 已同步。
+- 当前 API 文档和 CHANGELOG 已同步。
+
+仅业务 endpoint 额外要求业务用例/repository 类型、认证、权限、状态与并发测试，以及对应 Schema-UI datasource/Action 场景。`/healthz`、`/readyz` 等运行端点不要求虚构业务用例、repository 或 Schema-UI 映射。
 
 实现完成后，把该 endpoint 移入 [当前 HTTP API](./03-http-api.md)，目标文档只保留尚未实现的草案。
