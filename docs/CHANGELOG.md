@@ -18,6 +18,7 @@
 - 明确 liveness/readiness、目标门禁启用状态，以及 `internal/pages/yaml/*.yaml` 的包内嵌入与校验链路。
 - 收敛目标 API 的 baseline/draft 层级、场景错误语义和 endpoint 实现迁移流程。
 - 建立阶段一 1A 运行基础开发计划与可执行 checklist，明确 migration/seed/reset、readiness 和错误框架的实施证据。
+- 建立阶段二认证授权开发计划与可执行 checklist，冻结 auth migration/seed、JWT/session、角色策略、登录限流、安全验证和文档收敛边界。
 
 ### Changed
 
