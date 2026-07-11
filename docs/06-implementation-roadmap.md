@@ -28,6 +28,8 @@ applies_to: order operations demo target
 
 目标：本地账号登录、JWT Bearer 和可撤销会话可独立工作。
 
+当前活跃实施入口：[阶段二认证授权计划](./audit/0002-2026-07-12-plan.md) 与 [checklist](./audit/0002-2026-07-12-checklist.md)。计划冻结 migration v2、development auth seed、密钥配置、严格 JWT/session 校验、登录限流和 HTTP 收敛边界；所有 checklist 项当前均待实施。
+
 - 实现密码哈希、登录、当前用户和登出；
 - JWT 使用短时效、唯一 token ID，并关联 SQLite session；
 - 建立 `viewer`、`operator`、`approver`、`admin` 授权策略；
