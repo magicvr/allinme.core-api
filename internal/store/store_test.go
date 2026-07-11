@@ -39,15 +39,58 @@ func TestOpenConfiguresPragmasAndMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
-	if first.FromVersion != 0 || first.ToVersion != 1 {
+	if first.FromVersion != 0 || first.ToVersion != 2 {
 		t.Fatalf("first migration = %+v", first)
 	}
 	second, err := database.Migrate(ctx)
 	if err != nil {
 		t.Fatalf("second Migrate() error = %v", err)
 	}
-	if second.FromVersion != 1 || second.ToVersion != 1 {
+	if second.FromVersion != 2 || second.ToVersion != 2 {
 		t.Fatalf("second migration = %+v", second)
+	}
+}
+
+func TestVersionOneDatabaseIsOutdatedAndUpgradesWithoutLosingSeeds(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "allinme.db")
+	database, err := store.Open(ctx, path, store.OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SQL().ExecContext(ctx, `
+		CREATE TABLE seed_versions (name TEXT PRIMARY KEY, version INTEGER NOT NULL, applied_at TEXT NOT NULL);
+		INSERT INTO seed_versions(name, version, applied_at) VALUES ('runtime', 1, 'preserved');
+		PRAGMA user_version = 1;
+	`); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	database.Close()
+
+	probe := store.NewProbe(path)
+	if status := probe.Check(ctx); status != store.SchemaOutdated {
+		t.Fatalf("readiness = %q, want %q", status, store.SchemaOutdated)
+	}
+
+	database, err = store.Open(ctx, path, store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	result, err := database.Migrate(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FromVersion != 1 || result.ToVersion != 2 {
+		t.Fatalf("migration = %+v", result)
+	}
+	var appliedAt string
+	if err := database.SQL().QueryRowContext(ctx, "SELECT applied_at FROM seed_versions WHERE name = 'runtime'").Scan(&appliedAt); err != nil {
+		t.Fatal(err)
+	}
+	if appliedAt != "preserved" {
+		t.Fatalf("applied_at = %q, want preserved", appliedAt)
 	}
 }
 

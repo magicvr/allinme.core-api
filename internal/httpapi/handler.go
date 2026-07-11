@@ -27,6 +27,8 @@ type Dependencies struct {
 	Logger           *slog.Logger
 	Readiness        ReadinessProbe
 	ReadinessTimeout time.Duration
+	Auth             AuthService
+	LoginLimiter     *LoginLimiter
 	Fallback         http.Handler
 }
 
@@ -56,6 +58,7 @@ func NewHandler(dependencies Dependencies) http.Handler {
 		readinessTimeout = time.Second
 	}
 	mux := http.NewServeMux()
+	registerAuthRoutes(mux, dependencies.Auth, dependencies.LoginLimiter)
 	mux.HandleFunc("GET /healthz", func(response http.ResponseWriter, _ *http.Request) {
 		writeJSON(response, http.StatusOK, statusResponse{Status: "ok"})
 	})

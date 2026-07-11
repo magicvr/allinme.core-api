@@ -6,6 +6,9 @@
 
 ### Added
 
+- 实现阶段二认证授权：bcrypt 本地账号、严格 HS256 JWT、SQLite 可撤销 session、四角色策略和 login/me/logout API。
+- 增加 development 四角色 auth seed、production 空库 `bootstrap-admin`、固定窗口登录限流和 migration v2。
+
 - 实现阶段一运行基础：配置与应用装配、纯 Go SQLite、嵌入式 migration、runtime seed，以及 development-only reset。
 - 增加 `GET /readyz`、统一运行错误 envelope、request ID、结构化访问日志和 panic recovery。
 

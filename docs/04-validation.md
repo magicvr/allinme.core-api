@@ -57,7 +57,7 @@ go test ./...
 | SQLite | yes | `go test ./internal/store -count=1` | 临时数据库覆盖 pragma、空库/重复 migration、事务回滚、版本分类和可重试 probe |
 | seed/reset | yes | `go test ./internal/admin -count=1` | runtime seed 幂等、未来版本拒绝、production reset 拒绝及无关文件保留 |
 | readiness | yes | `go test ./internal/httpapi ./internal/app -count=1` | method、ready/not-ready、超时、关闭、恢复、错误安全和 liveness 解耦 |
-| 认证 | no | 阶段二新增 auth 集成测试时 | 真实 HTTP 覆盖登录、错误密码、禁用账号、过期/篡改 JWT、JWT subject/session 绑定和撤销 session；测试专用 HTTP handler 覆盖角色策略越权，真实业务路由越权随阶段三订单门禁验证 |
+| 认证 | yes | `go test ./internal/auth ./internal/store ./internal/httpapi ./internal/app -count=1` | 严格 JWT、密码边界、真实 SQLite session、登录限流、login/me/logout、撤销 session 与测试专用角色策略 handler |
 | 订单 | no | 阶段三新增订单集成测试时 | 覆盖搜索/分页边界、金额计算、乐观锁、全部合法状态转换、非法转换和版本冲突 |
 | 幂等 | no | 首个幂等 endpoint 实现时 | 相同 key + 相同 body 重放同一结果；相同 key + 不同 body 返回冲突；并发请求只产生一次状态变化 |
 | 退款 | no | 阶段四新增退款集成测试时 | 覆盖可退金额、申请/审批分离、审批事务和订单支付状态一致性 |

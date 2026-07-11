@@ -88,6 +88,6 @@ DRAFT -> CONFIRMED -> FULFILLING -> SHIPPED -> COMPLETED
 
 ## 8. Seed 验收数据
 
-reset/seed 至少创建四个内置角色账号，以及覆盖每种订单、支付和退款状态的数据。固定账号仅用于本地开发，首次文档或启动输出应提示演示密码，生产模式不得启用 seed 账号或 reset 命令。
+development reset/seed 使用 `DEMO_ACCOUNT_PASSWORD` 创建 `viewer`、`operator`、`approver`、`admin` 四个同名角色账号；文档只提示环境变量配置方式，运行时不输出密码。production 不启用演示账号或 reset，通过仅限空 users 表的一次性 `bootstrap-admin` 创建首个 admin。订单、支付和退款状态 seed 仍属于阶段三及后续阶段。
 
 目标 HTTP 映射见 [03-http-api-target.md](./03-http-api-target.md)，实施顺序见 [06-implementation-roadmap.md](./06-implementation-roadmap.md)。
