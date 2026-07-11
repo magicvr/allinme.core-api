@@ -24,11 +24,11 @@ applies_to: order operations demo target
 
 实现使用 `modernc.org/sqlite v1.53.0`、`cmd/admin` 和 `internal/config|app|store`。实施证据见已归档的 [阶段一 1A 计划](./audit/archived/0001-2026-07-12-plan.md) 与 [checklist](./audit/archived/0001-2026-07-12-checklist.md)。角色账号依赖认证 schema，在阶段二补入 seed；订单和关键业务状态依赖订单 schema，在阶段三补入 seed。
 
-## 3. 阶段二：认证授权
+## 3. 阶段二：认证授权（已实现）
 
 目标：本地账号登录、JWT Bearer 和可撤销会话可独立工作。
 
-当前活跃实施入口：[阶段二认证授权计划](./audit/0002-2026-07-12-plan.md) 与 [checklist](./audit/0002-2026-07-12-checklist.md)。计划冻结 migration v2、development auth seed、密钥配置、严格 JWT/session 校验、登录限流和 HTTP 收敛边界；所有 checklist 项当前均待实施。
+实施入口：[阶段二认证授权计划](./audit/0002-2026-07-12-plan.md) 与 [checklist](./audit/0002-2026-07-12-checklist.md)。已实现 migration v2、development auth seed、production bootstrap、密钥配置、严格 JWT/session 校验、登录限流、角色策略和三条认证 API；归档仍需用户确认。
 
 - 实现密码哈希、登录、当前用户和登出；
 - JWT 使用短时效、唯一 token ID，并关联 SQLite session；

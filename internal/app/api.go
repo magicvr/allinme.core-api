@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/magicvr/allinme.core-api/internal/applock"
+	"github.com/magicvr/allinme.core-api/internal/auth"
 	"github.com/magicvr/allinme.core-api/internal/config"
 	"github.com/magicvr/allinme.core-api/internal/httpapi"
 	"github.com/magicvr/allinme.core-api/internal/store"
@@ -18,12 +19,21 @@ import (
 type API struct {
 	server    *http.Server
 	probe     *store.Probe
+	database  *store.DB
 	lock      *applock.Lock
 	logger    *slog.Logger
 	closeOnce sync.Once
 }
 
 func NewAPI(configuration config.Config, logger *slog.Logger) (*API, error) {
+	return newAPI(configuration, nil, logger)
+}
+
+func NewAuthenticatedAPI(configuration config.APIConfig, logger *slog.Logger) (*API, error) {
+	return newAPI(configuration.Config, configuration.JWTSigningKey, logger)
+}
+
+func newAPI(configuration config.Config, signingKey []byte, logger *slog.Logger) (*API, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -32,15 +42,42 @@ func NewAPI(configuration config.Config, logger *slog.Logger) (*API, error) {
 	if err != nil {
 		return nil, err
 	}
+	dependencies := httpapi.Dependencies{Logger: logger, Readiness: probe, ReadinessTimeout: time.Second}
+	var database *store.DB
+	if len(signingKey) > 0 {
+		database, err = store.Open(context.Background(), configuration.DatabasePath, store.OpenExisting)
+		if err != nil {
+			lock.Close()
+			return nil, err
+		}
+		passwords, passwordErr := auth.NewPasswords()
+		if passwordErr != nil {
+			database.Close()
+			lock.Close()
+			return nil, passwordErr
+		}
+		tokens, tokenErr := auth.NewTokens(signingKey, time.Now)
+		if tokenErr != nil {
+			database.Close()
+			lock.Close()
+			return nil, tokenErr
+		}
+		service, serviceErr := auth.NewService(database, passwords, tokens, time.Now, auth.RandomID)
+		if serviceErr != nil {
+			database.Close()
+			lock.Close()
+			return nil, serviceErr
+		}
+		dependencies.Auth = service
+		dependencies.LoginLimiter = httpapi.NewLoginLimiter(nil)
+	}
 	return &API{
 		server: &http.Server{
 			Addr:              configuration.Address,
-			Handler:           httpapi.NewHandler(httpapi.Dependencies{Logger: logger, Readiness: probe, ReadinessTimeout: time.Second}),
+			Handler:           httpapi.NewHandler(dependencies),
 			ReadHeaderTimeout: 5 * time.Second,
 		},
-		probe:  probe,
-		lock:   lock,
-		logger: logger,
+		probe: probe, database: database, lock: lock, logger: logger,
 	}, nil
 }
 
@@ -75,6 +112,11 @@ func (application *API) Run(ctx context.Context) error {
 func (application *API) Close() {
 	application.closeOnce.Do(func() {
 		application.probe.Close()
+		if application.database != nil {
+			if err := application.database.Close(); err != nil {
+				application.logger.Error("close database failed", "error", err)
+			}
+		}
 		if err := application.lock.Close(); err != nil {
 			application.logger.Error("release API process lock failed", "error", err)
 		}

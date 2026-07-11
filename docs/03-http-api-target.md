@@ -29,19 +29,7 @@ applies_to: order operations demo HTTP API target
 
 `GET /healthz`、`GET /readyz`、request ID、运行错误 envelope 和 recovery 契约已在阶段一冻结，见 [当前 HTTP API](./03-http-api.md)。页面模块尚未启用，阶段六在现有 readiness 基础上扩展页面检查。
 
-## 3. 认证（draft target）
-
-| Method | Path | 权限 | 行为 |
-|---|---|---|---|
-| `POST` | `/api/v1/auth/login` | public | 校验本地账号，创建 session 并签发短期 JWT |
-| `GET` | `/api/v1/auth/me` | authenticated | 返回当前身份与 token 到期时间 |
-| `POST` | `/api/v1/auth/logout` | authenticated | 撤销当前 JWT 对应 session |
-
-错误密码、未知用户名和禁用账号使用相同认证失败响应。角色集合与能力以 [领域模型](./05-domain-model.md) 为唯一事实源。
-
-账号管理属于 admin 目标能力，但不在首批 HTTP surface；需要实施时先在路线图增加独立阶段，再定义 endpoint 和测试。
-
-## 4. 页面配置（draft target）
+## 3. 页面配置（draft target）
 
 | Method | Path | 权限 | 行为 |
 |---|---|---|---|
@@ -50,7 +38,7 @@ applies_to: order operations demo HTTP API target
 
 目标页面暂定为经营看板、订单列表、订单编辑、退款队列和订单附件。最终 page ID 随阶段六页面文件一起冻结。服务端使用 allowlist，不把请求 path 映射为文件路径；响应目标支持 ETag。
 
-## 5. 订单（draft target）
+## 4. 订单（draft target）
 
 | Method | Path | 最低权限 | 行为 |
 |---|---|---|---|
@@ -68,7 +56,7 @@ applies_to: order operations demo HTTP API target
 
 列表可返回按当前主体与资源计算的 `canXxx` 展示字段，但 Action 必须重新鉴权和校验。创建/编辑由服务端根据订单项计算总额，不接受客户端总额作为事实。
 
-## 6. 退款（draft target）
+## 5. 退款（draft target）
 
 | Method | Path | 最低权限 | 行为 |
 |---|---|---|---|
@@ -79,7 +67,7 @@ applies_to: order operations demo HTTP API target
 
 退款状态和审批规则以 [领域模型](./05-domain-model.md) 为唯一事实源。请求字段、响应 envelope 与错误码在阶段四实现时冻结。
 
-## 7. 附件（draft target）
+## 6. 附件（draft target）
 
 | Method | Path | 最低权限 | 行为 |
 |---|---|---|---|
@@ -89,7 +77,7 @@ applies_to: order operations demo HTTP API target
 
 首版目标允许 PDF、PNG 和 JPEG，单文件目标上限 10 MiB；允许类型和上限在阶段五威胁测试完成后冻结。服务端检测内容、生成文件名并计算摘要，不返回本地路径或公开静态 URL。
 
-## 8. 看板（draft target）
+## 7. 看板（draft target）
 
 | Method | Path | 权限 | 行为 |
 |---|---|---|---|
@@ -99,7 +87,7 @@ applies_to: order operations demo HTTP API target
 
 统计业务口径只在 [领域模型](./05-domain-model.md) 维护。响应字段随阶段四页面 datasource 用例冻结。
 
-## 9. Schema-UI 映射
+## 8. Schema-UI 映射
 
 | 页面能力 | 目标 API 族 |
 |---|---|
@@ -111,7 +99,7 @@ applies_to: order operations demo HTTP API target
 
 页面只使用固定协议已有的 datasource、Action、Reaction 和 mapping 能力。页面 YAML 实施时必须通过 [Schema-UI 固定版本](./02-schema-ui-integration.md) 校验。
 
-## 10. 草案收敛条件
+## 9. 草案收敛条件
 
 每个 endpoint 从 `draft target` 收敛为当前契约前，至少具备：
 

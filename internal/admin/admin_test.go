@@ -106,6 +106,61 @@ func TestUnknownCommandIsRejected(t *testing.T) {
 	}
 }
 
+func TestExecuteDevelopmentSeedAndResetRequirePasswordBeforeDatabaseAccess(t *testing.T) {
+	dataDir := t.TempDir()
+	values := map[string]string{"DATA_DIR": dataDir}
+	for _, command := range []string{"seed", "reset"} {
+		if err := admin.Execute(context.Background(), mapLookup(values), []string{command}, io.Discard, nil); err == nil {
+			t.Fatalf("%s without password error = nil", command)
+		}
+		if _, err := os.Stat(filepath.Join(dataDir, "allinme.db")); !os.IsNotExist(err) {
+			t.Fatalf("%s touched database before validation: %v", command, err)
+		}
+	}
+	values["DEMO_ACCOUNT_PASSWORD"] = "123456789012"
+	var output bytes.Buffer
+	if err := admin.Execute(context.Background(), mapLookup(values), []string{"migrate"}, &output, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.Execute(context.Background(), mapLookup(values), []string{"seed"}, &output, nil); err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.Open(context.Background(), filepath.Join(dataDir, "allinme.db"), store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	var users int
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM users`).Scan(&users); err != nil || users != 4 {
+		t.Fatalf("users = %d, error = %v", users, err)
+	}
+}
+
+func TestExecuteProductionBootstrapAdmin(t *testing.T) {
+	dataDir := t.TempDir()
+	values := map[string]string{
+		"APP_ENV": "production", "PORT": "8080", "DATA_DIR": dataDir,
+		"BOOTSTRAP_ADMIN_USERNAME": " Root ", "BOOTSTRAP_ADMIN_PASSWORD": "123456789012",
+	}
+	if err := admin.Execute(context.Background(), mapLookup(values), []string{"migrate"}, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := admin.Execute(context.Background(), mapLookup(values), []string{"bootstrap-admin"}, &output, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(output.Bytes(), []byte(`"username":"root"`)) || bytes.Contains(output.Bytes(), []byte(values["BOOTSTRAP_ADMIN_PASSWORD"])) {
+		t.Fatalf("bootstrap output = %s", output.String())
+	}
+	if err := admin.Execute(context.Background(), mapLookup(values), []string{"bootstrap-admin"}, io.Discard, nil); err == nil {
+		t.Fatal("repeat bootstrap error = nil")
+	}
+	values["DEMO_ACCOUNT_PASSWORD"] = "should-not-be-read"
+	if err := admin.Execute(context.Background(), mapLookup(values), []string{"seed"}, io.Discard, nil); err != nil {
+		t.Fatalf("production seed error = %v", err)
+	}
+}
+
 func developmentConfig(t *testing.T) config.Config {
 	t.Helper()
 	configuration, err := config.Load(mapLookup(map[string]string{"DATA_DIR": t.TempDir()}))

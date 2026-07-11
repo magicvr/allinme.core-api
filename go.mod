@@ -3,8 +3,10 @@ module github.com/magicvr/allinme.core-api
 go 1.26
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
-	golang.org/x/sys v0.44.0
+	golang.org/x/crypto v0.54.0
+	golang.org/x/sys v0.47.0
 	modernc.org/sqlite v1.53.0
 )
 

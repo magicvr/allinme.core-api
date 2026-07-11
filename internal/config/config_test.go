@@ -60,6 +60,75 @@ func TestLoad(t *testing.T) {
 	}
 }
 
+func TestLoadAPIRequiresSigningKey(t *testing.T) {
+	tests := []struct {
+		name      string
+		key       string
+		wantError bool
+	}{
+		{name: "missing", wantError: true},
+		{name: "31 bytes", key: "1234567890123456789012345678901", wantError: true},
+		{name: "32 bytes", key: "12345678901234567890123456789012"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values := map[string]string{}
+			if test.key != "" {
+				values["JWT_SIGNING_KEY"] = test.key
+			}
+			loaded, err := config.LoadAPI(mapLookup(values))
+			if (err != nil) != test.wantError {
+				t.Fatalf("LoadAPI() error = %v, wantError %v", err, test.wantError)
+			}
+			if err == nil && len(loaded.JWTSigningKey) != 32 {
+				t.Errorf("JWTSigningKey length = %d", len(loaded.JWTSigningKey))
+			}
+		})
+	}
+}
+
+func TestLoadDemoSeedPasswordByteBoundaries(t *testing.T) {
+	tests := []struct {
+		name      string
+		password  string
+		wantError bool
+	}{
+		{name: "11 bytes", password: "12345678901", wantError: true},
+		{name: "12 bytes", password: "123456789012"},
+		{name: "72 bytes", password: string(make([]byte, 72))},
+		{name: "73 bytes", password: string(make([]byte, 73)), wantError: true},
+		{name: "multibyte 12 bytes", password: "密码密码密码密码"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := config.LoadDemoSeed(mapLookup(map[string]string{"DEMO_ACCOUNT_PASSWORD": test.password}))
+			if (err != nil) != test.wantError {
+				t.Fatalf("LoadDemoSeed() error = %v, wantError %v", err, test.wantError)
+			}
+		})
+	}
+}
+
+func TestLoadBootstrapAdmin(t *testing.T) {
+	absoluteDataDir := filepath.Join(t.TempDir(), "data")
+	base := map[string]string{
+		"APP_ENV": "production", "PORT": "8080", "DATA_DIR": absoluteDataDir,
+		"BOOTSTRAP_ADMIN_USERNAME": " Admin ", "BOOTSTRAP_ADMIN_PASSWORD": "123456789012",
+	}
+	loaded, err := config.LoadBootstrapAdmin(mapLookup(base))
+	if err != nil {
+		t.Fatalf("LoadBootstrapAdmin() error = %v", err)
+	}
+	if loaded.Username != "admin" {
+		t.Errorf("Username = %q, want admin", loaded.Username)
+	}
+
+	development := map[string]string{"BOOTSTRAP_ADMIN_USERNAME": "admin", "BOOTSTRAP_ADMIN_PASSWORD": "123456789012"}
+	if _, err := config.LoadBootstrapAdmin(mapLookup(development)); err == nil {
+		t.Fatal("LoadBootstrapAdmin() error = nil in development")
+	}
+}
+
 func mapLookup(values map[string]string) func(string) (string, bool) {
 	return func(key string) (string, bool) {
 		value, ok := values[key]

@@ -15,12 +15,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	configuration, err := config.Load(os.LookupEnv)
+	configuration, err := config.LoadAPI(os.LookupEnv)
 	if err != nil {
 		slog.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
-	application, err := app.NewAPI(configuration, slog.Default())
+	application, err := app.NewAuthenticatedAPI(configuration, slog.Default())
 	if err != nil {
 		slog.Error("assemble API", "error", err)
 		os.Exit(1)

@@ -9,14 +9,15 @@ applies_to: allinme.core-api
 
 ## 1. 当前形态
 
-服务使用 Go 标准库 HTTP 栈和 `database/sql`：`cmd/api` 是薄入口，`internal/app` 组装生命周期，`internal/httpapi` 提供 `GET /healthz`、`GET /readyz` 及通用中间件，`internal/store` 使用 `modernc.org/sqlite v1.53.0` 管理 SQLite。`internal/protocol/` 提供 Schema-UI 共享算法的 Go 实现和 conformance 证明，尚未暴露业务 API。
+服务使用 Go 标准库 HTTP 栈和 `database/sql`：`cmd/api` 是薄入口，`internal/app` 组装生命周期，`internal/httpapi` 提供运行状态、认证 API 与通用中间件，`internal/auth` 负责 bcrypt、JWT、session 用例和角色策略，`internal/store` 使用 `modernc.org/sqlite v1.53.0` 管理 SQLite。`internal/protocol/` 提供 Schema-UI 共享算法的 Go 实现和 conformance 证明，尚未暴露业务 API。
 
 | 层次 | 路径 | 当前职责 |
 |---|---|---|
-| 进程入口 | `cmd/api/`、`cmd/admin/` | 启动 API，执行 migrate/seed/reset |
+| 进程入口 | `cmd/api/`、`cmd/admin/` | 启动 API，执行 migrate/seed/reset/bootstrap-admin |
 | 应用装配 | `internal/app/`、`internal/config/` | 配置、依赖组装、关闭顺序和运行模式 |
-| HTTP 适配 | `internal/httpapi/` | health/ready、request ID、访问日志、recovery 和稳定错误 envelope |
-| 数据存储 | `internal/store/` | SQLite 打开、pragma、migration、seed、事务和 readiness 状态 |
+| HTTP 适配 | `internal/httpapi/` | health/ready、认证路由、限流、request ID、访问日志、recovery 和错误 envelope |
+| 认证用例 | `internal/auth/` | 密码、JWT、session 认证与角色 allowlist |
+| 数据存储 | `internal/store/` | SQLite、migration、users/session、seed、事务和 readiness 状态 |
 | 协议执行 | `internal/protocol/` | 与 Schema-UI conformance 对齐的纯算法 |
 
 业务能力增长时应保持 transport、业务用例和协议算法边界，避免把鉴权或业务规则写进 fixture 适配代码。
@@ -48,7 +49,7 @@ HTTP handler 只负责 transport；业务事务和状态转换由用例层控制
 - 认证、授权、幂等和资源状态由后端执行，不信任前端显隐、确认或页面配置。
 - 新端点设计先更新 [目标 HTTP API](./03-http-api-target.md)；实现和测试完成后移入 [当前 HTTP API](./03-http-api.md)，并同步相关场景。
 
-## 4. 认证与数据边界（target）
+## 4. 认证与数据边界
 
 - 本地账号使用适合密码存储的自适应哈希；登录响应签发短期 JWT Bearer。
 - JWT 至少包含 subject、role、expiry、issued-at 和唯一 token ID；服务端同时检查 SQLite session 是否未撤销，以支持登出和禁用账号立即失效。
