@@ -80,6 +80,19 @@ func TestTokensRejectAlgorithmAndTimeBoundaries(t *testing.T) {
 	if _, err := tokens.Parse(wrongAlgorithm); err == nil {
 		t.Fatal("Parse() accepted HS384")
 	}
+	noneToken := jwt.NewWithClaims(jwt.SigningMethodNone, claims)
+	unsigned, err := noneToken.SignedString(jwt.UnsafeAllowNoneSignatureType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tokens.Parse(unsigned); err == nil {
+		t.Fatal("Parse() accepted alg=none")
+	}
+	for _, malformed := range []string{"", "not-a-token", "a.b", "a.b.c.d"} {
+		if _, err := tokens.Parse(malformed); err == nil {
+			t.Fatalf("Parse(%q) error = nil", malformed)
+		}
+	}
 }
 
 func TestTokensRejectIssuerAudienceTamperingAndFutureIssuedAt(t *testing.T) {
@@ -125,5 +138,14 @@ func TestTokensRejectIssuerAudienceTamperingAndFutureIssuedAt(t *testing.T) {
 	}
 	if _, err := tokens.Parse(encoded[:len(encoded)-1] + string(replacement)); err == nil {
 		t.Fatal("Parse() accepted tampered signature")
+	}
+	claims := base()
+	claims.IssuedAt = jwt.NewNumericDate(now.Add(auth.ClockLeeway))
+	atBoundary, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tokens.Parse(atBoundary); err != nil {
+		t.Fatalf("Parse() at iat leeway boundary error = %v", err)
 	}
 }
