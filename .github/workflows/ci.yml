@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: magicvr/schema-ui-docs
-          ref: 02a0528cd49d21cbb345efc2c8a741fabb71fd47
+          ref: d2f0fc0877dc6550c9fe7e3635b25c7ec72b4ddd
           path: schema-ui-docs
 
       - name: Setup Go
