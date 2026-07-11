@@ -15,8 +15,9 @@ type DataRef struct {
 }
 
 type RequestAction struct {
-	Method string `json:"method"`
-	URL    string `json:"url"`
+	Method      string            `json:"method"`
+	URL         string            `json:"url"`
+	BodyMapping map[string]string `json:"bodyMapping"`
 }
 
 type RequestMapping struct {
@@ -31,6 +32,7 @@ type RequestInput struct {
 	Action         *RequestAction `json:"action"`
 	RequestMapping RequestMapping `json:"requestMapping"`
 	Row            map[string]any `json:"row"`
+	FormValues     map[string]any `json:"formValues"`
 }
 
 type BuiltRequest struct {
@@ -57,6 +59,23 @@ func BuildRequest(input RequestInput) RequestResult {
 			return RequestResult{OK: false, Code: code}
 		}
 		return successfulRequest(method, url, nil)
+	}
+	if input.Kind == "formAction" {
+		body := make(map[string]any)
+		if input.Action.BodyMapping != nil {
+			for source, target := range input.Action.BodyMapping {
+				body[target] = input.FormValues[source]
+			}
+		} else {
+			for key, value := range input.FormValues {
+				body[key] = value
+			}
+		}
+		requestURL, code := serializeQuery(input.Action.URL, nil)
+		if code != "" {
+			return RequestResult{OK: false, Code: code}
+		}
+		return successfulRequest(input.Action.Method, requestURL, body)
 	}
 	if input.Kind != "rowAction" {
 		return RequestResult{OK: false, Code: "INVALID_REQUEST_KIND", Path: "kind"}
