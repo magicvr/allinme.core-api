@@ -2,43 +2,30 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
-	"github.com/magicvr/allinme.core-api/internal/httpapi"
+	"github.com/magicvr/allinme.core-api/internal/app"
+	"github.com/magicvr/allinme.core-api/internal/config"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	configuration, err := config.Load(os.LookupEnv)
+	if err != nil {
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
 	}
-
-	server := &http.Server{
-		Addr:              ":" + port,
-		Handler:           httpapi.NewHandler(),
-		ReadHeaderTimeout: 5 * time.Second,
+	application, err := app.NewAPI(configuration, slog.Default())
+	if err != nil {
+		slog.Error("assemble API", "error", err)
+		os.Exit(1)
 	}
-
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			slog.Error("server shutdown failed", "error", err)
-		}
-	}()
-
-	slog.Info("API listening", "address", server.Addr)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := application.Run(ctx); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}

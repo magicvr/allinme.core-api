@@ -54,9 +54,9 @@ go test ./...
 
 | 能力 | enabled | 启用入口 | 最低可执行证据 |
 |---|---|---|---|
-| SQLite | no | 阶段一新增 store 测试时 | 临时数据库完成空库迁移、重复迁移、migration 与通用事务回滚、pragma/外键和重启持久化测试 |
-| seed/reset | no | 阶段一新增开发命令测试时 | 独立数据目录可重复得到相同基线；生产模式拒绝 reset |
-| readiness | no | 阶段一实现 `/readyz` 时 | 覆盖 method/path、ready/not-ready、context 取消、探测超时、store/app 关闭与资源释放；数据依赖失败时 `/healthz` 仍成功 |
+| SQLite | yes | `go test ./internal/store -count=1` | 临时数据库覆盖 pragma、空库/重复 migration、事务回滚、版本分类和可重试 probe |
+| seed/reset | yes | `go test ./internal/admin -count=1` | runtime seed 幂等、未来版本拒绝、production reset 拒绝及无关文件保留 |
+| readiness | yes | `go test ./internal/httpapi ./internal/app -count=1` | method、ready/not-ready、超时、关闭、恢复、错误安全和 liveness 解耦 |
 | 认证 | no | 阶段二新增 auth 集成测试时 | 真实 HTTP 覆盖登录、错误密码、禁用账号、过期/篡改 JWT、撤销 session 和角色越权 |
 | 订单 | no | 阶段三新增订单集成测试时 | 覆盖搜索/分页边界、金额计算、乐观锁、全部合法状态转换、非法转换和版本冲突 |
 | 幂等 | no | 首个幂等 endpoint 实现时 | 相同 key + 相同 body 重放同一结果；相同 key + 不同 body 返回冲突；并发请求只产生一次状态变化 |

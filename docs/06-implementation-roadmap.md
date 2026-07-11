@@ -1,5 +1,5 @@
 ---
-status: planned
+status: active
 owner: 后端团队
 last_updated: 2026-07-12
 applies_to: order operations demo target
@@ -11,7 +11,7 @@ applies_to: order operations demo target
 
 本路线从当前仅有 `GET /healthz` 的服务推进到完整订单运营 demo。阶段按依赖顺序实施；每阶段只有在代码、测试、API 文档和场景证据齐全后才标记完成。后续阶段的目标接口不代表当前可用。
 
-## 2. 阶段一：运行基础
+## 2. 阶段一：运行基础（已实现）
 
 目标：建立可测试、可重置的数据与服务装配基础。
 
@@ -22,7 +22,7 @@ applies_to: order operations demo target
 
 完成证据：空库迁移、重复迁移、reset/seed、进程重启持久化和错误映射测试通过。
 
-首个实施切片见 [阶段一 1A 计划](./audit/0001-2026-07-12-plan.md) 与 [checklist](./audit/0001-2026-07-12-checklist.md)。角色账号依赖认证 schema，在阶段二补入 seed；订单和关键业务状态依赖订单 schema，在阶段三补入 seed。
+实现使用 `modernc.org/sqlite v1.53.0`、`cmd/admin` 和 `internal/config|app|store`。实施证据见已归档的 [阶段一 1A 计划](./audit/archived/0001-2026-07-12-plan.md) 与 [checklist](./audit/archived/0001-2026-07-12-checklist.md)。角色账号依赖认证 schema，在阶段二补入 seed；订单和关键业务状态依赖订单 schema，在阶段三补入 seed。
 
 ## 3. 阶段二：认证授权
 

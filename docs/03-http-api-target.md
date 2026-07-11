@@ -25,25 +25,9 @@ applies_to: order operations demo HTTP API target
 
 目标列表 envelope 与错误字段的具体名称仍是草案，应在首个业务 endpoint 实现时冻结。
 
-## 2. 运行状态（draft target）
+## 2. 已实现运行状态
 
-| Method | Path | 目标语义 |
-|---|---|---|
-| `GET` | `/healthz` | liveness；进程能响应即成功，不检查依赖 |
-| `GET` | `/readyz` | readiness；检查 migrations、SQLite 和页面配置是否已就绪 |
-
-`/readyz` 在阶段一实现。页面模块尚未启用时不应伪造页面检查成功，具体分阶段策略在实现时由测试固定。
-
-阶段一计划冻结以下响应契约；实现与测试通过后迁入当前 API：
-
-- ready：`200` + `{"status":"ready"}`；
-- not ready：`503` + `{"error":{"code":"NOT_READY","message":"service is not ready","requestId":"req_..."}}`；
-- wrong method：`405` + `Allow: GET` + 同一 envelope，机器码 `METHOD_NOT_ALLOWED`；
-- recovery：`500` + 同一 envelope，机器码 `INTERNAL_ERROR`。
-
-阶段一只冻结 `NOT_READY`、`METHOD_NOT_ALLOWED` 与 `INTERNAL_ERROR`；其他业务错误码留待对应 endpoint 实现时收敛。
-
-阶段一计划冻结以下 request ID 契约：所有响应均回写最终 `X-Request-ID`；错误响应体的 `requestId`、响应 header 与访问日志使用同一值。非法或空入站值不回显，由服务端生成替代值。实现与测试通过后迁入当前 API。
+`GET /healthz`、`GET /readyz`、request ID、运行错误 envelope 和 recovery 契约已在阶段一冻结，见 [当前 HTTP API](./03-http-api.md)。页面模块尚未启用，阶段六在现有 readiness 基础上扩展页面检查。
 
 ## 3. 认证（draft target）
 
