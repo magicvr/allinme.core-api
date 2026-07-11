@@ -6,6 +6,9 @@
 
 ### Added
 
+- 实现阶段一运行基础：配置与应用装配、纯 Go SQLite、嵌入式 migration、runtime seed，以及 development-only reset。
+- 增加 `GET /readyz`、统一运行错误 envelope、request ID、结构化访问日志和 panic recovery。
+
 - 建立后端文档总纲、架构、Schema-UI 接入、HTTP API、验证、场景、ADR 与审计规则。
 - 明确 Schema-UI 文档仓是前后端对接的核心契约，本仓文档不重新定义协议。
 - 初始化订单运营 demo 的目标领域、状态机、角色权限、HTTP API、完整业务场景和分阶段实施路线。

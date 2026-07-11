@@ -9,12 +9,14 @@ applies_to: allinme.core-api
 
 ## 1. 当前形态
 
-服务使用 Go 标准库 HTTP 栈：`cmd/api/main.go` 启动进程，`internal/httpapi/handler.go` 注册路由。当前唯一 HTTP 端点是 `GET /healthz`；`internal/protocol/` 提供 Schema-UI 共享算法的 Go 实现和 conformance 证明，尚未暴露业务 API。
+服务使用 Go 标准库 HTTP 栈和 `database/sql`：`cmd/api` 是薄入口，`internal/app` 组装生命周期，`internal/httpapi` 提供 `GET /healthz`、`GET /readyz` 及通用中间件，`internal/store` 使用 `modernc.org/sqlite v1.53.0` 管理 SQLite。`internal/protocol/` 提供 Schema-UI 共享算法的 Go 实现和 conformance 证明，尚未暴露业务 API。
 
 | 层次 | 路径 | 当前职责 |
 |---|---|---|
-| 进程入口 | `cmd/api/` | 配置监听地址、启动 HTTP 服务 |
-| HTTP 适配 | `internal/httpapi/` | 路由、HTTP 输入输出和状态码 |
+| 进程入口 | `cmd/api/`、`cmd/admin/` | 启动 API，执行 migrate/seed/reset |
+| 应用装配 | `internal/app/`、`internal/config/` | 配置、依赖组装、关闭顺序和运行模式 |
+| HTTP 适配 | `internal/httpapi/` | health/ready、request ID、访问日志、recovery 和稳定错误 envelope |
+| 数据存储 | `internal/store/` | SQLite 打开、pragma、migration、seed、事务和 readiness 状态 |
 | 协议执行 | `internal/protocol/` | 与 Schema-UI conformance 对齐的纯算法 |
 
 业务能力增长时应保持 transport、业务用例和协议算法边界，避免把鉴权或业务规则写进 fixture 适配代码。
@@ -38,7 +40,7 @@ HTTP handler 只负责 transport；业务事务和状态转换由用例层控制
 
 ## 3. HTTP 层规则
 
-- `GET /healthz` 是 liveness，只证明进程可响应；目标 `GET /readyz` 是 readiness，检查 migrations、SQLite 和已启用的页面模块。
+- `GET /healthz` 是 liveness，只证明进程可响应；`GET /readyz` 当前检查 SQLite 可访问且 schema 为最新，阶段六再扩展页面模块检查。
 - handler 负责 method、Content-Type、输入限制、状态码和稳定错误结构。
 - 请求 context 必须贯穿业务调用；阻塞 I/O 应响应取消和超时。
 - 读取 body 时设置合理大小限制，JSON 输入应明确未知字段和多值处理策略。
