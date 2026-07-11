@@ -23,6 +23,7 @@ agent: agent
 读取：
 
 - `go.mod`、`go.sum`、`README.md`、`.gitignore`；
+- `docs/README.md`、`docs/00-overview.md`、架构、Schema-UI 接入、HTTP API、验证、场景、决策、审计与 CHANGELOG；
 - `.github/workflows/**/*`、`.github/prompts/**/*`；
 - `cmd/**/*`、`internal/**/*` 及全部 `*_test.go`；
 - 相邻 `schema-ui-docs` 当前稳定 tag/main（若存在）及本仓 CI 固定的协议 SHA；
@@ -33,6 +34,9 @@ agent: agent
 至少检查：
 
 - HTTP 路由、method、状态码、Content-Type、错误体和 `/healthz` 行为；
+- 文档是否准确反映当前端点、协议模块和未实现能力，README 与总纲是否提供稳定入口；
+- 本仓文档是否明确以 Schema-UI 当前稳定文档、Schema、DSL 与 fixtures 为跨前后端核心契约，且未复制或私自重定义协议；
+- 架构、接入、HTTP API、验证、场景、ADR、CHANGELOG 与审计索引之间的链接、状态和事实是否一致；
 - handler 输入边界、JSON 解码、未知字段、body 大小、超时、取消和响应写入顺序；
 - context 传播、goroutine 生命周期、并发安全、共享状态、资源关闭和错误包装；
 - nil/空 map/空 slice、typed nil、缺失/null、数字精度和 JSON 序列化可观察差异；
