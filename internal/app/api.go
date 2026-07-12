@@ -13,6 +13,7 @@ import (
 	"github.com/magicvr/allinme.core-api/internal/auth"
 	"github.com/magicvr/allinme.core-api/internal/config"
 	"github.com/magicvr/allinme.core-api/internal/httpapi"
+	"github.com/magicvr/allinme.core-api/internal/order"
 	"github.com/magicvr/allinme.core-api/internal/store"
 )
 
@@ -88,6 +89,13 @@ func newAPI(configuration config.Config, signingKey []byte, authDependencies Aut
 		}
 		dependencies.Auth = service
 		dependencies.LoginLimiter = httpapi.NewLoginLimiter(authDependencies.LimiterClock)
+		orderService, orderServiceErr := order.NewService(database)
+		if orderServiceErr != nil {
+			database.Close()
+			lock.Close()
+			return nil, orderServiceErr
+		}
+		dependencies.Orders = orderService
 	}
 	return &API{
 		server: &http.Server{

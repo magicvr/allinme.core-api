@@ -20,7 +20,8 @@ const (
 )
 
 type DB struct {
-	sql *sql.DB
+	sql           *sql.DB
+	queryObserver func()
 }
 
 func Open(ctx context.Context, path string, mode OpenMode) (*DB, error) {

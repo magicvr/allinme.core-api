@@ -29,6 +29,7 @@ type Dependencies struct {
 	ReadinessTimeout time.Duration
 	Auth             AuthService
 	LoginLimiter     *LoginLimiter
+	Orders           OrderService
 	Fallback         http.Handler
 }
 
@@ -41,9 +42,15 @@ type errorEnvelope struct {
 }
 
 type errorBody struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	RequestID string `json:"requestId"`
+	Code      string        `json:"code"`
+	Message   string        `json:"message"`
+	RequestID string        `json:"requestId"`
+	Details   []errorDetail `json:"details,omitempty"`
+}
+
+type errorDetail struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
 }
 
 type requestIDKey struct{}
@@ -59,6 +66,7 @@ func NewHandler(dependencies Dependencies) http.Handler {
 	}
 	mux := http.NewServeMux()
 	registerAuthRoutes(mux, dependencies.Auth, dependencies.LoginLimiter)
+	registerOrderRoutes(mux, dependencies.Auth, dependencies.Orders)
 	mux.HandleFunc("GET /healthz", func(response http.ResponseWriter, _ *http.Request) {
 		writeJSON(response, http.StatusOK, statusResponse{Status: "ok"})
 	})
@@ -112,6 +120,9 @@ func recoveryMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 		tracked, _ := response.(*trackingResponseWriter)
 		defer func() {
 			if recovered := recover(); recovered != nil {
+				if recovered == http.ErrAbortHandler {
+					panic(recovered)
+				}
 				logger.ErrorContext(request.Context(), "http panic recovered", "request_id", requestID(request), "panic", recovered, "stack", string(debug.Stack()))
 				if tracked == nil || !tracked.committed {
 					writeError(response, request, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
@@ -146,6 +157,10 @@ func (writer *trackingResponseWriter) Write(body []byte) (int, error) {
 
 func writeError(response http.ResponseWriter, request *http.Request, status int, code, message string) {
 	writeJSON(response, status, errorEnvelope{Error: errorBody{Code: code, Message: message, RequestID: requestID(request)}})
+}
+
+func writeErrorDetails(response http.ResponseWriter, request *http.Request, status int, code, message string, details []errorDetail) {
+	writeJSON(response, status, errorEnvelope{Error: errorBody{Code: code, Message: message, RequestID: requestID(request), Details: details}})
 }
 
 func writeJSON(response http.ResponseWriter, status int, body any) {

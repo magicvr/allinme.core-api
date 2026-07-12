@@ -42,9 +42,7 @@ applies_to: order operations demo HTTP API target
 
 | Method | Path | 允许角色 | 行为 |
 |---|---|---|---|
-| `GET` | `/api/v1/orders` | authenticated | 搜索、筛选、排序和分页 |
 | `POST` | `/api/v1/orders` | operator、admin | 创建草稿订单，支持幂等 |
-| `GET` | `/api/v1/orders/{orderId}` | authenticated | 返回订单详情和可执行能力；阶段三不含附件摘要 |
 | `PATCH` | `/api/v1/orders/{orderId}` | operator、admin | 编辑草稿并校验 `version` |
 | `POST` | `/api/v1/orders/{orderId}/confirm` | operator、admin | 确认订单 |
 | `POST` | `/api/v1/orders/{orderId}/fulfill` | operator、admin | 开始履约 |

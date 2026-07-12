@@ -6,6 +6,8 @@
 
 ### Added
 
+- 实现阶段三 M1 订单只读纵切：参数化列表查询、同 snapshot COUNT/page、详情明细、四角色真实认证访问和只读 route gate。
+- 增加订单查询 DTO/capability、稳定排序与分页边界、查询次数 observer、损坏数据/扫描失败和基础 app 回退测试。
 - 实现阶段二认证授权：bcrypt 本地账号、严格 HS256 JWT、SQLite 可撤销 session、四角色策略和 login/me/logout API。
 - 增加 development 四角色 auth seed、production 空库 `bootstrap-admin`、固定窗口登录限流和 migration v2。
 

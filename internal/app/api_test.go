@@ -100,6 +100,10 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 		database.Close()
 		t.Fatal(err)
 	}
+	if _, err := database.SeedOrderDemo(ctx, now); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
 	database.Close()
 
 	configuration := config.APIConfig{Config: base, JWTSigningKey: []byte("12345678901234567890123456789012")}
@@ -138,6 +142,15 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 	if response := requestWithToken(http.MethodGet, "/api/v1/auth/me"); response.Code != http.StatusOK {
 		t.Fatalf("me = %d %s", response.Code, response.Body.String())
 	}
+	if response := requestWithToken(http.MethodGet, "/api/v1/orders?pageSize=2&status=DRAFT"); response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"total":1`)) || bytes.Contains(response.Body.Bytes(), []byte(`"items":[{"id":"itm_`)) {
+		t.Fatalf("orders = %d %s", response.Code, response.Body.String())
+	}
+	if response := requestWithToken(http.MethodGet, "/api/v1/orders/ord_00000000000000000000000000000001"); response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"items":[{"id":"itm_`)) {
+		t.Fatalf("order detail = %d %s", response.Code, response.Body.String())
+	}
+	if response := requestWithToken(http.MethodHead, "/api/v1/orders"); response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet {
+		t.Fatalf("orders HEAD = %d Allow=%q %s", response.Code, response.Header().Get("Allow"), response.Body.String())
+	}
 	if response := requestWithToken(http.MethodPost, "/api/v1/auth/logout"); response.Code != http.StatusNoContent {
 		t.Fatalf("logout = %d %s", response.Code, response.Body.String())
 	}
@@ -150,12 +163,6 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 	if status := requestStatus(application.Handler(), "/readyz"); status != http.StatusOK {
 		t.Fatalf("readiness = %d", status)
 	}
-	for _, path := range []string{"/api/v1/orders", "/api/v1/orders/ord_00000000000000000000000000000001"} {
-		if response := requestWithToken(http.MethodGet, path); response.Code != http.StatusNotFound {
-			t.Fatalf("schema-only order route %s = %d %s", path, response.Code, response.Body.String())
-		}
-	}
-
 	for _, role := range []string{"viewer", "operator", "approver", "admin"} {
 		request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"username":"`+role+`","password":"123456789012"}`))
 		request.Header.Set("Content-Type", "application/json")
@@ -164,10 +171,29 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 		if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"role":"`+role+`"`)) {
 			t.Fatalf("%s login = %d %s", role, response.Code, response.Body.String())
 		}
+		var roleLogin struct {
+			AccessToken string `json:"accessToken"`
+		}
+		if err := json.NewDecoder(response.Body).Decode(&roleLogin); err != nil || roleLogin.AccessToken == "" {
+			t.Fatalf("decode %s login: %v", role, err)
+		}
+		roleRequest := httptest.NewRequest(http.MethodGet, "/api/v1/orders?pageSize=1", nil)
+		roleRequest.Header.Set("Authorization", "Bearer "+roleLogin.AccessToken)
+		roleResponse := httptest.NewRecorder()
+		application.Handler().ServeHTTP(roleResponse, roleRequest)
+		if roleResponse.Code != http.StatusOK {
+			t.Fatalf("%s order list = %d %s", role, roleResponse.Code, roleResponse.Body.String())
+		}
 		if role == "admin" {
-			if err := json.NewDecoder(response.Body).Decode(&login); err != nil {
-				t.Fatal(err)
-			}
+			login.AccessToken = roleLogin.AccessToken
+		}
+	}
+	for _, requestCase := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/orders"},
+		{http.MethodPatch, "/api/v1/orders/ord_00000000000000000000000000000001"},
+	} {
+		if response := requestWithToken(requestCase.method, requestCase.path); response.Code != http.StatusNotFound {
+			t.Fatalf("disabled order route %s %s = %d %s", requestCase.method, requestCase.path, response.Code, response.Body.String())
 		}
 	}
 
