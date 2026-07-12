@@ -89,3 +89,51 @@ func TestOrderMigrationFailureKeepsVersionTwoAndRollsBackPartialSchema(t *testin
 		t.Fatalf("partial order_items tables = %d", itemTables)
 	}
 }
+
+func TestIdempotencyMigrationFailureKeepsVersionThreeAndRollsBackPartialSchema(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "allinme.db"), OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, migration := range migrations[:3] {
+		if err := database.WithTx(ctx, func(transaction *sql.Tx) error {
+			if _, err := transaction.ExecContext(ctx, migration.sql); err != nil {
+				return err
+			}
+			_, err := transaction.ExecContext(ctx, "PRAGMA user_version = "+strconv.Itoa(migration.version))
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := database.SQL().ExecContext(ctx, `
+		CREATE TABLE migration_collision (id TEXT PRIMARY KEY);
+		CREATE INDEX idempotency_keys_order_id_idx ON migration_collision(id);
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Migrate(ctx); err == nil {
+		t.Fatal("v4 migration error = nil")
+	}
+	version, err := database.SchemaVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 3 {
+		t.Fatalf("schema version = %d, want 3", version)
+	}
+	var idempotencyTables int
+	if err := database.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'idempotency_keys'`).Scan(&idempotencyTables); err != nil {
+		t.Fatal(err)
+	}
+	if idempotencyTables != 0 {
+		t.Fatalf("partial idempotency tables = %d", idempotencyTables)
+	}
+}
