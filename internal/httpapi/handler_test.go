@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +22,31 @@ import (
 type probeFunc func(context.Context) store.ReadinessStatus
 
 func (probe probeFunc) Check(ctx context.Context) store.ReadinessStatus { return probe(ctx) }
+
+type waitBuffer struct {
+	mu      sync.Mutex
+	buffer  bytes.Buffer
+	written chan struct{}
+	once    sync.Once
+}
+
+func newWaitBuffer() *waitBuffer {
+	return &waitBuffer{written: make(chan struct{})}
+}
+
+func (buffer *waitBuffer) Write(value []byte) (int, error) {
+	buffer.mu.Lock()
+	written, err := buffer.buffer.Write(value)
+	buffer.mu.Unlock()
+	buffer.once.Do(func() { close(buffer.written) })
+	return written, err
+}
+
+func (buffer *waitBuffer) String() string {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	return buffer.buffer.String()
+}
 
 func TestHealthDoesNotDependOnReadiness(t *testing.T) {
 	handler := newHandler(probeFunc(func(context.Context) store.ReadinessStatus { return store.DatabaseUnavailable }))
@@ -119,9 +145,9 @@ func TestPanicAfterCommitDoesNotRewriteResponse(t *testing.T) {
 }
 
 func TestCanceledRequestAbortsConnectionAndLogsWithoutStatus(t *testing.T) {
-	var logs bytes.Buffer
+	logs := newWaitBuffer()
 	handler := httpapi.NewHandler(httpapi.Dependencies{
-		Logger: slog.New(slog.NewJSONHandler(&logs, nil)),
+		Logger: slog.New(slog.NewJSONHandler(logs, nil)),
 		Auth:   &fakeAuthService{},
 		Orders: &fakeOrderService{err: context.Canceled},
 	})
@@ -140,6 +166,11 @@ func TestCanceledRequestAbortsConnectionAndLogsWithoutStatus(t *testing.T) {
 	}
 	if err == nil {
 		t.Fatal("canceled request error = nil")
+	}
+	select {
+	case <-logs.written:
+	case <-time.After(time.Second):
+		t.Fatal("canceled request access log was not written")
 	}
 	logText := logs.String()
 	if !strings.Contains(logText, `"outcome":"canceled"`) || strings.Contains(logText, `"status"`) || strings.Contains(logText, "sensitive") {
