@@ -44,3 +44,9 @@ func (repository *serviceRepository) ListOrders(context.Context, order.ListQuery
 func (repository *serviceRepository) GetOrder(context.Context, string) (order.Order, bool, error) {
 	return repository.result, repository.found, repository.err
 }
+func (repository *serviceRepository) CreateOrder(context.Context, order.CreatePersistence) (order.Order, error) {
+	return repository.result, repository.err
+}
+func (repository *serviceRepository) UpdateDraft(context.Context, order.UpdateDraftPersistence) (order.Order, error) {
+	return repository.result, repository.err
+}

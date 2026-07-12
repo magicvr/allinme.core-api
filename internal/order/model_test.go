@@ -136,3 +136,11 @@ func (repositoryStub) ListOrders(context.Context, order.ListQuery) (order.Page, 
 func (repositoryStub) GetOrder(context.Context, string) (order.Order, bool, error) {
 	return order.Order{}, false, nil
 }
+
+func (repositoryStub) CreateOrder(context.Context, order.CreatePersistence) (order.Order, error) {
+	return order.Order{}, nil
+}
+
+func (repositoryStub) UpdateDraft(context.Context, order.UpdateDraftPersistence) (order.Order, error) {
+	return order.Order{}, nil
+}
