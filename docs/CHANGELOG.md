@@ -6,6 +6,7 @@
 
 ### Added
 
+- 实现阶段三 M3-A 订单履约 Action：confirm/fulfill/ship/complete/cancel 状态机、version 条件更新、冲突分类、并发单次成功、真实 JWT/SQLite 集成和路由关闭回退。
 - 实现阶段三 M2 订单草稿创建/编辑：严格 JSON 与整数词法、服务端金额计算、version 乐观锁、四角色授权和真实 JWT/SQLite 集成。
 - 增加 principal/method/route/key 作用域幂等、normalized SHA-256 digest、不可变 snapshot v1、重放/冲突、双 DB 竞争、连接等待取消及结构化 SQLite BUSY/LOCKED 分类。
 - 实现阶段三 M1 订单只读纵切：参数化列表查询、同 snapshot COUNT/page、详情明细、四角色真实认证访问和只读 route gate。

@@ -57,7 +57,7 @@ Content-Type: application/json
 
 `GET /api/v1/orders` 要求有效 Bearer token，四个当前角色均可读取。query 支持 `q`、`status`、`paymentStatus`、`createdFrom`、`createdTo`、`page`、`pageSize`、`sort` 和 `order`；重复或未知参数返回 `400 INVALID_REQUEST`。默认 `page=1`、`pageSize=20`、`sort=createdAt`、`order=desc`，排序字段只允许 `createdAt`、`updatedAt`、`totalAmount`、`customerName`、`status`，并使用订单 ID 作为同方向稳定次序。响应固定为 `items/total/page/pageSize`，列表项不含明细。
 
-`GET /api/v1/orders/{orderId}` 返回订单及按 position 排序的 `items`。非法格式和不存在的订单 ID 均返回 `404 NOT_FOUND`。列表和详情都返回按当前角色与订单状态计算的 `canEdit/canAdvance/canCancel/canRequestRefund/canApproveRefund`；阶段三退款能力尚未启用，后两项恒为 `false`。`HEAD` 对两个 GET endpoint 返回 `405` 和 `Allow: GET`，尚未启用的订单履约 Action 保持 `404`。
+`GET /api/v1/orders/{orderId}` 返回订单及按 position 排序的 `items`。非法格式和不存在的订单 ID 均返回 `404 NOT_FOUND`。列表和详情都返回按当前角色与订单状态计算的 `canEdit/canAdvance/canCancel/canRequestRefund/canApproveRefund`；阶段三退款能力尚未启用，后两项恒为 `false`。`HEAD` 对两个 GET endpoint 返回 `405` 和 `Allow: GET`。
 
 订单时间均为 UTC RFC3339，金额使用最小货币单位。当前错误沿用 request ID envelope，并增加可选 `error.details` 字段；可定位的 query 错误使用 `field/message` 元素，内部数据库和扫描错误只对外返回安全的 `500 INTERNAL_ERROR`。
 
@@ -71,6 +71,12 @@ Content-Type: application/json
 
 typed command 业务校验返回 `422 VALIDATION_FAILED` 与 camelCase 字段详情；缺失/非法幂等 header 或 JSON 结构/类型/整数词法返回 `400 INVALID_REQUEST`，非 JSON Content-Type 返回 `415 UNSUPPORTED_MEDIA_TYPE`。SQLite BUSY/LOCKED 通过驱动错误码映射为 `503 SERVICE_UNAVAILABLE` 和 `Retry-After: 1`。
 
+## 订单履约 Action API
+
+`POST /api/v1/orders/{orderId}/confirm`、`fulfill`、`ship`、`complete` 和 `cancel` 仅允许 operator、admin。Action body 仅允许 `{"version":n}`，上限 1 KiB；Content-Type、严格 JSON、整数词法和 typed version 校验与草稿编辑保持相同错误语义。
+
+状态依次为 `DRAFT -> CONFIRMED -> FULFILLING -> SHIPPED -> COMPLETED`；cancel 只允许从 `DRAFT`、`CONFIRMED`、`FULFILLING` 进入 `CANCELLED`。成功原子递增 version、更新 `updatedAt` 并返回含有序 items 和当前 capability 的订单；失败不改变状态或时间。不存在、version 不匹配和源状态非法分别返回 `404 NOT_FOUND`、`409 VERSION_CONFLICT` 和 `409 STATE_CONFLICT`，version 与状态同时不匹配时优先返回 version 冲突。
+
 ## 运行错误与 Request ID
 
 所有响应回写 `X-Request-ID`。入站值只接受 `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`；空值或非法值替换为 `req_` 加 32 位小写十六进制值。错误响应、header 和访问日志使用同一 request ID。
@@ -80,6 +86,6 @@ typed command 业务校验返回 `422 VALIDATION_FAILED` 与 camelCase 字段详
 ## 当前未实现
 
 - `/api/v1/*` 页面、退款、附件和看板 API；
-- 订单履约 Action。
+- 浏览器 CORS。
 
 新增 endpoint 只有在实现、测试和对应门禁齐全后才能写入本文。实现前的设计调整只修改 [目标 HTTP API](./03-http-api-target.md)。

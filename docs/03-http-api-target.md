@@ -38,21 +38,11 @@ applies_to: order operations demo HTTP API target
 
 目标页面暂定为经营看板、订单列表、订单编辑、退款队列和订单附件。最终 page ID 随阶段六页面文件一起冻结。服务端使用 allowlist，不把请求 path 映射为文件路径；响应目标支持 ETag。
 
-## 4. 订单（draft target）
+## 4. 订单（已迁入当前 API）
 
-| Method | Path | 允许角色 | 行为 |
-|---|---|---|---|
-| `POST` | `/api/v1/orders/{orderId}/confirm` | operator、admin | 确认订单 |
-| `POST` | `/api/v1/orders/{orderId}/fulfill` | operator、admin | 开始履约 |
-| `POST` | `/api/v1/orders/{orderId}/ship` | operator、admin | 标记发货 |
-| `POST` | `/api/v1/orders/{orderId}/complete` | operator、admin | 完成订单 |
-| `POST` | `/api/v1/orders/{orderId}/cancel` | operator、admin | 取消订单 |
+已实现的订单查询、创建、编辑和履约 Action 契约见[当前 HTTP API](./03-http-api.md)。状态转换、角色权限、金额计算和业务不变量只在[领域模型](./05-domain-model.md)维护。列表可返回按当前主体与资源计算的 `canXxx` 展示字段，但 Action 会重新鉴权和校验。
 
-状态转换、角色权限、金额计算和业务不变量只在[领域模型](./05-domain-model.md)维护。订单 query、分页、排序、DTO、错误和 CORS 在阶段三 active 期间只由[阶段三活跃计划](./audit/0003-2026-07-12-plan.md#3-已冻结的-http-与幂等契约)维护；实现完成后随 endpoint 一起迁入当前 API，本文件不维护第二份字段清单。
-
-已实现的订单查询、创建和编辑契约见[当前 HTTP API](./03-http-api.md)。列表可返回按当前主体与资源计算的 `canXxx` 展示字段，但 Action 必须重新鉴权和校验。
-
-附件摘要随阶段五附件生命周期一起新增并冻结；阶段三订单 DTO 不预留 `attachments` 字段。订单 endpoint 实现时以阶段三活跃计划中的冻结 query、DTO、CORS、幂等和错误契约为准，再迁入当前 API。
+附件摘要随阶段五附件生命周期一起新增并冻结；阶段三订单 DTO 不预留 `attachments` 字段。阶段三尚未实现的 CORS 契约继续由活跃计划维护，完成后迁入当前 API。
 
 ## 5. 退款（draft target）
 
