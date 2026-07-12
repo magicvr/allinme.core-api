@@ -53,3 +53,6 @@ func (repository *serviceRepository) CreateOrderIdempotent(_ context.Context, pe
 func (repository *serviceRepository) UpdateDraft(context.Context, order.UpdateDraftPersistence) (order.Order, error) {
 	return repository.result, repository.err
 }
+func (repository *serviceRepository) TransitionOrder(context.Context, order.TransitionPersistence) (order.Order, error) {
+	return repository.result, repository.err
+}

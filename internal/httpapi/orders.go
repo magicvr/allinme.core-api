@@ -23,9 +23,11 @@ type OrderService interface {
 	Get(context.Context, auth.Principal, string) (order.Order, error)
 	Create(context.Context, auth.Principal, string, order.CreateCommand) (order.Order, error)
 	Edit(context.Context, auth.Principal, string, order.EditCommand) (order.Order, error)
+	Transition(context.Context, auth.Principal, string, order.Action, order.TransitionCommand) (order.Order, error)
 }
 
 const orderWriteBodyLimit = 128 * 1024
+const orderActionBodyLimit = 1 * 1024
 
 var validIdempotencyKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
@@ -60,7 +62,7 @@ type orderPageDTO struct {
 	PageSize int64      `json:"pageSize"`
 }
 
-func registerOrderRoutes(mux *http.ServeMux, authService AuthService, service OrderService) {
+func registerOrderRoutes(mux *http.ServeMux, authService AuthService, service OrderService, actionEnabled ...bool) {
 	if authService == nil || service == nil {
 		return
 	}
@@ -137,6 +139,62 @@ func registerOrderRoutes(mux *http.ServeMux, authService AuthService, service Or
 	})))
 	mux.Handle("/api/v1/orders", orderCollectionRoute(listHandler, createHandler))
 	mux.Handle("/api/v1/orders/{orderId}", orderDetailRoute(detailHandler, editHandler))
+	if len(actionEnabled) == 0 || actionEnabled[0] {
+		for action, target := range map[string]order.Action{"confirm": order.ActionConfirm, "fulfill": order.ActionFulfill, "ship": order.ActionShip, "complete": order.ActionComplete, "cancel": order.ActionCancel} {
+			actionHandler := RequireAuthentication(authService)(RequireRoles(auth.RoleOperator, auth.RoleAdmin)(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				id := request.PathValue("orderId")
+				if !order.ValidOrderID(id) {
+					writeError(response, request, http.StatusNotFound, "NOT_FOUND", "order not found")
+					return
+				}
+				version, err := decodeActionVersion(response, request)
+				if err != nil {
+					handleOrderInputError(response, request, err)
+					return
+				}
+				principal, _ := PrincipalFromContext(request.Context())
+				result, err := service.Transition(request.Context(), principal, id, target, order.TransitionCommand{Version: version})
+				if handleOrderError(response, request, err) {
+					return
+				}
+				writeJSON(response, http.StatusOK, makeOrderDTO(principal, result, true))
+			})))
+			mux.Handle("/api/v1/orders/{orderId}/"+action, actionRoute(actionHandler))
+		}
+	}
+}
+
+func actionRoute(post http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost {
+			http.NotFound(response, request)
+			return
+		}
+		post.ServeHTTP(response, request)
+	})
+}
+
+func decodeActionVersion(response http.ResponseWriter, request *http.Request) (int64, error) {
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return 0, errUnsupportedMedia
+	}
+	var input struct {
+		Version json.RawMessage `json:"version"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, orderActionBodyLimit))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		return 0, errors.New("invalid action body")
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return 0, errors.New("invalid action body")
+	}
+	version, err := parseRawInteger(input.Version)
+	if err != nil {
+		return 0, errors.New("invalid action version")
+	}
+	return version, nil
 }
 
 func orderCollectionRoute(get, post http.Handler) http.Handler {

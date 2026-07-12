@@ -158,14 +158,85 @@ func TestOrderWriteRoutesStrictInputAndErrorMapping(t *testing.T) {
 	}
 }
 
+func TestOrderActionRoutesStrictInputAuthorizationAndConflicts(t *testing.T) {
+	service := &fakeOrderService{result: testOrder()}
+	authService := &fakeAuthService{authenticatedRole: auth.RoleOperator}
+	handler := httpapi.NewHandler(httpapi.Dependencies{Logger: discardLogger(), Auth: authService, Orders: service, OrderActions: true})
+	request := func(method, path, contentType, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer access-token")
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		return response
+	}
+	for path, action := range map[string]order.Action{"confirm": order.ActionConfirm, "fulfill": order.ActionFulfill, "ship": order.ActionShip, "complete": order.ActionComplete, "cancel": order.ActionCancel} {
+		response := request(http.MethodPost, "/api/v1/orders/ord_00000000000000000000000000000001/"+path, "application/json; charset=utf-8", `{"version":7}`)
+		if response.Code != http.StatusOK || service.action != action || service.transitionCommand.Version != 7 {
+			t.Fatalf("%s = %d %s action=%q command=%+v", path, response.Code, response.Body.String(), service.action, service.transitionCommand)
+		}
+	}
+	invalid := []struct {
+		name, contentType, body string
+		status                  int
+	}{
+		{"missing content type", "", `{"version":1}`, http.StatusUnsupportedMediaType},
+		{"unknown field", "application/json", `{"version":1,"status":"CONFIRMED"}`, http.StatusBadRequest},
+		{"missing version", "application/json", `{}`, http.StatusBadRequest},
+		{"string version", "application/json", `{"version":"1"}`, http.StatusBadRequest},
+		{"decimal version", "application/json", `{"version":1.0}`, http.StatusBadRequest},
+		{"extra value", "application/json", `{"version":1}{}`, http.StatusBadRequest},
+		{"body too large", "application/json", strings.Repeat(" ", 1025) + `{"version":1}`, http.StatusBadRequest},
+	}
+	for _, test := range invalid {
+		if response := request(http.MethodPost, "/api/v1/orders/ord_00000000000000000000000000000001/confirm", test.contentType, test.body); response.Code != test.status {
+			t.Fatalf("%s = %d %s", test.name, response.Code, response.Body.String())
+		}
+	}
+	service.err = &order.ValidationError{Details: []order.FieldError{{Field: "version", Message: "must be greater than 0"}}}
+	if response := request(http.MethodPost, "/api/v1/orders/ord_00000000000000000000000000000001/confirm", "application/json", `{"version":0}`); response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("zero version = %d %s", response.Code, response.Body.String())
+	}
+	for _, test := range []struct {
+		err    error
+		status int
+		code   string
+	}{{order.ErrNotFound, 404, "NOT_FOUND"}, {order.ErrVersionConflict, 409, "VERSION_CONFLICT"}, {order.ErrStateConflict, 409, "STATE_CONFLICT"}, {order.ErrUnavailable, 503, "SERVICE_UNAVAILABLE"}} {
+		service.err = test.err
+		response := request(http.MethodPost, "/api/v1/orders/ord_00000000000000000000000000000001/cancel", "application/json", `{"version":1}`)
+		if response.Code != test.status || !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`) {
+			t.Fatalf("%s = %d %s", test.code, response.Code, response.Body.String())
+		}
+		if test.status == http.StatusServiceUnavailable && response.Header().Get("Retry-After") != "1" {
+			t.Fatalf("action Retry-After = %q", response.Header().Get("Retry-After"))
+		}
+	}
+	service.err = nil
+	authService.authenticatedRole = auth.RoleViewer
+	if response := request(http.MethodPost, "/api/v1/orders/ord_00000000000000000000000000000001/confirm", "text/plain", `{`); response.Code != http.StatusForbidden {
+		t.Fatalf("viewer action = %d %s", response.Code, response.Body.String())
+	}
+	authService.authenticatedRole = auth.RoleOperator
+	if response := request(http.MethodPost, "/api/v1/orders/not-an-order/confirm", "application/json", `{`); response.Code != http.StatusNotFound {
+		t.Fatalf("invalid ID = %d %s", response.Code, response.Body.String())
+	}
+	if response := request(http.MethodGet, "/api/v1/orders/ord_00000000000000000000000000000001/confirm", "application/json", `{"version":1}`); response.Code != http.StatusNotFound {
+		t.Fatalf("action GET = %d %s", response.Code, response.Body.String())
+	}
+}
+
 type fakeOrderService struct {
-	page          order.Page
-	result        order.Order
-	query         order.ListQuery
-	err           error
-	createKey     string
-	createCommand order.CreateCommand
-	editCommand   order.EditCommand
+	page              order.Page
+	result            order.Order
+	query             order.ListQuery
+	err               error
+	createKey         string
+	createCommand     order.CreateCommand
+	editCommand       order.EditCommand
+	action            order.Action
+	transitionCommand order.TransitionCommand
 }
 
 func (service *fakeOrderService) List(_ context.Context, _ auth.Principal, query order.ListQuery) (order.Page, error) {
@@ -182,6 +253,10 @@ func (service *fakeOrderService) Create(_ context.Context, _ auth.Principal, key
 }
 func (service *fakeOrderService) Edit(_ context.Context, _ auth.Principal, _ string, command order.EditCommand) (order.Order, error) {
 	service.editCommand = command
+	return service.result, service.err
+}
+func (service *fakeOrderService) Transition(_ context.Context, _ auth.Principal, _ string, action order.Action, command order.TransitionCommand) (order.Order, error) {
+	service.action, service.transitionCommand = action, command
 	return service.result, service.err
 }
 
