@@ -9,7 +9,7 @@ applies_to: order operations demo target
 
 ## 1. 使用方式
 
-本路线从当前仅有 `GET /healthz` 的服务推进到完整订单运营 demo。阶段按依赖顺序实施；每阶段只有在代码、测试、API 文档和场景证据齐全后才标记完成。后续阶段的目标接口不代表当前可用。
+本路线从已实现运行基础和认证授权的服务推进到完整订单运营 demo。当前至少包含 `GET /healthz`、`GET /readyz` 以及 login/me/logout 三条认证 API；阶段三再增量交付订单能力。阶段按依赖顺序实施；每阶段只有在代码、测试、API 文档和场景证据齐全后才标记完成。后续阶段的目标接口不代表当前可用。
 
 ## 2. 阶段一：运行基础（已实现）
 
@@ -50,7 +50,7 @@ applies_to: order operations demo target
 - 返回基于当前主体和资源状态计算的 `canXxx` 展示字段；
 - 扩展 seed runner，覆盖关键订单与支付状态，为退款阶段提供前置数据。
 
-完成证据：固定 Schema-UI 形态的 HTTP fixture 通过真实认证、可信 origin 预检和订单 API 完成搜索、表单与行级 Action 请求；非法状态、权限和并发冲突均有测试。阶段三不创建页面 YAML、不启动页面模块，真实页面加载与 L0-L4 校验仍属于阶段六。
+完成证据：M1/M2/M3 的真实认证 HTTP fixture、非法状态/权限/并发测试和自动化可信 origin OPTIONS + 订单请求 smoke 通过。阶段三不创建页面 YAML、不启动页面模块，真实页面加载、Schema-UI mapping 和 L0-L4 校验仍属于阶段六。
 
 ## 5. 阶段四：退款与看板
 
