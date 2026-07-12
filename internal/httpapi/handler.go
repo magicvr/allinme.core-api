@@ -30,6 +30,7 @@ type Dependencies struct {
 	Auth             AuthService
 	LoginLimiter     *LoginLimiter
 	Orders           OrderService
+	OrderActions     bool
 	Fallback         http.Handler
 }
 
@@ -66,7 +67,7 @@ func NewHandler(dependencies Dependencies) http.Handler {
 	}
 	mux := http.NewServeMux()
 	registerAuthRoutes(mux, dependencies.Auth, dependencies.LoginLimiter)
-	registerOrderRoutes(mux, dependencies.Auth, dependencies.Orders)
+	registerOrderRoutes(mux, dependencies.Auth, dependencies.Orders, dependencies.OrderActions)
 	mux.HandleFunc("GET /healthz", func(response http.ResponseWriter, _ *http.Request) {
 		writeJSON(response, http.StatusOK, statusResponse{Status: "ok"})
 	})

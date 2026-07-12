@@ -148,3 +148,6 @@ func (repositoryStub) CreateOrderIdempotent(_ context.Context, persistence order
 func (repositoryStub) UpdateDraft(context.Context, order.UpdateDraftPersistence) (order.Order, error) {
 	return order.Order{}, nil
 }
+func (repositoryStub) TransitionOrder(context.Context, order.TransitionPersistence) (order.Order, error) {
+	return order.Order{}, nil
+}

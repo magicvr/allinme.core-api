@@ -92,9 +92,10 @@ func TestEditPassesVersionAndNewTimestamp(t *testing.T) {
 }
 
 type writeRepository struct {
-	created  order.IdempotentCreatePersistence
-	updated  order.UpdateDraftPersistence
-	existing *order.IdempotencyRecord
+	created      order.IdempotentCreatePersistence
+	updated      order.UpdateDraftPersistence
+	transitioned order.TransitionPersistence
+	existing     *order.IdempotencyRecord
 }
 
 func (repository *writeRepository) ListOrders(context.Context, order.ListQuery) (order.Page, error) {
@@ -116,4 +117,8 @@ func (repository *writeRepository) CreateOrderIdempotent(_ context.Context, pers
 func (repository *writeRepository) UpdateDraft(_ context.Context, persistence order.UpdateDraftPersistence) (order.Order, error) {
 	repository.updated = persistence
 	return order.Order{}, nil
+}
+func (repository *writeRepository) TransitionOrder(_ context.Context, persistence order.TransitionPersistence) (order.Order, error) {
+	repository.transitioned = persistence
+	return order.Order{Status: persistence.Target, Version: persistence.Version + 1}, nil
 }

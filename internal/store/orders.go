@@ -245,6 +245,87 @@ func (database *DB) UpdateDraft(ctx context.Context, persistence order.UpdateDra
 	return result, nil
 }
 
+func (database *DB) TransitionOrder(ctx context.Context, persistence order.TransitionPersistence) (result order.Order, resultErr error) {
+	defer func() { resultErr = classifyOrderError(resultErr) }()
+	transaction, err := database.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return order.Order{}, fmt.Errorf("begin transition transaction: %w", err)
+	}
+	defer func() {
+		if resultErr != nil {
+			_ = transaction.Rollback()
+		}
+	}()
+	current, found, err := getOrderTx(ctx, transaction, persistence.ID)
+	if err != nil {
+		return order.Order{}, err
+	}
+	if !found {
+		return order.Order{}, order.ErrNotFound
+	}
+	if current.Version != persistence.Version {
+		return order.Order{}, order.ErrVersionConflict
+	}
+	if !containsStatus(persistence.AllowedSources, current.Status) {
+		return order.Order{}, order.ErrStateConflict
+	}
+	if current.Version == math.MaxInt64 {
+		return order.Order{}, errors.New("order version exhausted")
+	}
+	placeholders := make([]string, len(persistence.AllowedSources))
+	args := []any{persistence.Target, persistence.UpdatedAt, persistence.ID, persistence.Version}
+	for index, source := range persistence.AllowedSources {
+		placeholders[index] = "?"
+		args = append(args, source)
+	}
+	query := `UPDATE orders SET status = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ? AND status IN (` + strings.Join(placeholders, ",") + `)`
+	update, err := transaction.ExecContext(ctx, query, args...)
+	if err != nil {
+		return order.Order{}, fmt.Errorf("transition order: %w", err)
+	}
+	affected, err := update.RowsAffected()
+	if err != nil {
+		return order.Order{}, fmt.Errorf("read transitioned order rows: %w", err)
+	}
+	if affected != 1 {
+		return order.Order{}, classifyTransitionMiss(ctx, transaction, persistence)
+	}
+	result, found, err = getOrderTx(ctx, transaction, persistence.ID)
+	if err != nil {
+		return order.Order{}, err
+	}
+	if !found {
+		return order.Order{}, errors.New("transitioned order is missing")
+	}
+	if err := transaction.Commit(); err != nil {
+		return order.Order{}, fmt.Errorf("commit transition transaction: %w", err)
+	}
+	return result, nil
+}
+
+func containsStatus(values []order.Status, value order.Status) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
+}
+
+func classifyTransitionMiss(ctx context.Context, transaction *sql.Tx, persistence order.TransitionPersistence) error {
+	current, found, err := getOrderTx(ctx, transaction, persistence.ID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return order.ErrNotFound
+	}
+	if current.Version != persistence.Version {
+		return order.ErrVersionConflict
+	}
+	return order.ErrStateConflict
+}
+
 func classifyUpdateMiss(ctx context.Context, transaction *sql.Tx, id string, version int64) error {
 	current, found, err := getOrderTx(ctx, transaction, id)
 	if err != nil {

@@ -255,6 +255,86 @@ func TestUpdateDraftClassifiesMissingStateAndRollsBackItems(t *testing.T) {
 	}
 }
 
+func TestTransitionOrderCoversLegalAndIllegalStates(t *testing.T) {
+	database := openSeededOrderDatabaseForWrite(t)
+	ctx := context.Background()
+	tests := []struct {
+		id      string
+		sources []order.Status
+		target  order.Status
+	}{
+		{"ord_00000000000000000000000000000001", []order.Status{order.StatusDraft}, order.StatusConfirmed},
+		{"ord_00000000000000000000000000000002", []order.Status{order.StatusConfirmed}, order.StatusFulfilling},
+		{"ord_00000000000000000000000000000003", []order.Status{order.StatusFulfilling}, order.StatusShipped},
+		{"ord_00000000000000000000000000000004", []order.Status{order.StatusShipped}, order.StatusCompleted},
+	}
+	for _, test := range tests {
+		result, err := database.TransitionOrder(ctx, order.TransitionPersistence{ID: test.id, Version: 1, AllowedSources: test.sources, Target: test.target, UpdatedAt: "2026-07-13T00:00:00Z"})
+		if err != nil || result.Status != test.target || result.Version != 2 || result.UpdatedAt.Format(time.RFC3339) != "2026-07-13T00:00:00Z" {
+			t.Fatalf("transition %s = %+v %v", test.id, result, err)
+		}
+	}
+	if _, err := database.TransitionOrder(ctx, order.TransitionPersistence{ID: "ord_ffffffffffffffffffffffffffffffff", Version: 1, AllowedSources: []order.Status{order.StatusDraft}, Target: order.StatusConfirmed, UpdatedAt: "2026-07-13T00:00:00Z"}); !errors.Is(err, order.ErrNotFound) {
+		t.Fatalf("missing transition error = %v", err)
+	}
+	if _, err := database.TransitionOrder(ctx, order.TransitionPersistence{ID: "ord_00000000000000000000000000000005", Version: 2, AllowedSources: []order.Status{order.StatusShipped}, Target: order.StatusCompleted, UpdatedAt: "2026-07-13T00:00:00Z"}); !errors.Is(err, order.ErrVersionConflict) {
+		t.Fatalf("version transition error = %v", err)
+	}
+	if _, err := database.TransitionOrder(ctx, order.TransitionPersistence{ID: "ord_00000000000000000000000000000005", Version: 1, AllowedSources: []order.Status{order.StatusShipped}, Target: order.StatusCompleted, UpdatedAt: "2026-07-13T00:00:00Z"}); !errors.Is(err, order.ErrStateConflict) {
+		t.Fatalf("state transition error = %v", err)
+	}
+}
+
+func TestTransitionOrderSameVersionConcurrentChangesOnce(t *testing.T) {
+	database := openSeededOrderDatabaseForWrite(t)
+	persistence := order.TransitionPersistence{ID: "ord_00000000000000000000000000000001", Version: 1, AllowedSources: []order.Status{order.StatusDraft}, Target: order.StatusConfirmed, UpdatedAt: "2026-07-13T00:00:00Z"}
+	start := make(chan struct{})
+	errorsFound := make([]error, 2)
+	var wait sync.WaitGroup
+	for index := range errorsFound {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			<-start
+			_, errorsFound[index] = database.TransitionOrder(context.Background(), persistence)
+		}(index)
+	}
+	close(start)
+	wait.Wait()
+	successes, conflicts := 0, 0
+	for _, err := range errorsFound {
+		if err == nil {
+			successes++
+		} else if errors.Is(err, order.ErrVersionConflict) {
+			conflicts++
+		} else {
+			t.Fatalf("concurrent transition error = %v", err)
+		}
+	}
+	result, found, err := database.GetOrder(context.Background(), persistence.ID)
+	if err != nil || !found || successes != 1 || conflicts != 1 || result.Status != order.StatusConfirmed || result.Version != 2 {
+		t.Fatalf("successes=%d conflicts=%d order=%+v found=%v err=%v", successes, conflicts, result, found, err)
+	}
+}
+
+func TestTransitionOrderCancelFromEveryLegalSource(t *testing.T) {
+	database := openSeededOrderDatabaseForWrite(t)
+	for _, id := range []string{
+		"ord_00000000000000000000000000000001",
+		"ord_00000000000000000000000000000002",
+		"ord_00000000000000000000000000000003",
+	} {
+		result, err := database.TransitionOrder(context.Background(), order.TransitionPersistence{
+			ID: id, Version: 1,
+			AllowedSources: []order.Status{order.StatusDraft, order.StatusConfirmed, order.StatusFulfilling},
+			Target:         order.StatusCancelled, UpdatedAt: "2026-07-13T00:00:00Z",
+		})
+		if err != nil || result.Status != order.StatusCancelled || result.Version != 2 {
+			t.Fatalf("cancel %s = %+v %v", id, result, err)
+		}
+	}
+}
+
 func openSeededOrderDatabaseForWrite(t *testing.T) *store.DB {
 	t.Helper()
 	database, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "seeded.db"), store.OpenCreate)

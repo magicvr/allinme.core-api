@@ -132,6 +132,7 @@ type Repository interface {
 	GetIdempotency(context.Context, IdempotencyScope) (IdempotencyRecord, bool, error)
 	CreateOrderIdempotent(context.Context, IdempotentCreatePersistence) (IdempotencyRecord, bool, error)
 	UpdateDraft(context.Context, UpdateDraftPersistence) (Order, error)
+	TransitionOrder(context.Context, TransitionPersistence) (Order, error)
 }
 
 var (

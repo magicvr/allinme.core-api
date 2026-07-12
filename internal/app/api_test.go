@@ -246,6 +246,35 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 			t.Fatalf("%s create = %d %s", role, deniedResponse.Code, deniedResponse.Body.String())
 		}
 	}
+	version := int64(2)
+	for _, step := range []struct{ action, status string }{{"confirm", "CONFIRMED"}, {"fulfill", "FULFILLING"}, {"ship", "SHIPPED"}, {"complete", "COMPLETED"}} {
+		action := step.action
+		actionRequest := httptest.NewRequest(http.MethodPost, "/api/v1/orders/"+created.ID+"/"+action, bytes.NewBufferString(`{"version":`+strconv.FormatInt(version, 10)+`}`))
+		actionRequest.Header.Set("Authorization", "Bearer "+roleTokens["operator"])
+		actionRequest.Header.Set("Content-Type", "application/json")
+		actionResponse := httptest.NewRecorder()
+		application.Handler().ServeHTTP(actionResponse, actionRequest)
+		if actionResponse.Code != http.StatusOK || !bytes.Contains(actionResponse.Body.Bytes(), []byte(`"version":`+strconv.FormatInt(version+1, 10))) || !bytes.Contains(actionResponse.Body.Bytes(), []byte(`"status":"`+step.status+`"`)) {
+			t.Fatalf("%s action = %d %s", action, actionResponse.Code, actionResponse.Body.String())
+		}
+		version++
+	}
+	cancelRequest := httptest.NewRequest(http.MethodPost, "/api/v1/orders/ord_00000000000000000000000000000001/cancel", bytes.NewBufferString(`{"version":1}`))
+	cancelRequest.Header.Set("Authorization", "Bearer "+roleTokens["operator"])
+	cancelRequest.Header.Set("Content-Type", "application/json")
+	cancelResponse := httptest.NewRecorder()
+	application.Handler().ServeHTTP(cancelResponse, cancelRequest)
+	if cancelResponse.Code != http.StatusOK || !bytes.Contains(cancelResponse.Body.Bytes(), []byte(`"status":"CANCELLED"`)) || !bytes.Contains(cancelResponse.Body.Bytes(), []byte(`"version":2`)) {
+		t.Fatalf("cancel action = %d %s", cancelResponse.Code, cancelResponse.Body.String())
+	}
+	staleAction := httptest.NewRequest(http.MethodPost, "/api/v1/orders/"+created.ID+"/cancel", bytes.NewBufferString(`{"version":2}`))
+	staleAction.Header.Set("Authorization", "Bearer "+roleTokens["admin"])
+	staleAction.Header.Set("Content-Type", "application/json")
+	staleResponse := httptest.NewRecorder()
+	application.Handler().ServeHTTP(staleResponse, staleAction)
+	if staleResponse.Code != http.StatusConflict || !bytes.Contains(staleResponse.Body.Bytes(), []byte(`"code":"VERSION_CONFLICT"`)) {
+		t.Fatalf("stale action = %d %s", staleResponse.Code, staleResponse.Body.String())
+	}
 
 	application.Close()
 	reopened, err := app.NewAuthenticatedAPIWithDependencies(configuration, dependencies, slog.New(slog.NewJSONHandler(io.Discard, nil)))
@@ -258,6 +287,47 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 	reopened.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("same-key reopen = %d %s", response.Code, response.Body.String())
+	}
+	reopened.Close()
+
+	disabledDependencies := dependencies
+	disabledDependencies.DisableOrderActions = true
+	reopened, err = app.NewAuthenticatedAPIWithDependencies(configuration, disabledDependencies, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabledCreate := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewBufferString(`{"customerName":"Rollback","currency":"CNY","items":[{"sku":"R","name":"Rollback","quantity":1,"unitPrice":1}]}`))
+	disabledCreate.Header.Set("Authorization", "Bearer "+roleTokens["operator"])
+	disabledCreate.Header.Set("Content-Type", "application/json")
+	disabledCreate.Header.Set("Idempotency-Key", "rollback-create")
+	disabledCreateResponse := httptest.NewRecorder()
+	reopened.Handler().ServeHTTP(disabledCreateResponse, disabledCreate)
+	if disabledCreateResponse.Code != http.StatusCreated {
+		t.Fatalf("rollback create = %d %s", disabledCreateResponse.Code, disabledCreateResponse.Body.String())
+	}
+	var rollbackCreated struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(disabledCreateResponse.Body).Decode(&rollbackCreated); err != nil || rollbackCreated.ID == "" {
+		t.Fatalf("decode rollback create: %+v %v", rollbackCreated, err)
+	}
+	disabledEdit := httptest.NewRequest(http.MethodPatch, "/api/v1/orders/"+rollbackCreated.ID, bytes.NewBufferString(`{"customerName":"Rollback Edited","currency":"CNY","items":[{"sku":"R","name":"Rollback","quantity":1,"unitPrice":2}],"version":1}`))
+	disabledEdit.Header.Set("Authorization", "Bearer "+roleTokens["admin"])
+	disabledEdit.Header.Set("Content-Type", "application/json")
+	disabledEditResponse := httptest.NewRecorder()
+	reopened.Handler().ServeHTTP(disabledEditResponse, disabledEdit)
+	if disabledEditResponse.Code != http.StatusOK {
+		t.Fatalf("rollback edit = %d %s", disabledEditResponse.Code, disabledEditResponse.Body.String())
+	}
+	for _, action := range []string{"confirm", "fulfill", "ship", "complete", "cancel"} {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/orders/"+rollbackCreated.ID+"/"+action, bytes.NewBufferString(`{"version":2}`))
+		request.Header.Set("Authorization", "Bearer "+roleTokens["admin"])
+		request.Header.Set("Content-Type", "application/json")
+		reopened.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("disabled %s = %d %s", action, response.Code, response.Body.String())
+		}
 	}
 	reopened.Close()
 

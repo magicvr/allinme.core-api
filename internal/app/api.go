@@ -35,9 +35,10 @@ func NewAuthenticatedAPI(configuration config.APIConfig, logger *slog.Logger) (*
 }
 
 type AuthDependencies struct {
-	Clock        auth.Clock
-	NewID        auth.IDGenerator
-	LimiterClock httpapi.LimiterClock
+	Clock               auth.Clock
+	NewID               auth.IDGenerator
+	LimiterClock        httpapi.LimiterClock
+	DisableOrderActions bool
 }
 
 func NewAuthenticatedAPIWithDependencies(configuration config.APIConfig, dependencies AuthDependencies, logger *slog.Logger) (*API, error) {
@@ -96,6 +97,7 @@ func newAPI(configuration config.Config, signingKey []byte, authDependencies Aut
 			return nil, orderServiceErr
 		}
 		dependencies.Orders = orderService
+		dependencies.OrderActions = !authDependencies.DisableOrderActions
 	}
 	return &API{
 		server: &http.Server{
