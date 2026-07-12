@@ -38,3 +38,14 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+      - name: Race test
+        run: go test -race ./...
+
+      - name: Validate documentation
+        shell: pwsh
+        run: ./docs/audit/validate.ps1
+
+      - name: Test documentation validator
+        shell: pwsh
+        run: ./docs/audit/validate.tests.ps1

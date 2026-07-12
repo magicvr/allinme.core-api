@@ -36,16 +36,18 @@ DRAFT -> CONFIRMED -> FULFILLING -> SHIPPED -> COMPLETED
   +----------+-------------+-> CANCELLED
 ```
 
-| 操作 | 允许源状态 | 目标状态 | 最低角色 |
+| 操作 | 允许源状态 | 目标状态 | 允许角色 |
 |---|---|---|---|
-| 创建/编辑 | 新建或 `DRAFT` | `DRAFT` | `operator` |
-| 确认 | `DRAFT` | `CONFIRMED` | `operator` |
-| 开始履约 | `CONFIRMED` | `FULFILLING` | `operator` |
-| 标记发货 | `FULFILLING` | `SHIPPED` | `operator` |
-| 完成 | `SHIPPED` | `COMPLETED` | `operator` |
-| 取消 | `DRAFT`、`CONFIRMED`、`FULFILLING` | `CANCELLED` | `operator` |
+| 创建/编辑 | 新建或 `DRAFT` | `DRAFT` | `operator`、`admin` |
+| 确认 | `DRAFT` | `CONFIRMED` | `operator`、`admin` |
+| 开始履约 | `CONFIRMED` | `FULFILLING` | `operator`、`admin` |
+| 标记发货 | `FULFILLING` | `SHIPPED` | `operator`、`admin` |
+| 完成 | `SHIPPED` | `COMPLETED` | `operator`、`admin` |
+| 取消 | `DRAFT`、`CONFIRMED`、`FULFILLING` | `CANCELLED` | `operator`、`admin` |
 
 所有写操作必须提交当前 `version`。版本不匹配返回冲突，状态非法返回业务冲突；前端的按钮显隐不构成授权或状态校验。
+
+`admin` 是首批业务能力中 `operator` 与 `approver` 的显式超集，但角色本身不存在可排序层级。实现必须复用 `internal/auth.Role`、`auth.Principal` 和 `auth.RoleAllowed` 的显式 allowlist，不在订单模块复制角色常量或通过字符串比较推导权限。
 
 ## 4. 支付与退款
 

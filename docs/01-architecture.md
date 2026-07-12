@@ -31,7 +31,7 @@ applies_to: allinme.core-api
 | `cmd/` | API 与开发期 migrate/seed/reset 命令入口 |
 | `internal/httpapi/` | 路由、中间件、JSON/multipart 输入输出和稳定错误映射 |
 | `internal/auth/` | 密码校验、JWT 签发/验证、会话撤销与角色授权 |
-| `internal/orders/` | 订单、履约、退款、附件绑定和看板用例 |
+| `internal/order/` | 订单、履约、退款、附件绑定和看板用例；状态机、金额、capability 与 service 位于此层 |
 | `internal/store/` | SQLite migrations、事务和 repository 实现 |
 | `internal/pages/` | 嵌入 YAML、启动时协议校验和 JSON 页面响应 |
 | `internal/files/` | 临时上传、本地文件持久化、清理和鉴权下载 |
