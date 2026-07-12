@@ -37,7 +37,7 @@ applies_to: allinme.core-api
 | `internal/files/` | 临时上传、本地文件持久化、清理和鉴权下载 |
 | `internal/protocol/` | Schema-UI 共享算法与 conformance，不依赖业务模块 |
 
-HTTP handler 只负责 transport；业务事务和状态转换由用例层控制；SQLite 与文件系统通过窄接口注入。页面配置引用业务 API，但业务代码不得读取页面 YAML 决定权限或规则。
+HTTP handler 只负责 transport；用例层拥有业务事务语义和状态转换，store 拥有 SQL 事务对象与提交/回滚实现，并可提供聚合级原子 repository 方法或事务执行器；SQLite 与文件系统通过窄接口注入。页面配置引用业务 API，但业务代码不得读取页面 YAML 决定权限或规则。
 
 ## 3. HTTP 层规则
 
