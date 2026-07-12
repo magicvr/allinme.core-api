@@ -53,15 +53,23 @@ Content-Type: application/json
 
 三个 endpoint 的错误 method 分别返回 `405`、准确 `Allow` 和统一错误 envelope；login 的非 JSON Content-Type 返回 `415 UNSUPPORTED_MEDIA_TYPE`，字段、结构、大小或密码 byte 边界错误返回 `400 INVALID_REQUEST`。实现与测试位于 `internal/httpapi`、`internal/auth` 和 `internal/app`。
 
+## 订单查询 API
+
+`GET /api/v1/orders` 要求有效 Bearer token，四个当前角色均可读取。query 支持 `q`、`status`、`paymentStatus`、`createdFrom`、`createdTo`、`page`、`pageSize`、`sort` 和 `order`；重复或未知参数返回 `400 INVALID_REQUEST`。默认 `page=1`、`pageSize=20`、`sort=createdAt`、`order=desc`，排序字段只允许 `createdAt`、`updatedAt`、`totalAmount`、`customerName`、`status`，并使用订单 ID 作为同方向稳定次序。响应固定为 `items/total/page/pageSize`，列表项不含明细。
+
+`GET /api/v1/orders/{orderId}` 返回订单及按 position 排序的 `items`。非法格式和不存在的订单 ID 均返回 `404 NOT_FOUND`。列表和详情都返回按当前角色与订单状态计算的 `canEdit/canAdvance/canCancel/canRequestRefund/canApproveRefund`；阶段三退款能力尚未启用，后两项恒为 `false`。`HEAD` 对两个 GET endpoint 返回 `405` 和 `Allow: GET`，尚未启用的订单 `POST/PATCH/Action` 保持 `404`。
+
+订单时间均为 UTC RFC3339，金额使用最小货币单位。当前错误沿用 request ID envelope，并增加可选 `error.details` 字段；可定位的 query 错误使用 `field/message` 元素，内部数据库和扫描错误只对外返回安全的 `500 INTERNAL_ERROR`。
+
 ## 运行错误与 Request ID
 
 所有响应回写 `X-Request-ID`。入站值只接受 `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`；空值或非法值替换为 `req_` 加 32 位小写十六进制值。错误响应、header 和访问日志使用同一 request ID。
 
-本阶段冻结 `NOT_READY`、`METHOD_NOT_ALLOWED` 和 `INTERNAL_ERROR`，错误结构为 `{"error":{"code","message","requestId"}}`。panic 发生在响应提交前时返回完整 `500 INTERNAL_ERROR`；提交后不重写已发送响应，只记录 panic 和最终可观察状态。
+错误结构为 `{"error":{"code","message","requestId","details?"}}`。当前已实现 `NOT_READY`、`METHOD_NOT_ALLOWED`、`INTERNAL_ERROR`、认证错误以及订单查询的 `INVALID_REQUEST`、`FORBIDDEN`、`NOT_FOUND`。panic 发生在响应提交前时返回完整 `500 INTERNAL_ERROR`；提交后不重写已发送响应，只记录 panic 和最终可观察状态。
 
 ## 当前未实现
 
-- `/api/v1/*` 页面、订单、退款、附件和看板 API；
-- 业务错误码、幂等和版本冲突处理。
+- `/api/v1/*` 页面、退款、附件和看板 API；
+- 订单创建、编辑、履约 Action、幂等和版本冲突处理。
 
 新增 endpoint 只有在实现、测试和对应门禁齐全后才能写入本文。实现前的设计调整只修改 [目标 HTTP API](./03-http-api-target.md)。

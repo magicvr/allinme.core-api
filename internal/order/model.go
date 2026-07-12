@@ -2,6 +2,8 @@ package order
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/magicvr/allinme.core-api/internal/auth"
@@ -127,4 +129,45 @@ type Page struct {
 type Repository interface {
 	ListOrders(context.Context, ListQuery) (Page, error)
 	GetOrder(context.Context, string) (Order, bool, error)
+}
+
+var (
+	ErrForbidden = errors.New("order access forbidden")
+	ErrNotFound  = errors.New("order not found")
+)
+
+type Service struct {
+	repository Repository
+}
+
+func NewService(repository Repository) (*Service, error) {
+	if repository == nil {
+		return nil, errors.New("order repository is required")
+	}
+	return &Service{repository: repository}, nil
+}
+
+func (service *Service) List(ctx context.Context, principal auth.Principal, query ListQuery) (Page, error) {
+	if !CanRead(principal) {
+		return Page{}, ErrForbidden
+	}
+	page, err := service.repository.ListOrders(ctx, query)
+	if err != nil {
+		return Page{}, fmt.Errorf("list orders: %w", err)
+	}
+	return page, nil
+}
+
+func (service *Service) Get(ctx context.Context, principal auth.Principal, id string) (Order, error) {
+	if !CanRead(principal) {
+		return Order{}, ErrForbidden
+	}
+	result, found, err := service.repository.GetOrder(ctx, id)
+	if err != nil {
+		return Order{}, fmt.Errorf("get order: %w", err)
+	}
+	if !found {
+		return Order{}, ErrNotFound
+	}
+	return result, nil
 }
