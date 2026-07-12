@@ -129,22 +129,39 @@ type Page struct {
 type Repository interface {
 	ListOrders(context.Context, ListQuery) (Page, error)
 	GetOrder(context.Context, string) (Order, bool, error)
+	CreateOrder(context.Context, CreatePersistence) (Order, error)
+	UpdateDraft(context.Context, UpdateDraftPersistence) (Order, error)
 }
 
 var (
-	ErrForbidden = errors.New("order access forbidden")
-	ErrNotFound  = errors.New("order not found")
+	ErrForbidden       = errors.New("order access forbidden")
+	ErrNotFound        = errors.New("order not found")
+	ErrVersionConflict = errors.New("order version conflict")
+	ErrStateConflict   = errors.New("order state conflict")
 )
 
 type Service struct {
 	repository Repository
+	clock      Clock
+	newOrderID func() (string, error)
+	newItemID  func() (string, error)
 }
 
 func NewService(repository Repository) (*Service, error) {
+	return NewServiceWithDependencies(repository, nil, nil, nil)
+}
+
+func NewServiceWithDependencies(repository Repository, clock Clock, newOrderID, newItemID func() (string, error)) (*Service, error) {
 	if repository == nil {
 		return nil, errors.New("order repository is required")
 	}
-	return &Service{repository: repository}, nil
+	if newOrderID == nil {
+		newOrderID = NewOrderID
+	}
+	if newItemID == nil {
+		newItemID = NewItemID
+	}
+	return &Service{repository: repository, clock: clock, newOrderID: newOrderID, newItemID: newItemID}, nil
 }
 
 func (service *Service) List(ctx context.Context, principal auth.Principal, query ListQuery) (Page, error) {

@@ -196,6 +196,9 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 			t.Fatalf("disabled order route %s %s = %d %s", requestCase.method, requestCase.path, response.Code, response.Body.String())
 		}
 	}
+	if response := requestWithToken(http.MethodGet, "/api/v1/orders?pageSize=1"); response.Code != http.StatusOK {
+		t.Fatalf("orders after disabled write routes = %d %s", response.Code, response.Body.String())
+	}
 
 	application.Close()
 	reopened, err := app.NewAuthenticatedAPIWithDependencies(configuration, dependencies, slog.New(slog.NewJSONHandler(io.Discard, nil)))
