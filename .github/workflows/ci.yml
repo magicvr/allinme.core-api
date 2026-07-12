@@ -19,22 +19,23 @@ jobs:
 
     steps:
       - name: Checkout core API
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: allinme.core-api
 
       - name: Checkout protocol fixtures
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: magicvr/schema-ui-docs
           ref: d2f0fc0877dc6550c9fe7e3635b25c7ec72b4ddd
           path: schema-ui-docs
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: allinme.core-api/go.mod
           cache: true
+          cache-dependency-path: allinme.core-api/go.sum
 
       - name: Test
         env:
@@ -61,22 +62,23 @@ jobs:
 
     steps:
       - name: Checkout core API
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: allinme.core-api
 
       - name: Checkout protocol fixtures
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: magicvr/schema-ui-docs
           ref: d2f0fc0877dc6550c9fe7e3635b25c7ec72b4ddd
           path: schema-ui-docs
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: allinme.core-api/go.mod
           cache: true
+          cache-dependency-path: allinme.core-api/go.sum
 
       - name: Race test
         env:

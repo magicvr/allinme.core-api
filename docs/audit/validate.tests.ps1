@@ -46,6 +46,7 @@ applies_to: validator fixture
         throw "validator failed for an unexpected reason: $($invalidResult.Output)"
     }
 
+    $global:LASTEXITCODE = 0
     Write-Output 'Validator self-test passed: valid fixture accepted, missing-link fixture rejected.'
 } finally {
     if (Test-Path -LiteralPath $fixtureRoot) {
