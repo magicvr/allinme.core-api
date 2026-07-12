@@ -39,14 +39,14 @@ func TestOpenConfiguresPragmasAndMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
-	if first.FromVersion != 0 || first.ToVersion != 3 {
+	if first.FromVersion != 0 || first.ToVersion != store.LatestSchemaVersion() {
 		t.Fatalf("first migration = %+v", first)
 	}
 	second, err := database.Migrate(ctx)
 	if err != nil {
 		t.Fatalf("second Migrate() error = %v", err)
 	}
-	if second.FromVersion != 3 || second.ToVersion != 3 {
+	if second.FromVersion != store.LatestSchemaVersion() || second.ToVersion != store.LatestSchemaVersion() {
 		t.Fatalf("second migration = %+v", second)
 	}
 }
@@ -82,7 +82,7 @@ func TestVersionOneDatabaseIsOutdatedAndUpgradesWithoutLosingSeeds(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FromVersion != 1 || result.ToVersion != 3 {
+	if result.FromVersion != 1 || result.ToVersion != store.LatestSchemaVersion() {
 		t.Fatalf("migration = %+v", result)
 	}
 	var appliedAt string
@@ -127,7 +127,7 @@ func TestVersionTwoDatabaseUpgradesWithoutLosingAuthenticationData(t *testing.T)
 		t.Fatal(err)
 	}
 	defer database.Close()
-	if result.FromVersion != 2 || result.ToVersion != 3 {
+	if result.FromVersion != 2 || result.ToVersion != 4 {
 		t.Fatalf("migration = %+v", result)
 	}
 	var users, sessions, idempotencyTables int
@@ -140,8 +140,109 @@ func TestVersionTwoDatabaseUpgradesWithoutLosingAuthenticationData(t *testing.T)
 	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'idempotency_keys'`).Scan(&idempotencyTables); err != nil {
 		t.Fatal(err)
 	}
-	if users != 1 || sessions != 1 || idempotencyTables != 0 {
+	if users != 1 || sessions != 1 || idempotencyTables != 1 {
 		t.Fatalf("users = %d, sessions = %d, idempotency tables = %d", users, sessions, idempotencyTables)
+	}
+}
+
+func TestVersionThreeDatabaseUpgradesWithoutLosingOrders(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "allinme.db")
+	database, err := store.Open(ctx, path, store.OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Migrate(ctx); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	if _, err := database.SQL().ExecContext(ctx, `
+		DROP INDEX idempotency_keys_created_at_idx;
+		DROP INDEX idempotency_keys_order_id_idx;
+		DROP TABLE idempotency_keys;
+		INSERT INTO orders(id, customer_name, status, payment_status, currency, total_amount, version, created_at, updated_at)
+		VALUES ('ord_00000000000000000000000000000001', 'Preserved', 'DRAFT', 'UNPAID', 'CNY', 100, 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+		INSERT INTO order_items(id, order_id, position, sku, name, quantity, unit_price)
+		VALUES ('itm_00000000000000000000000000000001', 'ord_00000000000000000000000000000001', 0, 'SKU-1', 'Preserved item', 1, 100);
+		PRAGMA user_version = 3;
+	`); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	database.Close()
+	probe := store.NewProbe(path)
+	if status := probe.Check(ctx); status != store.SchemaOutdated {
+		t.Fatalf("v3 readiness = %q, want %q", status, store.SchemaOutdated)
+	}
+	database, err = store.Open(ctx, path, store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := database.Migrate(ctx)
+	if err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if result.FromVersion != 3 || result.ToVersion != 4 {
+		t.Fatalf("migration = %+v", result)
+	}
+	var orders, items, idempotencyTables int
+	if err := database.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM orders WHERE id = 'ord_00000000000000000000000000000001'`).Scan(&orders); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM order_items WHERE id = 'itm_00000000000000000000000000000001'`).Scan(&items); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'idempotency_keys'`).Scan(&idempotencyTables); err != nil {
+		t.Fatal(err)
+	}
+	if orders != 1 || items != 1 || idempotencyTables != 1 {
+		t.Fatalf("orders = %d, items = %d, idempotency tables = %d", orders, items, idempotencyTables)
+	}
+	result, err = database.Migrate(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FromVersion != 4 || result.ToVersion != 4 {
+		t.Fatalf("repeated migration = %+v", result)
+	}
+	database.Close()
+	if status := probe.Check(ctx); status != store.Ready {
+		t.Fatalf("v4 readiness = %q, want %q", status, store.Ready)
+	}
+}
+
+func TestIdempotencySchemaEnforcesScopeAndPayloadShape(t *testing.T) {
+	ctx := context.Background()
+	database := openMigrated(t)
+	insert := `
+		INSERT INTO idempotency_keys(
+			principal_user_id, method, route, idempotency_key, request_digest,
+			order_id, snapshot_version, snapshot_json, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+	valid := []any{
+		"user-1", "POST", "/api/v1/orders", "key-1", make([]byte, 32),
+		"ord_00000000000000000000000000000001", 1, `{"order":{"id":"ord_00000000000000000000000000000001"}}`, "2026-01-01T00:00:00Z",
+	}
+	if _, err := database.SQL().ExecContext(ctx, insert, valid...); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SQL().ExecContext(ctx, insert, valid...); err == nil {
+		t.Fatal("duplicate idempotency scope error = nil")
+	}
+	invalidDigest := append([]any(nil), valid...)
+	invalidDigest[3] = "key-2"
+	invalidDigest[4] = make([]byte, 31)
+	if _, err := database.SQL().ExecContext(ctx, insert, invalidDigest...); err == nil {
+		t.Fatal("invalid digest error = nil")
+	}
+	invalidSnapshot := append([]any(nil), valid...)
+	invalidSnapshot[3] = "key-3"
+	invalidSnapshot[7] = `{`
+	if _, err := database.SQL().ExecContext(ctx, insert, invalidSnapshot...); err == nil {
+		t.Fatal("invalid snapshot error = nil")
 	}
 }
 
