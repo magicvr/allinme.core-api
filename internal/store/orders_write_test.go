@@ -2,8 +2,10 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,18 +23,20 @@ func TestCreateOrderAndUpdateDraftTransactions(t *testing.T) {
 	if _, err := database.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	created, err := database.CreateOrder(ctx, order.CreatePersistence{
-		ID: "ord_0000000000000000000000000000000a", CustomerName: "Customer", Currency: "CNY", TotalAmount: 500, CreatedAt: "2026-07-12T00:00:00Z",
-		Items: []order.PersistenceItem{{ID: "itm_0000000000000000000000000000000a", Position: 0, SKU: "SKU", Name: "Item", Quantity: 2, UnitPrice: 250}},
-	})
+	persistence := idempotentPersistence("key-1")
+	record, created, err := database.CreateOrderIdempotent(ctx, persistence)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Status != order.StatusDraft || created.PaymentStatus != order.PaymentStatusUnpaid || created.Version != 1 || len(created.Items) != 1 {
-		t.Fatalf("created = %+v", created)
+	if !created || record.OrderID != persistence.Create.ID {
+		t.Fatalf("created=%v record=%+v", created, record)
+	}
+	createdOrder, found, err := database.GetOrder(ctx, persistence.Create.ID)
+	if err != nil || !found {
+		t.Fatal(err)
 	}
 	updated, err := database.UpdateDraft(ctx, order.UpdateDraftPersistence{
-		ID: created.ID, CustomerName: "Updated", Currency: "CNY", TotalAmount: 900, Version: 1, UpdatedAt: "2026-07-12T01:00:00Z",
+		ID: createdOrder.ID, CustomerName: "Updated", Currency: "CNY", TotalAmount: 900, Version: 1, UpdatedAt: "2026-07-12T01:00:00Z",
 		Items: []order.PersistenceItem{{ID: "itm_0000000000000000000000000000000b", Position: 0, SKU: "NEW", Name: "New", Quantity: 3, UnitPrice: 300}},
 	})
 	if err != nil {
@@ -41,7 +45,7 @@ func TestCreateOrderAndUpdateDraftTransactions(t *testing.T) {
 	if updated.CustomerName != "Updated" || updated.Version != 2 || updated.TotalAmount != 900 || len(updated.Items) != 1 || updated.Items[0].SKU != "NEW" || updated.CreatedAt.Format("2006-01-02T15:04:05Z") != "2026-07-12T00:00:00Z" {
 		t.Fatalf("updated = %+v", updated)
 	}
-	if _, err := database.UpdateDraft(ctx, order.UpdateDraftPersistence{ID: created.ID, CustomerName: "Conflict", Currency: "CNY", TotalAmount: 1, Version: 1, UpdatedAt: "2026-07-12T02:00:00Z", Items: []order.PersistenceItem{{ID: "itm_0000000000000000000000000000000c", SKU: "X", Name: "X", Quantity: 1, UnitPrice: 1}}}); !errors.Is(err, order.ErrVersionConflict) {
+	if _, err := database.UpdateDraft(ctx, order.UpdateDraftPersistence{ID: createdOrder.ID, CustomerName: "Conflict", Currency: "CNY", TotalAmount: 1, Version: 1, UpdatedAt: "2026-07-12T02:00:00Z", Items: []order.PersistenceItem{{ID: "itm_0000000000000000000000000000000c", SKU: "X", Name: "X", Quantity: 1, UnitPrice: 1}}}); !errors.Is(err, order.ErrVersionConflict) {
 		t.Fatalf("stale UpdateDraft() error = %v", err)
 	}
 }
@@ -56,10 +60,9 @@ func TestCreateOrderRollsBackWholeAggregate(t *testing.T) {
 	if _, err := database.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	_, err = database.CreateOrder(ctx, order.CreatePersistence{
-		ID: "ord_0000000000000000000000000000000a", CustomerName: "Customer", Currency: "CNY", TotalAmount: 1, CreatedAt: "2026-07-12T00:00:00Z",
-		Items: []order.PersistenceItem{{ID: "bad", Position: 0, SKU: "SKU", Name: "Item", Quantity: 1, UnitPrice: 1}},
-	})
+	persistence := idempotentPersistence("key-rollback")
+	persistence.Create.Items[0].ID = "bad"
+	_, _, err = database.CreateOrderIdempotent(ctx, persistence)
 	if err == nil {
 		t.Fatal("CreateOrder() error = nil")
 	}
@@ -72,6 +75,159 @@ func TestCreateOrderRollsBackWholeAggregate(t *testing.T) {
 	}
 	if orders != 0 || items != 0 {
 		t.Fatalf("orders=%d items=%d", orders, items)
+	}
+}
+
+func TestCreateOrderIdempotentReplaysStoredSnapshot(t *testing.T) {
+	database := openSeededOrderDatabaseForWrite(t)
+	ctx := context.Background()
+	persistence := idempotentPersistence("key-replay")
+	persistence.Create.ID = "ord_0000000000000000000000000000000a"
+	persistence.Record.OrderID = persistence.Create.ID
+	first, created, err := database.CreateOrderIdempotent(ctx, persistence)
+	if err != nil || !created {
+		t.Fatalf("first create = %+v %v %v", first, created, err)
+	}
+	persistence.Record.Scope.RequestDigest[0] = 2
+	persistence.Create.ID = "ord_0000000000000000000000000000000b"
+	second, created, err := database.CreateOrderIdempotent(ctx, persistence)
+	if err != nil || created || second.OrderID != first.OrderID || second.Scope.RequestDigest[0] != 1 {
+		t.Fatalf("replay = %+v %v %v", second, created, err)
+	}
+	var count int
+	if err := database.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM orders WHERE id IN (?, ?)`, first.OrderID, persistence.Create.ID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("created orders = %d", count)
+	}
+}
+
+func TestCreateOrderIdempotentConnectionWaitHonorsDeadline(t *testing.T) {
+	database := openSeededOrderDatabaseForWrite(t)
+	connection, err := database.SQL().Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	persistence := idempotentPersistence("key-deadline")
+	persistence.Create.ID = "ord_0000000000000000000000000000000a"
+	persistence.Record.OrderID = persistence.Create.ID
+	if _, _, err := database.CreateOrderIdempotent(ctx, persistence); !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, order.ErrUnavailable) {
+		t.Fatalf("connection wait error = %v", err)
+	}
+	var count int
+	if err := connection.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM orders WHERE id = ?`, persistence.Create.ID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("orders = %d", count)
+	}
+}
+
+func TestCreateOrderIdempotentAcrossTwoDatabasesCreatesOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "race.db")
+	first, err := store.Open(context.Background(), path, store.OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	if _, err := first.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.Open(context.Background(), path, store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	persistences := []order.IdempotentCreatePersistence{idempotentPersistence("key-race"), idempotentPersistence("key-race")}
+	persistences[0].Create.ID, persistences[0].Record.OrderID = "ord_0000000000000000000000000000000a", "ord_0000000000000000000000000000000a"
+	persistences[1].Create.ID, persistences[1].Record.OrderID = "ord_0000000000000000000000000000000b", "ord_0000000000000000000000000000000b"
+	databases := []*store.DB{first, second}
+	start := make(chan struct{})
+	errorsFound := make([]error, 2)
+	var wait sync.WaitGroup
+	for index := range databases {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			<-start
+			_, _, errorsFound[index] = databases[index].CreateOrderIdempotent(context.Background(), persistences[index])
+		}(index)
+	}
+	close(start)
+	wait.Wait()
+	for _, err := range errorsFound {
+		if err != nil && !errors.Is(err, order.ErrUnavailable) {
+			t.Fatalf("race error = %v", err)
+		}
+	}
+	var orders, keys int
+	if err := first.SQL().QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&orders); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.SQL().QueryRow(`SELECT COUNT(*) FROM idempotency_keys`).Scan(&keys); err != nil {
+		t.Fatal(err)
+	}
+	if orders != 1 || keys != 1 {
+		t.Fatalf("orders=%d keys=%d errors=%v", orders, keys, errorsFound)
+	}
+}
+
+func TestCreateOrderIdempotentClassifiesSQLiteBusy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "busy.db")
+	first, err := store.Open(context.Background(), path, store.OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	if _, err := first.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.SeedOrderDemo(context.Background(), testTime()); err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.Open(context.Background(), path, store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if _, err := second.SQL().Exec(`PRAGMA busy_timeout = 1`); err != nil {
+		t.Fatal(err)
+	}
+	locked, release := make(chan struct{}), make(chan struct{})
+	transactionDone := make(chan error, 1)
+	go func() {
+		transactionDone <- first.WithTx(context.Background(), func(tx *sql.Tx) error {
+			if _, err := tx.Exec(`UPDATE orders SET customer_name = customer_name WHERE id = 'ord_00000000000000000000000000000001'`); err != nil {
+				return err
+			}
+			close(locked)
+			<-release
+			return nil
+		})
+	}()
+	<-locked
+	persistence := idempotentPersistence("key-busy")
+	persistence.Create.ID, persistence.Record.OrderID = "ord_0000000000000000000000000000000a", "ord_0000000000000000000000000000000a"
+	_, _, createErr := second.CreateOrderIdempotent(context.Background(), persistence)
+	close(release)
+	if err := <-transactionDone; err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(createErr, order.ErrUnavailable) {
+		t.Fatalf("busy error = %v", createErr)
+	}
+}
+
+func idempotentPersistence(key string) order.IdempotentCreatePersistence {
+	var digest [32]byte
+	digest[0] = 1
+	return order.IdempotentCreatePersistence{
+		Create: order.CreatePersistence{ID: "ord_0000000000000000000000000000000a", CustomerName: "Customer", Currency: "CNY", TotalAmount: 500, CreatedAt: "2026-07-12T00:00:00Z", Items: []order.PersistenceItem{{ID: "itm_0000000000000000000000000000000a", Position: 0, SKU: "SKU", Name: "Item", Quantity: 2, UnitPrice: 250}}},
+		Record: order.IdempotencyRecord{Scope: order.IdempotencyScope{PrincipalUserID: "user-1", Method: order.CreateMethod, Route: order.CreateRoute, Key: key, RequestDigest: digest}, OrderID: "ord_0000000000000000000000000000000a", SnapshotVersion: 1, SnapshotJSON: []byte(`{"order":{"id":"ord_0000000000000000000000000000000a"}}`), CreatedAt: "2026-07-12T00:00:00Z"},
 	}
 }
 

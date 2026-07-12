@@ -137,8 +137,12 @@ func (repositoryStub) GetOrder(context.Context, string) (order.Order, bool, erro
 	return order.Order{}, false, nil
 }
 
-func (repositoryStub) CreateOrder(context.Context, order.CreatePersistence) (order.Order, error) {
-	return order.Order{}, nil
+func (repositoryStub) GetIdempotency(context.Context, order.IdempotencyScope) (order.IdempotencyRecord, bool, error) {
+	return order.IdempotencyRecord{}, false, nil
+}
+
+func (repositoryStub) CreateOrderIdempotent(_ context.Context, persistence order.IdempotentCreatePersistence) (order.IdempotencyRecord, bool, error) {
+	return persistence.Record, true, nil
 }
 
 func (repositoryStub) UpdateDraft(context.Context, order.UpdateDraftPersistence) (order.Order, error) {

@@ -2,10 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"math"
+	"mime"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +21,13 @@ import (
 type OrderService interface {
 	List(context.Context, auth.Principal, order.ListQuery) (order.Page, error)
 	Get(context.Context, auth.Principal, string) (order.Order, error)
+	Create(context.Context, auth.Principal, string, order.CreateCommand) (order.Order, error)
+	Edit(context.Context, auth.Principal, string, order.EditCommand) (order.Order, error)
 }
+
+const orderWriteBodyLimit = 128 * 1024
+
+var validIdempotencyKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 type orderDTO struct {
 	ID               string              `json:"id"`
@@ -89,15 +99,53 @@ func registerOrderRoutes(mux *http.ServeMux, authService AuthService, service Or
 		}
 		writeJSON(response, http.StatusOK, makeOrderDTO(principal, result, true))
 	}))
-	mux.Handle("/api/v1/orders", readOnlyOrderRoute(listHandler))
-	mux.Handle("/api/v1/orders/{orderId}", readOnlyOrderRoute(detailHandler))
+	createHandler := RequireAuthentication(authService)(RequireRoles(auth.RoleOperator, auth.RoleAdmin)(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		key := request.Header.Get("Idempotency-Key")
+		if len(request.Header.Values("Idempotency-Key")) != 1 || !validIdempotencyKey.MatchString(key) {
+			writeErrorDetails(response, request, http.StatusBadRequest, "INVALID_REQUEST", "invalid request", []errorDetail{{Field: "Idempotency-Key", Message: "must be a valid idempotency key"}})
+			return
+		}
+		command, err := decodeCreateCommand(response, request)
+		if err != nil {
+			handleOrderInputError(response, request, err)
+			return
+		}
+		principal, _ := PrincipalFromContext(request.Context())
+		result, err := service.Create(request.Context(), principal, key, command)
+		if handleOrderError(response, request, err) {
+			return
+		}
+		writeJSON(response, http.StatusCreated, makeOrderDTO(principal, result, true))
+	})))
+	editHandler := RequireAuthentication(authService)(RequireRoles(auth.RoleOperator, auth.RoleAdmin)(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		id := request.PathValue("orderId")
+		if !order.ValidOrderID(id) {
+			writeError(response, request, http.StatusNotFound, "NOT_FOUND", "order not found")
+			return
+		}
+		command, err := decodeEditCommand(response, request)
+		if err != nil {
+			handleOrderInputError(response, request, err)
+			return
+		}
+		principal, _ := PrincipalFromContext(request.Context())
+		result, err := service.Edit(request.Context(), principal, id, command)
+		if handleOrderError(response, request, err) {
+			return
+		}
+		writeJSON(response, http.StatusOK, makeOrderDTO(principal, result, true))
+	})))
+	mux.Handle("/api/v1/orders", orderCollectionRoute(listHandler, createHandler))
+	mux.Handle("/api/v1/orders/{orderId}", orderDetailRoute(detailHandler, editHandler))
 }
 
-func readOnlyOrderRoute(get http.Handler) http.Handler {
+func orderCollectionRoute(get, post http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.Method {
 		case http.MethodGet:
 			get.ServeHTTP(response, request)
+		case http.MethodPost:
+			post.ServeHTTP(response, request)
 		case http.MethodHead:
 			response.Header().Set("Allow", http.MethodGet)
 			writeError(response, request, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
@@ -105,6 +153,115 @@ func readOnlyOrderRoute(get http.Handler) http.Handler {
 			http.NotFound(response, request)
 		}
 	})
+}
+
+func orderDetailRoute(get, patch http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.Method {
+		case http.MethodGet:
+			get.ServeHTTP(response, request)
+		case http.MethodPatch:
+			patch.ServeHTTP(response, request)
+		case http.MethodHead:
+			response.Header().Set("Allow", http.MethodGet)
+			writeError(response, request, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		default:
+			http.NotFound(response, request)
+		}
+	})
+}
+
+type writeItemInput struct {
+	SKU       string          `json:"sku"`
+	Name      string          `json:"name"`
+	Quantity  json.RawMessage `json:"quantity"`
+	UnitPrice json.RawMessage `json:"unitPrice"`
+}
+
+type createOrderInput struct {
+	CustomerName string           `json:"customerName"`
+	Currency     string           `json:"currency"`
+	Items        []writeItemInput `json:"items"`
+}
+
+func decodeCreateCommand(response http.ResponseWriter, request *http.Request) (order.CreateCommand, error) {
+	var input createOrderInput
+	if err := decodeOrderJSON(response, request, &input); err != nil {
+		return order.CreateCommand{}, err
+	}
+	items, err := parseWriteItems(input.Items)
+	if err != nil {
+		return order.CreateCommand{}, err
+	}
+	return order.CreateCommand{CustomerName: input.CustomerName, Currency: input.Currency, Items: items}, nil
+}
+
+func decodeEditCommand(response http.ResponseWriter, request *http.Request) (order.EditCommand, error) {
+	var input struct {
+		createOrderInput
+		Version json.RawMessage `json:"version"`
+	}
+	if err := decodeOrderJSON(response, request, &input); err != nil {
+		return order.EditCommand{}, err
+	}
+	items, err := parseWriteItems(input.Items)
+	if err != nil {
+		return order.EditCommand{}, err
+	}
+	version, err := parseRawInteger(input.Version)
+	if err != nil {
+		return order.EditCommand{}, errors.New("invalid integer field")
+	}
+	return order.EditCommand{CustomerName: input.CustomerName, Currency: input.Currency, Items: items, Version: version}, nil
+}
+
+func decodeOrderJSON(response http.ResponseWriter, request *http.Request, destination any) error {
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return errUnsupportedMedia
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, orderWriteBodyLimit))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return errors.New("invalid JSON body")
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return errors.New("invalid JSON body")
+	}
+	return nil
+}
+
+func parseWriteItems(inputs []writeItemInput) ([]order.ItemCommand, error) {
+	items := make([]order.ItemCommand, 0, len(inputs))
+	for _, input := range inputs {
+		quantity, err := parseRawInteger(input.Quantity)
+		if err != nil {
+			return nil, errors.New("invalid integer field")
+		}
+		unitPrice, err := parseRawInteger(input.UnitPrice)
+		if err != nil {
+			return nil, errors.New("invalid integer field")
+		}
+		items = append(items, order.ItemCommand{SKU: input.SKU, Name: input.Name, Quantity: quantity, UnitPrice: unitPrice})
+	}
+	return items, nil
+}
+
+func parseRawInteger(raw json.RawMessage) (int64, error) {
+	if len(raw) == 0 {
+		return 0, errors.New("missing integer")
+	}
+	return order.ParseIntegerLexeme(string(raw))
+}
+
+var errUnsupportedMedia = errors.New("unsupported media type")
+
+func handleOrderInputError(response http.ResponseWriter, request *http.Request, err error) {
+	if errors.Is(err, errUnsupportedMedia) {
+		writeError(response, request, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE", "content type must be application/json")
+		return
+	}
+	writeError(response, request, http.StatusBadRequest, "INVALID_REQUEST", "invalid request")
 }
 
 func makeOrderDTO(principal auth.Principal, value order.Order, includeItems bool) orderDTO {
@@ -132,6 +289,31 @@ func handleOrderError(response http.ResponseWriter, request *http.Request, err e
 	}
 	if errors.Is(err, order.ErrNotFound) {
 		writeError(response, request, http.StatusNotFound, "NOT_FOUND", "order not found")
+		return true
+	}
+	if details, ok := order.ValidationDetails(err); ok {
+		mapped := make([]errorDetail, 0, len(details))
+		for _, detail := range details {
+			mapped = append(mapped, errorDetail{Field: detail.Field, Message: detail.Message})
+		}
+		writeErrorDetails(response, request, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "validation failed", mapped)
+		return true
+	}
+	if errors.Is(err, order.ErrVersionConflict) {
+		writeError(response, request, http.StatusConflict, "VERSION_CONFLICT", "order version conflict")
+		return true
+	}
+	if errors.Is(err, order.ErrStateConflict) {
+		writeError(response, request, http.StatusConflict, "STATE_CONFLICT", "order state conflict")
+		return true
+	}
+	if errors.Is(err, order.ErrIdempotencyConflict) {
+		writeError(response, request, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "idempotency key conflict")
+		return true
+	}
+	if errors.Is(err, order.ErrUnavailable) {
+		response.Header().Set("Retry-After", "1")
+		writeError(response, request, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "service unavailable")
 		return true
 	}
 	writeError(response, request, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")

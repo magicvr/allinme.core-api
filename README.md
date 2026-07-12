@@ -6,7 +6,7 @@ Go API service for Allinme.
 
 本仓库是 Schema-UI 的后端消费者和业务 API 宿主。涉及页面结构、数据源、Action、Reaction、版本协商或前后端交互时，必须以 [`schema-ui-docs`](../schema-ui-docs/README.md) 的当前稳定文档与机器契约为核心契约；本仓文档只说明 API 实现、接入方式和验证证据，不重新定义协议。
 
-当前已实现阶段一运行基础、阶段二认证授权和阶段三 M1 订单只读查询：SQLite migration/seed/reset、`GET /healthz`、`GET /readyz`、login/me/logout JWT Bearer API，以及认证后的订单列表/详情 API。订单写入与履约、附件、看板和 Schema-UI 页面仍按 [`docs/06-implementation-roadmap.md`](./docs/06-implementation-roadmap.md) 分阶段实施。
+当前已实现阶段一运行基础、阶段二认证授权，以及阶段三订单查询和草稿写入：SQLite migration/seed/reset、`GET /healthz`、`GET /readyz`、login/me/logout JWT Bearer API、订单列表/详情，以及带幂等快照的订单创建和带 version 乐观锁的草稿编辑。订单履约、附件、看板和 Schema-UI 页面仍按 [`docs/06-implementation-roadmap.md`](./docs/06-implementation-roadmap.md) 分阶段实施。
 
 ## Development
 

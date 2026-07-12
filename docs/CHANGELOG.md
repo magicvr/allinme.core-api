@@ -6,6 +6,8 @@
 
 ### Added
 
+- 实现阶段三 M2 订单草稿创建/编辑：严格 JSON 与整数词法、服务端金额计算、version 乐观锁、四角色授权和真实 JWT/SQLite 集成。
+- 增加 principal/method/route/key 作用域幂等、normalized SHA-256 digest、不可变 snapshot v1、重放/冲突、双 DB 竞争、连接等待取消及结构化 SQLite BUSY/LOCKED 分类。
 - 实现阶段三 M1 订单只读纵切：参数化列表查询、同 snapshot COUNT/page、详情明细、四角色真实认证访问和只读 route gate。
 - 增加订单查询 DTO/capability、稳定排序与分页边界、查询次数 observer、损坏数据/扫描失败和基础 app 回退测试。
 - 实现阶段二认证授权：bcrypt 本地账号、严格 HS256 JWT、SQLite 可撤销 session、四角色策略和 login/me/logout API。

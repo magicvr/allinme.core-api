@@ -116,36 +116,80 @@ func (database *DB) GetOrder(ctx context.Context, id string) (order.Order, bool,
 	return result, true, nil
 }
 
-func (database *DB) CreateOrder(ctx context.Context, persistence order.CreatePersistence) (result order.Order, resultErr error) {
+func (database *DB) CreateOrderIdempotent(ctx context.Context, persistence order.IdempotentCreatePersistence) (result order.IdempotencyRecord, created bool, resultErr error) {
+	defer func() { resultErr = classifyOrderError(resultErr) }()
 	transaction, err := database.sql.BeginTx(ctx, nil)
 	if err != nil {
-		return order.Order{}, fmt.Errorf("begin create order transaction: %w", err)
+		return order.IdempotencyRecord{}, false, fmt.Errorf("begin create order transaction: %w", err)
 	}
 	defer func() {
 		if resultErr != nil {
 			_ = transaction.Rollback()
 		}
 	}()
-	if _, err := transaction.ExecContext(ctx, `INSERT INTO orders(id, customer_name, status, payment_status, currency, total_amount, version, created_at, updated_at) VALUES (?, ?, 'DRAFT', 'UNPAID', ?, ?, 1, ?, ?)`, persistence.ID, persistence.CustomerName, persistence.Currency, persistence.TotalAmount, persistence.CreatedAt, persistence.CreatedAt); err != nil {
-		return order.Order{}, fmt.Errorf("insert order: %w", err)
-	}
-	if err := insertOrderItems(ctx, transaction, persistence.ID, persistence.Items); err != nil {
-		return order.Order{}, err
-	}
-	result, found, err := getOrderTx(ctx, transaction, persistence.ID)
+	insert, err := transaction.ExecContext(ctx, `INSERT OR IGNORE INTO idempotency_keys(principal_user_id, method, route, idempotency_key, request_digest, order_id, snapshot_version, snapshot_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, persistence.Record.Scope.PrincipalUserID, persistence.Record.Scope.Method, persistence.Record.Scope.Route, persistence.Record.Scope.Key, persistence.Record.Scope.RequestDigest[:], persistence.Record.OrderID, persistence.Record.SnapshotVersion, string(persistence.Record.SnapshotJSON), persistence.Record.CreatedAt)
 	if err != nil {
-		return order.Order{}, err
+		return order.IdempotencyRecord{}, false, fmt.Errorf("reserve idempotency key: %w", err)
 	}
-	if !found {
-		return order.Order{}, errors.New("created order is missing")
+	affected, err := insert.RowsAffected()
+	if err != nil {
+		return order.IdempotencyRecord{}, false, fmt.Errorf("read idempotency reservation rows: %w", err)
+	}
+	if affected == 0 {
+		result, err = getIdempotencyRecordTx(ctx, transaction, persistence.Record.Scope)
+		if err != nil {
+			return order.IdempotencyRecord{}, false, err
+		}
+		if err := transaction.Commit(); err != nil {
+			return order.IdempotencyRecord{}, false, fmt.Errorf("commit idempotency replay transaction: %w", err)
+		}
+		return result, false, nil
+	}
+	create := persistence.Create
+	if _, err := transaction.ExecContext(ctx, `INSERT INTO orders(id, customer_name, status, payment_status, currency, total_amount, version, created_at, updated_at) VALUES (?, ?, 'DRAFT', 'UNPAID', ?, ?, 1, ?, ?)`, create.ID, create.CustomerName, create.Currency, create.TotalAmount, create.CreatedAt, create.CreatedAt); err != nil {
+		return order.IdempotencyRecord{}, false, fmt.Errorf("insert order: %w", err)
+	}
+	if err := insertOrderItems(ctx, transaction, create.ID, create.Items); err != nil {
+		return order.IdempotencyRecord{}, false, err
 	}
 	if err := transaction.Commit(); err != nil {
-		return order.Order{}, fmt.Errorf("commit create order transaction: %w", err)
+		return order.IdempotencyRecord{}, false, fmt.Errorf("commit create order transaction: %w", err)
 	}
+	return persistence.Record, true, nil
+}
+
+func (database *DB) GetIdempotency(ctx context.Context, scope order.IdempotencyScope) (order.IdempotencyRecord, bool, error) {
+	var result order.IdempotencyRecord
+	var digest []byte
+	err := database.sql.QueryRowContext(ctx, `SELECT principal_user_id, method, route, idempotency_key, request_digest, order_id, snapshot_version, snapshot_json, created_at FROM idempotency_keys WHERE principal_user_id = ? AND method = ? AND route = ? AND idempotency_key = ?`, scope.PrincipalUserID, scope.Method, scope.Route, scope.Key).Scan(&result.Scope.PrincipalUserID, &result.Scope.Method, &result.Scope.Route, &result.Scope.Key, &digest, &result.OrderID, &result.SnapshotVersion, &result.SnapshotJSON, &result.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return order.IdempotencyRecord{}, false, nil
+	}
+	if err != nil {
+		return order.IdempotencyRecord{}, false, classifyOrderError(fmt.Errorf("read idempotency key: %w", err))
+	}
+	if len(digest) != len(result.Scope.RequestDigest) {
+		return order.IdempotencyRecord{}, false, order.Internal(errors.New("invalid idempotency digest"))
+	}
+	copy(result.Scope.RequestDigest[:], digest)
+	return result, true, nil
+}
+
+func getIdempotencyRecordTx(ctx context.Context, transaction *sql.Tx, scope order.IdempotencyScope) (order.IdempotencyRecord, error) {
+	var result order.IdempotencyRecord
+	var digest []byte
+	if err := transaction.QueryRowContext(ctx, `SELECT principal_user_id, method, route, idempotency_key, request_digest, order_id, snapshot_version, snapshot_json, created_at FROM idempotency_keys WHERE principal_user_id = ? AND method = ? AND route = ? AND idempotency_key = ?`, scope.PrincipalUserID, scope.Method, scope.Route, scope.Key).Scan(&result.Scope.PrincipalUserID, &result.Scope.Method, &result.Scope.Route, &result.Scope.Key, &digest, &result.OrderID, &result.SnapshotVersion, &result.SnapshotJSON, &result.CreatedAt); err != nil {
+		return order.IdempotencyRecord{}, fmt.Errorf("read idempotency replay: %w", err)
+	}
+	if len(digest) != len(result.Scope.RequestDigest) {
+		return order.IdempotencyRecord{}, errors.New("invalid idempotency digest")
+	}
+	copy(result.Scope.RequestDigest[:], digest)
 	return result, nil
 }
 
 func (database *DB) UpdateDraft(ctx context.Context, persistence order.UpdateDraftPersistence) (result order.Order, resultErr error) {
+	defer func() { resultErr = classifyOrderError(resultErr) }()
 	transaction, err := database.sql.BeginTx(ctx, nil)
 	if err != nil {
 		return order.Order{}, fmt.Errorf("begin edit order transaction: %w", err)

@@ -129,16 +129,36 @@ type Page struct {
 type Repository interface {
 	ListOrders(context.Context, ListQuery) (Page, error)
 	GetOrder(context.Context, string) (Order, bool, error)
-	CreateOrder(context.Context, CreatePersistence) (Order, error)
+	GetIdempotency(context.Context, IdempotencyScope) (IdempotencyRecord, bool, error)
+	CreateOrderIdempotent(context.Context, IdempotentCreatePersistence) (IdempotencyRecord, bool, error)
 	UpdateDraft(context.Context, UpdateDraftPersistence) (Order, error)
 }
 
 var (
-	ErrForbidden       = errors.New("order access forbidden")
-	ErrNotFound        = errors.New("order not found")
-	ErrVersionConflict = errors.New("order version conflict")
-	ErrStateConflict   = errors.New("order state conflict")
+	ErrForbidden           = errors.New("order access forbidden")
+	ErrNotFound            = errors.New("order not found")
+	ErrVersionConflict     = errors.New("order version conflict")
+	ErrStateConflict       = errors.New("order state conflict")
+	ErrIdempotencyConflict = errors.New("order idempotency conflict")
+	ErrInternal            = errors.New("order internal error")
+	ErrUnavailable         = errors.New("order store unavailable")
 )
+
+type classifiedError struct {
+	kind  error
+	cause error
+}
+
+func (err classifiedError) Error() string   { return err.kind.Error() }
+func (err classifiedError) Unwrap() []error { return []error{err.kind, err.cause} }
+
+func Internal(cause error) error {
+	return classifiedError{kind: ErrInternal, cause: cause}
+}
+
+func Unavailable(cause error) error {
+	return classifiedError{kind: ErrUnavailable, cause: cause}
+}
 
 type Service struct {
 	repository Repository
