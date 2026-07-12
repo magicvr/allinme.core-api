@@ -111,6 +111,19 @@ func (service *Service) Edit(ctx context.Context, principal auth.Principal, id s
 	if err != nil {
 		return Order{}, err
 	}
+	current, found, err := service.repository.GetOrder(ctx, id)
+	if err != nil {
+		return Order{}, fmt.Errorf("read order before edit: %w", err)
+	}
+	if !found {
+		return Order{}, ErrNotFound
+	}
+	if current.Version != command.Version {
+		return Order{}, ErrVersionConflict
+	}
+	if current.Status != StatusDraft {
+		return Order{}, ErrStateConflict
+	}
 	items, err := service.persistenceItems(normalized.Items)
 	if err != nil {
 		return Order{}, err

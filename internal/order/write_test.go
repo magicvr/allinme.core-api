@@ -77,7 +77,7 @@ func TestParseIntegerLexemeRejectsNonIntegerJSONForms(t *testing.T) {
 }
 
 func TestEditPassesVersionAndNewTimestamp(t *testing.T) {
-	repository := &writeRepository{}
+	repository := &writeRepository{current: &order.Order{Status: order.StatusDraft, Version: 7}}
 	service, err := order.NewServiceWithDependencies(repository, func() time.Time { return time.Date(2026, 7, 12, 1, 2, 3, 0, time.UTC) }, nil, func() (string, error) { return "itm_00000000000000000000000000000009", nil })
 	if err != nil {
 		t.Fatal(err)
@@ -91,18 +91,50 @@ func TestEditPassesVersionAndNewTimestamp(t *testing.T) {
 	}
 }
 
+func TestEditClassifiesResourceBeforeGeneratingItemIDs(t *testing.T) {
+	tests := []struct {
+		name    string
+		current *order.Order
+		want    error
+	}{
+		{name: "missing", want: order.ErrNotFound},
+		{name: "stale version", current: &order.Order{Status: order.StatusDraft, Version: 2}, want: order.ErrVersionConflict},
+		{name: "non draft", current: &order.Order{Status: order.StatusConfirmed, Version: 1}, want: order.ErrStateConflict},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			generatorCalls := 0
+			service, err := order.NewServiceWithDependencies(&writeRepository{current: test.current}, nil, nil, func() (string, error) {
+				generatorCalls++
+				return "", errors.New("random source failed")
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = service.Edit(context.Background(), auth.Principal{Role: auth.RoleAdmin}, "ord_00000000000000000000000000000001", order.EditCommand{CustomerName: "Customer", Currency: "CNY", Items: []order.ItemCommand{{SKU: "SKU", Name: "Item", Quantity: 1, UnitPrice: 1}}, Version: 1})
+			if !errors.Is(err, test.want) || generatorCalls != 0 {
+				t.Fatalf("Edit error = %v, generator calls = %d", err, generatorCalls)
+			}
+		})
+	}
+}
+
 type writeRepository struct {
 	created      order.IdempotentCreatePersistence
 	updated      order.UpdateDraftPersistence
 	transitioned order.TransitionPersistence
 	existing     *order.IdempotencyRecord
+	current      *order.Order
 }
 
 func (repository *writeRepository) ListOrders(context.Context, order.ListQuery) (order.Page, error) {
 	return order.Page{}, nil
 }
 func (repository *writeRepository) GetOrder(context.Context, string) (order.Order, bool, error) {
-	return order.Order{}, false, nil
+	if repository.current == nil {
+		return order.Order{}, false, nil
+	}
+	return *repository.current, true, nil
 }
 func (repository *writeRepository) GetIdempotency(context.Context, order.IdempotencyScope) (order.IdempotencyRecord, bool, error) {
 	if repository.existing == nil {

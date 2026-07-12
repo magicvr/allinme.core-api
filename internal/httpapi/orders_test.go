@@ -52,7 +52,7 @@ func TestOrderRoutesQueryDetailAndErrors(t *testing.T) {
 		t.Fatalf("detail = %d %s", response.Code, response.Body.String())
 	}
 
-	for _, path := range []string{"/api/v1/orders?page=1&page=2", "/api/v1/orders?sort=invalid", "/api/v1/orders?createdFrom=2026-01-02T00:00:00Z&createdTo=2026-01-01T00:00:00Z"} {
+	for _, path := range []string{"/api/v1/orders?page=1&page=2", "/api/v1/orders?sort=invalid", "/api/v1/orders?createdFrom=2026-01-02T00:00:00Z&createdTo=2026-01-01T00:00:00Z", "/api/v1/orders?q=%zz", "/api/v1/orders?q=valid;ignored=true"} {
 		request = httptest.NewRequest(http.MethodGet, path, nil)
 		request.Header.Set("Authorization", "Bearer access-token")
 		response = httptest.NewRecorder()

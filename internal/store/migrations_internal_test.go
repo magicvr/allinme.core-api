@@ -2,12 +2,13 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
-	"errors"
 	"path/filepath"
 	"strconv"
 	"testing"
 
+	"github.com/magicvr/allinme.core-api/internal/auth"
 	"github.com/magicvr/allinme.core-api/internal/order"
 )
 
@@ -141,7 +142,7 @@ func TestIdempotencyMigrationFailureKeepsVersionThreeAndRollsBackPartialSchema(t
 	}
 }
 
-func TestVersionFourIdempotencyRowsUpgradeWithoutUnsafeReplay(t *testing.T) {
+func TestVersionFourIdempotencyRowsUpgradeAndReplay(t *testing.T) {
 	ctx := context.Background()
 	database, err := Open(ctx, filepath.Join(t.TempDir(), "allinme.db"), OpenCreate)
 	if err != nil {
@@ -163,7 +164,10 @@ func TestVersionFourIdempotencyRowsUpgradeWithoutUnsafeReplay(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := database.SQL().ExecContext(ctx, `INSERT INTO idempotency_keys(principal_user_id, method, route, idempotency_key, request_digest, order_id, snapshot_version, snapshot_json, created_at) VALUES ('user-1', 'POST', '/api/v1/orders', 'legacy-key', zeroblob(32), 'ord_00000000000000000000000000000001', 1, '{"order":{}}', '2026-01-01T00:00:00Z')`); err != nil {
+	requestJSON := `{"operation":"POST /api/v1/orders","customerName":"Legacy","currency":"CNY","items":[{"sku":"SKU","name":"Item","quantity":1,"unitPrice":100}]}`
+	requestDigest := sha256.Sum256([]byte(requestJSON))
+	snapshotJSON := `{"order":{"id":"ord_00000000000000000000000000000001","customerName":"Legacy","status":"DRAFT","paymentStatus":"UNPAID","currency":"CNY","totalAmount":100,"version":1,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","items":[{"id":"itm_00000000000000000000000000000001","sku":"SKU","name":"Item","quantity":1,"unitPrice":100}]}}`
+	if _, err := database.SQL().ExecContext(ctx, `INSERT INTO idempotency_keys(principal_user_id, method, route, idempotency_key, request_digest, order_id, snapshot_version, snapshot_json, created_at) VALUES ('user-1', 'POST', '/api/v1/orders', 'legacy-key', ?, 'ord_00000000000000000000000000000001', 1, ?, '2026-01-01T00:00:00Z')`, requestDigest[:], snapshotJSON); err != nil {
 		t.Fatal(err)
 	}
 	result, err := database.Migrate(ctx)
@@ -177,12 +181,20 @@ func TestVersionFourIdempotencyRowsUpgradeWithoutUnsafeReplay(t *testing.T) {
 	if err := database.SQL().QueryRowContext(ctx, `SELECT snapshot_digest FROM idempotency_keys WHERE idempotency_key = 'legacy-key'`).Scan(&snapshotDigest); err != nil {
 		t.Fatal(err)
 	}
-	if snapshotDigest != nil {
-		t.Fatalf("legacy snapshot digest = %x, want NULL", snapshotDigest)
+	expectedSnapshotDigest := sha256.Sum256([]byte(snapshotJSON))
+	if string(snapshotDigest) != string(expectedSnapshotDigest[:]) {
+		t.Fatalf("legacy snapshot digest = %x, want %x", snapshotDigest, expectedSnapshotDigest)
 	}
-	_, found, err := database.GetIdempotency(ctx, order.IdempotencyScope{PrincipalUserID: "user-1", Method: "POST", Route: "/api/v1/orders", Key: "legacy-key"})
-	if found || !errors.Is(err, order.ErrInternal) {
-		t.Fatalf("legacy replay found=%v error=%v", found, err)
+	service, err := order.NewService(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := service.Create(ctx, auth.Principal{UserID: "user-1", Role: auth.RoleOperator}, "legacy-key", order.CreateCommand{CustomerName: "Legacy", Currency: "CNY", Items: []order.ItemCommand{{SKU: "SKU", Name: "Item", Quantity: 1, UnitPrice: 100}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.ID != "ord_00000000000000000000000000000001" || replayed.TotalAmount != 100 || len(replayed.Items) != 1 {
+		t.Fatalf("legacy replay = %+v", replayed)
 	}
 }
 

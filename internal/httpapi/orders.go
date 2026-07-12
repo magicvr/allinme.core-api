@@ -68,7 +68,12 @@ func registerOrderRoutes(mux *http.ServeMux, authService AuthService, service Or
 	}
 	listHandler := RequireAuthentication(authService)(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		principal, _ := PrincipalFromContext(request.Context())
-		query, err := parseOrderListQuery(request.URL.Query())
+		values, err := url.ParseQuery(request.URL.RawQuery)
+		if err != nil {
+			writeErrorDetails(response, request, http.StatusBadRequest, "INVALID_REQUEST", "invalid request", []errorDetail{{Field: "query", Message: "must be valid URL-encoded query parameters"}})
+			return
+		}
+		query, err := parseOrderListQuery(values)
 		if err != nil {
 			var fieldError orderQueryError
 			if errors.As(err, &fieldError) {

@@ -10,10 +10,9 @@ import (
 	"time"
 )
 
-func TestRunWaitsForShutdownCompletionAfterTimeout(t *testing.T) {
+func TestRunForceClosesServerAfterShutdownTimeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	serveStopped := make(chan struct{})
-	activeRequestDone := make(chan struct{})
 	application := &API{
 		server:          &http.Server{},
 		logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -26,12 +25,13 @@ func TestRunWaitsForShutdownCompletionAfterTimeout(t *testing.T) {
 	shutdownCalls := 0
 	application.shutdown = func(shutdownCtx context.Context) error {
 		shutdownCalls++
-		if shutdownCalls == 1 {
-			close(serveStopped)
-			<-shutdownCtx.Done()
-			return shutdownCtx.Err()
-		}
-		<-activeRequestDone
+		<-shutdownCtx.Done()
+		return shutdownCtx.Err()
+	}
+	closeCalls := 0
+	application.closeServer = func() error {
+		closeCalls++
+		close(serveStopped)
 		return nil
 	}
 
@@ -41,20 +41,32 @@ func TestRunWaitsForShutdownCompletionAfterTimeout(t *testing.T) {
 
 	select {
 	case err := <-runDone:
-		t.Fatalf("Run returned before active request completed: %v", err)
-	case <-time.After(20 * time.Millisecond):
-	}
-	close(activeRequestDone)
-	select {
-	case err := <-runDone:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			t.Fatal(err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("Run did not finish after shutdown completed")
+		t.Fatal("Run did not finish after forced close")
 	}
-	if shutdownCalls != 2 {
-		t.Fatalf("shutdown calls = %d, want 2", shutdownCalls)
+	if shutdownCalls != 1 || closeCalls != 1 {
+		t.Fatalf("shutdown calls = %d, close calls = %d", shutdownCalls, closeCalls)
+	}
+}
+
+func TestCloseStopsServerBeforeReturning(t *testing.T) {
+	application := &API{
+		server:          &http.Server{},
+		logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		shutdownTimeout: time.Second,
+	}
+	shutdownCalled := false
+	application.shutdown = func(context.Context) error {
+		shutdownCalled = true
+		return nil
+	}
+	application.Close()
+	application.Close()
+	if !shutdownCalled {
+		t.Fatal("Close did not stop HTTP server")
 	}
 }
 

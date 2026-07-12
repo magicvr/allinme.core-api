@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
 	"fmt"
@@ -46,6 +47,11 @@ func (database *DB) Migrate(ctx context.Context) (MigrationResult, error) {
 			if _, err := transaction.ExecContext(ctx, migration.sql); err != nil {
 				return fmt.Errorf("execute migration %d: %w", migration.version, err)
 			}
+			if migration.version == 5 {
+				if err := backfillSnapshotDigests(ctx, transaction); err != nil {
+					return err
+				}
+			}
 			if _, err := transaction.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", migration.version)); err != nil {
 				return fmt.Errorf("set schema version %d: %w", migration.version, err)
 			}
@@ -56,6 +62,43 @@ func (database *DB) Migrate(ctx context.Context) (MigrationResult, error) {
 		result.ToVersion = migration.version
 	}
 	return result, nil
+}
+
+func backfillSnapshotDigests(ctx context.Context, transaction *sql.Tx) error {
+	type snapshotRecord struct {
+		principalUserID string
+		method          string
+		route           string
+		key             string
+		snapshotJSON    string
+	}
+	rows, err := transaction.QueryContext(ctx, `SELECT principal_user_id, method, route, idempotency_key, snapshot_json FROM idempotency_keys WHERE snapshot_digest IS NULL`)
+	if err != nil {
+		return fmt.Errorf("query legacy idempotency snapshots: %w", err)
+	}
+	var records []snapshotRecord
+	for rows.Next() {
+		var record snapshotRecord
+		if err := rows.Scan(&record.principalUserID, &record.method, &record.route, &record.key, &record.snapshotJSON); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan legacy idempotency snapshot: %w", err)
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate legacy idempotency snapshots: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close legacy idempotency snapshots: %w", err)
+	}
+	for _, record := range records {
+		digest := sha256.Sum256([]byte(record.snapshotJSON))
+		if _, err := transaction.ExecContext(ctx, `UPDATE idempotency_keys SET snapshot_digest = ? WHERE principal_user_id = ? AND method = ? AND route = ? AND idempotency_key = ? AND snapshot_digest IS NULL`, digest[:], record.principalUserID, record.method, record.route, record.key); err != nil {
+			return fmt.Errorf("backfill legacy idempotency snapshot digest: %w", err)
+		}
+	}
+	return nil
 }
 
 func (database *DB) SchemaVersion(ctx context.Context) (int, error) {

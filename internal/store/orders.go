@@ -8,6 +8,7 @@ import (
 	"math"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/magicvr/allinme.core-api/internal/order"
 )
@@ -57,6 +58,15 @@ func (database *DB) ListOrders(ctx context.Context, query order.ListQuery) (page
 	}
 	if err := rows.Err(); err != nil {
 		return order.Page{}, fmt.Errorf("iterate orders: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return order.Page{}, fmt.Errorf("close order rows: %w", err)
+	}
+	if len(page.Items) > 0 {
+		database.observeQuery()
+	}
+	if err := validatePageOrderAggregates(ctx, transaction, page.Items); err != nil {
+		return order.Page{}, err
 	}
 	if err := transaction.Commit(); err != nil {
 		return order.Page{}, fmt.Errorf("commit order list transaction: %w", err)
@@ -368,28 +378,112 @@ func getOrderTx(ctx context.Context, transaction *sql.Tx, id string) (order.Orde
 	if err != nil || !found {
 		return order.Order{}, found, err
 	}
-	rows, err := transaction.QueryContext(ctx, `SELECT id, sku, name, quantity, unit_price FROM order_items WHERE order_id = ? ORDER BY position`, id)
+	rows, err := transaction.QueryContext(ctx, `SELECT id, position, sku, name, quantity, unit_price FROM order_items WHERE order_id = ? ORDER BY position`, id)
 	if err != nil {
 		return order.Order{}, false, fmt.Errorf("query order items: %w", err)
 	}
 	defer rows.Close()
+	validator := newOrderAggregateValidator(result.TotalAmount)
 	for rows.Next() {
 		var item order.Item
-		if err := rows.Scan(&item.ID, &item.SKU, &item.Name, &item.Quantity, &item.UnitPrice); err != nil {
+		var position int64
+		if err := rows.Scan(&item.ID, &position, &item.SKU, &item.Name, &item.Quantity, &item.UnitPrice); err != nil {
 			return order.Order{}, false, fmt.Errorf("scan order item: %w", err)
 		}
-		if !order.ValidItemID(item.ID) || item.SKU == "" || item.Name == "" || item.Quantity < 1 || item.Quantity > order.MaxQuantity || item.UnitPrice < 1 || item.UnitPrice > order.MaxAmount {
-			return order.Order{}, false, errors.New("invalid order item data")
+		if err := validator.add(position, item); err != nil {
+			return order.Order{}, false, err
 		}
 		result.Items = append(result.Items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return order.Order{}, false, fmt.Errorf("iterate order items: %w", err)
 	}
-	if len(result.Items) == 0 {
-		return order.Order{}, false, errors.New("order has no items")
+	if err := validator.finish(); err != nil {
+		return order.Order{}, false, err
 	}
 	return result, true, nil
+}
+
+func validatePageOrderAggregates(ctx context.Context, transaction *sql.Tx, orders []order.Order) error {
+	if len(orders) == 0 {
+		return nil
+	}
+	validators := make(map[string]*orderAggregateValidator, len(orders))
+	arguments := make([]any, 0, len(orders))
+	placeholders := make([]string, 0, len(orders))
+	for _, value := range orders {
+		validators[value.ID] = newOrderAggregateValidator(value.TotalAmount)
+		arguments = append(arguments, value.ID)
+		placeholders = append(placeholders, "?")
+	}
+	rows, err := transaction.QueryContext(ctx, `SELECT order_id, id, position, sku, name, quantity, unit_price FROM order_items WHERE order_id IN (`+strings.Join(placeholders, ",")+`) ORDER BY order_id, position`, arguments...)
+	if err != nil {
+		return fmt.Errorf("query listed order items: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var orderID string
+		var item order.Item
+		var position int64
+		if err := rows.Scan(&orderID, &item.ID, &position, &item.SKU, &item.Name, &item.Quantity, &item.UnitPrice); err != nil {
+			return fmt.Errorf("scan listed order item: %w", err)
+		}
+		validator := validators[orderID]
+		if validator == nil {
+			return errors.New("order item references unexpected listed order")
+		}
+		if err := validator.add(position, item); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate listed order items: %w", err)
+	}
+	for _, validator := range validators {
+		if err := validator.finish(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type orderAggregateValidator struct {
+	expectedTotal int64
+	total         int64
+	nextPosition  int64
+	itemCount     int
+}
+
+func newOrderAggregateValidator(expectedTotal int64) *orderAggregateValidator {
+	return &orderAggregateValidator{expectedTotal: expectedTotal}
+}
+
+func (validator *orderAggregateValidator) add(position int64, item order.Item) error {
+	if validator.itemCount >= order.MaxItems || position != validator.nextPosition || !order.ValidItemID(item.ID) || !validStoredString(item.SKU, order.MaxSKUBytes) || !validStoredString(item.Name, order.MaxItemNameBytes) || item.Quantity < 1 || item.Quantity > order.MaxQuantity || item.UnitPrice < 1 || item.UnitPrice > order.MaxAmount {
+		return errors.New("invalid order item data")
+	}
+	if item.Quantity > math.MaxInt64/item.UnitPrice {
+		return errors.New("order item amount overflow")
+	}
+	lineTotal := item.Quantity * item.UnitPrice
+	if validator.total > math.MaxInt64-lineTotal {
+		return errors.New("order total amount overflow")
+	}
+	validator.total += lineTotal
+	validator.nextPosition++
+	validator.itemCount++
+	return nil
+}
+
+func (validator *orderAggregateValidator) finish() error {
+	if validator.itemCount < 1 || validator.itemCount > order.MaxItems || validator.total != validator.expectedTotal {
+		return errors.New("invalid order aggregate data")
+	}
+	return nil
+}
+
+func validStoredString(value string, maximum int) bool {
+	return utf8.ValidString(value) && len(value) >= 1 && len(value) <= maximum
 }
 
 func (database *DB) observeQuery() {
@@ -422,7 +516,7 @@ func scanOrder(row rowScanner) (order.Order, error) {
 	if err != nil {
 		return order.Order{}, fmt.Errorf("parse order updated time: %w", err)
 	}
-	if order.FormatTime(result.CreatedAt) != createdAt || order.FormatTime(result.UpdatedAt) != updatedAt || !order.ValidOrderID(result.ID) || result.CustomerName == "" || !result.Status.Valid() || !result.PaymentStatus.Valid() || result.Currency != "CNY" || result.TotalAmount < 1 || result.TotalAmount > 9999999999 || result.Version < 1 {
+	if order.FormatTime(result.CreatedAt) != createdAt || order.FormatTime(result.UpdatedAt) != updatedAt || !order.ValidOrderID(result.ID) || !validStoredString(result.CustomerName, order.MaxCustomerNameBytes) || !result.Status.Valid() || !result.PaymentStatus.Valid() || result.Currency != "CNY" || result.TotalAmount < 1 || result.TotalAmount > order.MaxAmount || result.Version < 1 {
 		return order.Order{}, errors.New("invalid order data")
 	}
 	return result, nil

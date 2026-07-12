@@ -21,11 +21,13 @@ type API struct {
 	server          *http.Server
 	serve           func() error
 	shutdown        func(context.Context) error
+	closeServer     func() error
 	shutdownTimeout time.Duration
 	probe           *store.Probe
 	database        *store.DB
 	lock            *applock.Lock
 	logger          *slog.Logger
+	stopOnce        sync.Once
 	closeOnce       sync.Once
 }
 
@@ -127,14 +129,7 @@ func (application *API) Run(ctx context.Context) error {
 		case <-serveComplete:
 			return
 		}
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), application.shutdownTimeout)
-		defer cancel()
-		if err := application.shutdownServer(shutdownCtx); err != nil {
-			application.logger.Error("server shutdown failed", "error", err)
-			if err := application.shutdownServer(context.Background()); err != nil {
-				application.logger.Error("server shutdown completion failed", "error", err)
-			}
-		}
+		application.stopServer()
 	}()
 
 	application.logger.Info("API listening", "address", application.server.Addr)
@@ -145,7 +140,7 @@ func (application *API) Run(ctx context.Context) error {
 	err := serve()
 	close(serveComplete)
 	<-shutdownComplete
-	application.Close()
+	application.closeResources()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve HTTP: %w", err)
 	}
@@ -160,6 +155,28 @@ func (application *API) shutdownServer(ctx context.Context) error {
 }
 
 func (application *API) Close() {
+	application.stopServer()
+	application.closeResources()
+}
+
+func (application *API) stopServer() {
+	application.stopOnce.Do(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), application.shutdownTimeout)
+		defer cancel()
+		if err := application.shutdownServer(shutdownCtx); err != nil {
+			application.logger.Error("server shutdown failed", "error", err)
+			closeServer := application.server.Close
+			if application.closeServer != nil {
+				closeServer = application.closeServer
+			}
+			if closeErr := closeServer(); closeErr != nil && !errors.Is(closeErr, http.ErrServerClosed) {
+				application.logger.Error("force close server failed", "error", closeErr)
+			}
+		}
+	})
+}
+
+func (application *API) closeResources() {
 	application.closeOnce.Do(func() {
 		if application.probe != nil {
 			application.probe.Close()
