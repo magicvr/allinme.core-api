@@ -87,6 +87,51 @@ func TestLoadAPIRequiresSigningKey(t *testing.T) {
 	}
 }
 
+func TestLoadAPICORSAllowedOrigin(t *testing.T) {
+	absoluteDataDir := filepath.Join(t.TempDir(), "data")
+	tests := []struct {
+		name        string
+		environment map[string]string
+		origin      string
+		setOrigin   bool
+		wantError   bool
+	}{
+		{name: "development unset"},
+		{name: "development http", origin: "http://localhost:5173", setOrigin: true},
+		{name: "development https", origin: "https://ui.example.com", setOrigin: true},
+		{name: "production unset", environment: map[string]string{"APP_ENV": "production", "PORT": "8080", "DATA_DIR": absoluteDataDir}},
+		{name: "production https", environment: map[string]string{"APP_ENV": "production", "PORT": "8080", "DATA_DIR": absoluteDataDir}, origin: "https://ui.example.com:8443", setOrigin: true},
+		{name: "wildcard", origin: "*", setOrigin: true, wantError: true},
+		{name: "multiple", origin: "https://a.example,https://b.example", setOrigin: true, wantError: true},
+		{name: "userinfo", origin: "https://user@example.com", setOrigin: true, wantError: true},
+		{name: "path", origin: "https://ui.example.com/app", setOrigin: true, wantError: true},
+		{name: "trailing slash", origin: "https://ui.example.com/", setOrigin: true, wantError: true},
+		{name: "query", origin: "https://ui.example.com?x=1", setOrigin: true, wantError: true},
+		{name: "fragment", origin: "https://ui.example.com#x", setOrigin: true, wantError: true},
+		{name: "non http", origin: "ftp://ui.example.com", setOrigin: true, wantError: true},
+		{name: "relative", origin: "ui.example.com", setOrigin: true, wantError: true},
+		{name: "whitespace", origin: " https://ui.example.com", setOrigin: true, wantError: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values := map[string]string{"JWT_SIGNING_KEY": "12345678901234567890123456789012"}
+			for key, value := range test.environment {
+				values[key] = value
+			}
+			if test.setOrigin {
+				values["CORS_ALLOWED_ORIGIN"] = test.origin
+			}
+			loaded, err := config.LoadAPI(mapLookup(values))
+			if (err != nil) != test.wantError {
+				t.Fatalf("LoadAPI() error = %v, wantError %v", err, test.wantError)
+			}
+			if err == nil && loaded.CORSAllowedOrigin != test.origin {
+				t.Fatalf("CORSAllowedOrigin = %q, want %q", loaded.CORSAllowedOrigin, test.origin)
+			}
+		})
+	}
+}
+
 func TestLoadDemoSeedPasswordByteBoundaries(t *testing.T) {
 	tests := []struct {
 		name      string

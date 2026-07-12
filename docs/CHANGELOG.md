@@ -6,6 +6,7 @@
 
 ### Added
 
+- 实现阶段三 M3-B 可选可信 origin CORS、严格 preflight/actual 短路、连接取消中止和结构化 access log outcome，并补充真实 app 跨源 smoke、重启回归与全仓测试证据。
 - 实现阶段三 M3-A 订单履约 Action：confirm/fulfill/ship/complete/cancel 状态机、version 条件更新、冲突分类、并发单次成功、真实 JWT/SQLite 集成和路由关闭回退。
 - 实现阶段三 M2 订单草稿创建/编辑：严格 JSON 与整数词法、服务端金额计算、version 乐观锁、四角色授权和真实 JWT/SQLite 集成。
 - 增加 principal/method/route/key 作用域幂等、normalized SHA-256 digest、不可变 snapshot v1、重放/冲突、双 DB 竞争、连接等待取消及结构化 SQLite BUSY/LOCKED 分类。

@@ -77,15 +77,20 @@ typed command 业务校验返回 `422 VALIDATION_FAILED` 与 camelCase 字段详
 
 状态依次为 `DRAFT -> CONFIRMED -> FULFILLING -> SHIPPED -> COMPLETED`；cancel 只允许从 `DRAFT`、`CONFIRMED`、`FULFILLING` 进入 `CANCELLED`。成功原子递增 version、更新 `updatedAt` 并返回含有序 items 和当前 capability 的订单；失败不改变状态或时间。不存在、version 不匹配和源状态非法分别返回 `404 NOT_FOUND`、`409 VERSION_CONFLICT` 和 `409 STATE_CONFLICT`，version 与状态同时不匹配时优先返回 version 冲突。
 
+## 浏览器 CORS
+
+可选配置 `CORS_ALLOWED_ORIGIN` 启用单一可信跨源 origin；未设置时不添加 CORS 行为。配置值必须是仅含 scheme、host 和可选 port 的绝对 `http`/`https` origin，不接受通配符、多个 origin、userinfo、path、query 或 fragment。
+
+匹配 origin 的实际 API 请求返回精确 `Access-Control-Allow-Origin`、`Vary: Origin` 和 `Access-Control-Expose-Headers: X-Request-ID`，不启用 credentials。预检位于认证之前，仅对已注册 route 和 `GET`、`POST`、`PATCH`、`OPTIONS` 目标 method 通过，返回 `204`、允许请求头 `Authorization, Content-Type, Idempotency-Key, X-Request-ID` 和 `Access-Control-Max-Age: 600`；成功和拒绝预检都保留 `Vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers`。非法或不匹配的实际 origin 返回 `403 CORS_ORIGIN_DENIED`，预检返回 `403 CORS_PREFLIGHT_DENIED`；未知 path 保持普通 `404` 且不返回 CORS allow header。CORS 拒绝发生在认证之前，不替代业务认证、授权或状态校验。
+
 ## 运行错误与 Request ID
 
 所有响应回写 `X-Request-ID`。入站值只接受 `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`；空值或非法值替换为 `req_` 加 32 位小写十六进制值。错误响应、header 和访问日志使用同一 request ID。
 
-错误结构为 `{"error":{"code","message","requestId","details?"}}`。当前已实现 `NOT_READY`、`METHOD_NOT_ALLOWED`、`INTERNAL_ERROR`、认证错误以及订单查询的 `INVALID_REQUEST`、`FORBIDDEN`、`NOT_FOUND`。panic 发生在响应提交前时返回完整 `500 INTERNAL_ERROR`；提交后不重写已发送响应，只记录 panic 和最终可观察状态。
+错误结构为 `{"error":{"code","message","requestId","details?"}}`。当前已实现 `NOT_READY`、`METHOD_NOT_ALLOWED`、`INTERNAL_ERROR`、认证错误、CORS 的 `CORS_ORIGIN_DENIED`/`CORS_PREFLIGHT_DENIED` 以及订单 query/write/action 的 `INVALID_REQUEST`、`FORBIDDEN`、`NOT_FOUND`、`VERSION_CONFLICT`、`STATE_CONFLICT`、`IDEMPOTENCY_CONFLICT`、`UNSUPPORTED_MEDIA_TYPE`、`VALIDATION_FAILED` 和 `SERVICE_UNAVAILABLE`。panic 发生在响应提交前时返回完整 `500 INTERNAL_ERROR`；提交后不重写已发送响应，只记录 panic 和最终可观察状态。
 
 ## 当前未实现
 
-- `/api/v1/*` 页面、退款、附件和看板 API；
-- 浏览器 CORS。
+- `/api/v1/*` 页面、退款、附件和看板 API。
 
 新增 endpoint 只有在实现、测试和对应门禁齐全后才能写入本文。实现前的设计调整只修改 [目标 HTTP API](./03-http-api-target.md)。

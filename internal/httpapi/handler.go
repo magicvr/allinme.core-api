@@ -24,14 +24,15 @@ type ReadinessProbe interface {
 }
 
 type Dependencies struct {
-	Logger           *slog.Logger
-	Readiness        ReadinessProbe
-	ReadinessTimeout time.Duration
-	Auth             AuthService
-	LoginLimiter     *LoginLimiter
-	Orders           OrderService
-	OrderActions     bool
-	Fallback         http.Handler
+	Logger            *slog.Logger
+	Readiness         ReadinessProbe
+	ReadinessTimeout  time.Duration
+	Auth              AuthService
+	LoginLimiter      *LoginLimiter
+	Orders            OrderService
+	OrderActions      bool
+	CORSAllowedOrigin string
+	Fallback          http.Handler
 }
 
 type statusResponse struct {
@@ -92,7 +93,8 @@ func NewHandler(dependencies Dependencies) http.Handler {
 	if dependencies.Fallback != nil {
 		mux.Handle("/", dependencies.Fallback)
 	}
-	return requestIDMiddleware(accessLogMiddleware(logger, recoveryMiddleware(logger, mux)))
+	routes := activeRouteMetadata(dependencies)
+	return requestIDMiddleware(accessLogMiddleware(logger, recoveryMiddleware(logger, corsMiddleware(dependencies.CORSAllowedOrigin, routes, mux))))
 }
 
 func requestIDMiddleware(next http.Handler) http.Handler {
@@ -110,9 +112,27 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 func accessLogMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		started := time.Now()
-		tracked := &trackingResponseWriter{ResponseWriter: response, status: http.StatusOK}
+		tracked := &trackingResponseWriter{ResponseWriter: response}
+		defer func() {
+			recovered := recover()
+			outcome := tracked.outcome
+			if outcome == "" {
+				if recovered == http.ErrAbortHandler && !tracked.committed {
+					outcome = "canceled"
+				} else {
+					outcome = "completed"
+				}
+			}
+			attributes := []any{"request_id", requestID(request), "method", request.Method, "path", request.URL.Path, "outcome", outcome, "duration", time.Since(started)}
+			if tracked.committed {
+				attributes = append(attributes, "status", tracked.status)
+			}
+			logger.InfoContext(request.Context(), "http request", attributes...)
+			if recovered != nil {
+				panic(recovered)
+			}
+		}()
 		next.ServeHTTP(tracked, request)
-		logger.InfoContext(request.Context(), "http request", "request_id", requestID(request), "method", request.Method, "path", request.URL.Path, "status", tracked.status, "duration", time.Since(started))
 	})
 }
 
@@ -138,6 +158,13 @@ type trackingResponseWriter struct {
 	http.ResponseWriter
 	status    int
 	committed bool
+	outcome   string
+}
+
+func markUnavailable(response http.ResponseWriter) {
+	if tracked, ok := response.(*trackingResponseWriter); ok {
+		tracked.outcome = "unavailable"
+	}
 }
 
 func (writer *trackingResponseWriter) WriteHeader(status int) {

@@ -370,6 +370,7 @@ func handleOrderError(response http.ResponseWriter, request *http.Request, err e
 		return true
 	}
 	if errors.Is(err, order.ErrUnavailable) {
+		markUnavailable(response)
 		response.Header().Set("Retry-After", "1")
 		writeError(response, request, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "service unavailable")
 		return true

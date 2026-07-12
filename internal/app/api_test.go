@@ -106,7 +106,7 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 	}
 	database.Close()
 
-	configuration := config.APIConfig{Config: base, JWTSigningKey: []byte("12345678901234567890123456789012")}
+	configuration := config.APIConfig{Config: base, JWTSigningKey: []byte("12345678901234567890123456789012"), CORSAllowedOrigin: "https://ui.example.com"}
 	sequence := 0
 	dependencies := app.AuthDependencies{
 		Clock: func() time.Time { return now }, LimiterClock: func() time.Time { return now },
@@ -117,6 +117,15 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(application.Close)
+	preflight := httptest.NewRequest(http.MethodOptions, "/api/v1/orders", nil)
+	preflight.Header.Set("Origin", configuration.CORSAllowedOrigin)
+	preflight.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	preflight.Header.Set("Access-Control-Request-Headers", "Authorization, Content-Type, Idempotency-Key")
+	preflightResponse := httptest.NewRecorder()
+	application.Handler().ServeHTTP(preflightResponse, preflight)
+	if preflightResponse.Code != http.StatusNoContent || preflightResponse.Header().Get("Access-Control-Allow-Origin") != configuration.CORSAllowedOrigin {
+		t.Fatalf("CORS preflight = %d headers=%v body=%s", preflightResponse.Code, preflightResponse.Header(), preflightResponse.Body.String())
+	}
 
 	loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"username":"viewer","password":"123456789012"}`))
 	loginRequest.Header.Set("Content-Type", "application/json")
@@ -144,6 +153,14 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 	}
 	if response := requestWithToken(http.MethodGet, "/api/v1/orders?pageSize=2&status=DRAFT"); response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"total":1`)) || bytes.Contains(response.Body.Bytes(), []byte(`"items":[{"id":"itm_`)) {
 		t.Fatalf("orders = %d %s", response.Code, response.Body.String())
+	}
+	crossOriginRequest := httptest.NewRequest(http.MethodGet, "/api/v1/orders?pageSize=1", nil)
+	crossOriginRequest.Header.Set("Authorization", "Bearer "+login.AccessToken)
+	crossOriginRequest.Header.Set("Origin", configuration.CORSAllowedOrigin)
+	crossOriginResponse := httptest.NewRecorder()
+	application.Handler().ServeHTTP(crossOriginResponse, crossOriginRequest)
+	if crossOriginResponse.Code != http.StatusOK || crossOriginResponse.Header().Get("Access-Control-Allow-Origin") != configuration.CORSAllowedOrigin || crossOriginResponse.Header().Get("Access-Control-Expose-Headers") != "X-Request-ID" {
+		t.Fatalf("cross origin orders = %d headers=%v body=%s", crossOriginResponse.Code, crossOriginResponse.Header(), crossOriginResponse.Body.String())
 	}
 	if response := requestWithToken(http.MethodGet, "/api/v1/orders/ord_00000000000000000000000000000001"); response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"items":[{"id":"itm_`)) {
 		t.Fatalf("order detail = %d %s", response.Code, response.Body.String())

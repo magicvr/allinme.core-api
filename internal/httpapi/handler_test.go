@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/magicvr/allinme.core-api/internal/httpapi"
+	"github.com/magicvr/allinme.core-api/internal/order"
 	"github.com/magicvr/allinme.core-api/internal/store"
 )
 
@@ -115,6 +116,78 @@ func TestPanicAfterCommitDoesNotRewriteResponse(t *testing.T) {
 	if !strings.Contains(logs.String(), `"status":202`) {
 		t.Fatalf("logs = %s", logs.String())
 	}
+}
+
+func TestCanceledRequestAbortsConnectionAndLogsWithoutStatus(t *testing.T) {
+	var logs bytes.Buffer
+	handler := httpapi.NewHandler(httpapi.Dependencies{
+		Logger: slog.New(slog.NewJSONHandler(&logs, nil)),
+		Auth:   &fakeAuthService{},
+		Orders: &fakeOrderService{err: context.Canceled},
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/v1/orders", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer access-token")
+	response, err := server.Client().Do(request)
+	if response != nil {
+		response.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("canceled request error = nil")
+	}
+	logText := logs.String()
+	if !strings.Contains(logText, `"outcome":"canceled"`) || strings.Contains(logText, `"status"`) || strings.Contains(logText, "sensitive") {
+		t.Fatalf("logs = %s", logText)
+	}
+}
+
+func TestAccessLogOutcomesCompletedUnavailableAndCommittedCancel(t *testing.T) {
+	t.Run("completed", func(t *testing.T) {
+		var logs bytes.Buffer
+		handler := httpapi.NewHandler(httpapi.Dependencies{Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
+		response := serve(handler, http.MethodGet, "/healthz", "completed-1")
+		if response.Code != http.StatusOK || !strings.Contains(logs.String(), `"outcome":"completed"`) || !strings.Contains(logs.String(), `"status":200`) {
+			t.Fatalf("response=%d logs=%s", response.Code, logs.String())
+		}
+	})
+
+	t.Run("unavailable", func(t *testing.T) {
+		var logs bytes.Buffer
+		handler := httpapi.NewHandler(httpapi.Dependencies{Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Auth: &fakeAuthService{}, Orders: &fakeOrderService{err: order.ErrUnavailable}})
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
+		request.Header.Set("Authorization", "Bearer access-token")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusServiceUnavailable || !strings.Contains(logs.String(), `"outcome":"unavailable"`) || !strings.Contains(logs.String(), `"status":503`) || response.Header().Get("Retry-After") != "1" {
+			t.Fatalf("response=%d headers=%v logs=%s", response.Code, response.Header(), logs.String())
+		}
+	})
+
+	t.Run("committed cancel", func(t *testing.T) {
+		var logs bytes.Buffer
+		fallback := http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+			response.WriteHeader(http.StatusAccepted)
+			panic(http.ErrAbortHandler)
+		})
+		handler := httpapi.NewHandler(httpapi.Dependencies{Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Fallback: fallback})
+		func() {
+			defer func() {
+				if recovered := recover(); recovered != http.ErrAbortHandler {
+					t.Fatalf("recovered = %v", recovered)
+				}
+			}()
+			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/committed-cancel", nil))
+		}()
+		if !strings.Contains(logs.String(), `"outcome":"completed"`) || !strings.Contains(logs.String(), `"status":202`) {
+			t.Fatalf("logs = %s", logs.String())
+		}
+	})
 }
 
 func newHandler(probe httpapi.ReadinessProbe) http.Handler {
