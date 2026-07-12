@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -34,7 +35,8 @@ type Config struct {
 
 type APIConfig struct {
 	Config
-	JWTSigningKey []byte
+	JWTSigningKey     []byte
+	CORSAllowedOrigin string
 }
 
 type DemoSeedConfig struct {
@@ -116,7 +118,32 @@ func LoadAPI(lookup func(string) (string, bool)) (APIConfig, error) {
 	if !ok || len([]byte(key)) < MinimumSigningKeyBytes {
 		return APIConfig{}, fmt.Errorf("JWT_SIGNING_KEY must be explicitly configured with at least %d bytes", MinimumSigningKeyBytes)
 	}
-	return APIConfig{Config: base, JWTSigningKey: []byte(key)}, nil
+	origin, err := loadCORSAllowedOrigin(lookup)
+	if err != nil {
+		return APIConfig{}, err
+	}
+	return APIConfig{Config: base, JWTSigningKey: []byte(key), CORSAllowedOrigin: origin}, nil
+}
+
+func loadCORSAllowedOrigin(lookup func(string) (string, bool)) (string, error) {
+	origin, ok := lookup("CORS_ALLOWED_ORIGIN")
+	if !ok || origin == "" {
+		return "", nil
+	}
+	if strings.TrimSpace(origin) != origin || origin == "*" || strings.Contains(origin, ",") {
+		return "", fmt.Errorf("CORS_ALLOWED_ORIGIN must be a single absolute http or https origin")
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.Opaque != "" || parsed.User != nil || parsed.Path != "" || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("CORS_ALLOWED_ORIGIN must be a single absolute http or https origin")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("CORS_ALLOWED_ORIGIN must be a single absolute http or https origin")
+	}
+	if origin != parsed.Scheme+"://"+parsed.Host {
+		return "", fmt.Errorf("CORS_ALLOWED_ORIGIN must be a single absolute http or https origin")
+	}
+	return origin, nil
 }
 
 func LoadDemoSeed(lookup func(string) (string, bool)) (DemoSeedConfig, error) {

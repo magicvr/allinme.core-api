@@ -108,6 +108,9 @@ func loginHandler(service AuthService, limiter *LoginLimiter) http.HandlerFunc {
 		}
 		if err != nil {
 			limiter.Cancel(ip, username)
+			if request.Context().Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+				panic(http.ErrAbortHandler)
+			}
 			writeError(response, request, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 			return
 		}
@@ -157,6 +160,9 @@ func authMiddleware(service AuthService, next http.Handler) http.Handler {
 			return
 		}
 		if err != nil {
+			if request.Context().Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+				panic(http.ErrAbortHandler)
+			}
 			writeError(response, request, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 			return
 		}
@@ -195,6 +201,9 @@ func logoutHandler(service AuthService) http.HandlerFunc {
 			return
 		}
 		if err := service.Logout(request.Context(), principal); err != nil {
+			if request.Context().Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+				panic(http.ErrAbortHandler)
+			}
 			writeError(response, request, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 			return
 		}

@@ -27,7 +27,7 @@ type API struct {
 }
 
 func NewAPI(configuration config.Config, logger *slog.Logger) (*API, error) {
-	return newAPI(configuration, nil, AuthDependencies{}, logger)
+	return newAPI(configuration, nil, "", AuthDependencies{}, logger)
 }
 
 func NewAuthenticatedAPI(configuration config.APIConfig, logger *slog.Logger) (*API, error) {
@@ -42,10 +42,10 @@ type AuthDependencies struct {
 }
 
 func NewAuthenticatedAPIWithDependencies(configuration config.APIConfig, dependencies AuthDependencies, logger *slog.Logger) (*API, error) {
-	return newAPI(configuration.Config, configuration.JWTSigningKey, dependencies, logger)
+	return newAPI(configuration.Config, configuration.JWTSigningKey, configuration.CORSAllowedOrigin, dependencies, logger)
 }
 
-func newAPI(configuration config.Config, signingKey []byte, authDependencies AuthDependencies, logger *slog.Logger) (*API, error) {
+func newAPI(configuration config.Config, signingKey []byte, corsAllowedOrigin string, authDependencies AuthDependencies, logger *slog.Logger) (*API, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -98,6 +98,7 @@ func newAPI(configuration config.Config, signingKey []byte, authDependencies Aut
 		}
 		dependencies.Orders = orderService
 		dependencies.OrderActions = !authDependencies.DisableOrderActions
+		dependencies.CORSAllowedOrigin = corsAllowedOrigin
 	}
 	return &API{
 		server: &http.Server{

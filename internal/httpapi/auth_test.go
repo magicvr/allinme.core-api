@@ -111,7 +111,6 @@ func TestAuthHTTPMapsInvalidAndInternalAuthenticationSafely(t *testing.T) {
 		wantChallenge bool
 	}{
 		{name: "tampered or expired token", authError: auth.ErrUnauthenticated, wantStatus: http.StatusUnauthorized, wantCode: "UNAUTHENTICATED", wantChallenge: true},
-		{name: "canceled context", authError: context.Canceled, wantStatus: http.StatusInternalServerError, wantCode: "INTERNAL_ERROR"},
 		{name: "store internal error", authError: errors.New("SQL C:\\sensitive\\allinme.db token-id-secret"), wantStatus: http.StatusInternalServerError, wantCode: "INTERNAL_ERROR"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

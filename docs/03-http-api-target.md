@@ -23,7 +23,7 @@ applies_to: order operations demo HTTP API target
 - 创建型关键操作支持幂等；资源更新和状态 Action 使用 `version` 乐观锁。
 - 错误响应具有稳定机器码、安全消息、request ID 和可选字段级详情。
 
-事实源按关注点拆分：状态机、金额、角色和业务不变量只在[领域模型](./05-domain-model.md)维护；本文件维护目标 endpoint 范围与跨阶段边界；订单 API 处于阶段三 active 期间，query、DTO、错误、CORS、幂等和成功状态只在[阶段三活跃计划](./audit/0003-2026-07-12-plan.md#3-已冻结的-http-与幂等契约)维护；实现完成后迁入[当前 HTTP API](./03-http-api.md)。其他文档只链接这些来源，不复制完整规则。
+事实源按关注点拆分：状态机、金额、角色和业务不变量只在[领域模型](./05-domain-model.md)维护；本文件维护目标 endpoint 范围与跨阶段边界；阶段三 active 期间的 query、DTO、错误、CORS、幂等和成功状态已随实现迁入[当前 HTTP API](./03-http-api.md)。其他文档只链接这些来源，不复制完整规则。
 
 ## 2. 已实现运行状态
 
@@ -42,7 +42,7 @@ applies_to: order operations demo HTTP API target
 
 已实现的订单查询、创建、编辑和履约 Action 契约见[当前 HTTP API](./03-http-api.md)。状态转换、角色权限、金额计算和业务不变量只在[领域模型](./05-domain-model.md)维护。列表可返回按当前主体与资源计算的 `canXxx` 展示字段，但 Action 会重新鉴权和校验。
 
-附件摘要随阶段五附件生命周期一起新增并冻结；阶段三订单 DTO 不预留 `attachments` 字段。阶段三尚未实现的 CORS 契约继续由活跃计划维护，完成后迁入当前 API。
+附件摘要随阶段五附件生命周期一起新增并冻结；阶段三订单 DTO 不预留 `attachments` 字段。
 
 ## 5. 退款（draft target）
 

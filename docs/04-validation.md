@@ -61,7 +61,7 @@ go test ./...
 | 订单查询 | yes | `go test ./internal/order ./internal/store ./internal/httpapi ./internal/app -count=1` | 覆盖搜索/分页边界、详情、四角色真实 token 读取和稳定排序；不等待 CORS 门禁 |
 | 订单写入/幂等 | yes | `go test ./internal/order ./internal/store ./internal/httpapi ./internal/app -count=1` | 覆盖金额、创建/编辑、相同 key 重放、不同 body 冲突和并发只创建一次；不等待 CORS 门禁 |
 | 订单履约 Action | yes | `go test ./internal/order ./internal/store ./internal/httpapi ./internal/app -count=1` | 覆盖乐观锁、全部合法状态转换、非法转换、版本冲突、真实 token 和关闭 Action 路由回退；不等待 CORS 门禁 |
-| CORS | no | 阶段三 M3-B CORS 集成通过时 | 配置失败、actual/preflight、Vary、route metadata、短路优先级和自动化跨源 smoke |
+| CORS | yes | `go test ./internal/config ./internal/httpapi ./internal/app -count=1` | 配置失败、actual/preflight、Vary、Expose-Headers、Max-Age、route metadata、短路优先级和自动化跨源 smoke |
 | 退款 | no | 阶段四新增退款集成测试时 | 覆盖可退金额、申请/审批分离、审批事务和订单支付状态一致性 |
 | 附件 | no | 阶段五新增文件集成测试时 | 临时目录覆盖超限、类型伪造、危险文件名、摘要、绑定权限、鉴权下载、失败清理和过期清理 |
 | 看板 | no | 阶段四新增看板测试时 | 固定 seed 下统计快照与订单/退款查询结果交叉一致 |
