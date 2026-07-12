@@ -46,12 +46,12 @@ applies_to: order operations demo HTTP API target
 
 ## 5. 退款（draft target）
 
-| Method | Path | 最低权限 | 行为 |
+| Method | Path | 允许角色 | 行为 |
 |---|---|---|---|
-| `GET` | `/api/v1/refunds` | approver | 查询待审批及历史退款 |
-| `POST` | `/api/v1/orders/{orderId}/refunds` | operator | 幂等发起退款；幂等作用域包含 method 与 route/operation，可复用订单创建使用过的 key |
-| `POST` | `/api/v1/refunds/{refundId}/approve` | approver | 审批并执行本地退款 |
-| `POST` | `/api/v1/refunds/{refundId}/reject` | approver | 拒绝退款 |
+| `GET` | `/api/v1/refunds` | `approver`、`admin` | 查询待审批及历史退款 |
+| `POST` | `/api/v1/orders/{orderId}/refunds` | `operator`、`admin` | 幂等发起退款；幂等作用域包含 method 与 route/operation，可复用订单创建使用过的 key |
+| `POST` | `/api/v1/refunds/{refundId}/approve` | `approver`、`admin` | 审批并执行本地退款 |
+| `POST` | `/api/v1/refunds/{refundId}/reject` | `approver`、`admin` | 拒绝退款 |
 
 退款状态和审批规则以 [领域模型](./05-domain-model.md) 为唯一事实源。请求字段、响应 envelope 与错误码在阶段四实现时冻结。
 
@@ -69,9 +69,9 @@ applies_to: order operations demo HTTP API target
 
 | Method | Path | 权限 | 行为 |
 |---|---|---|---|
-| `GET` | `/api/v1/dashboard/summary` | viewer | 订单数、成交额、退款额和币种 |
-| `GET` | `/api/v1/dashboard/order-status` | viewer | 订单状态分布 |
-| `GET` | `/api/v1/dashboard/trend` | viewer | 7/30 日订单与净成交趋势 |
+| `GET` | `/api/v1/dashboard/summary` | authenticated | 订单数、原始已支付金额、已完成退款金额、净额和币种 |
+| `GET` | `/api/v1/dashboard/order-status` | authenticated | 订单状态分布 |
+| `GET` | `/api/v1/dashboard/trend` | authenticated | 7/30 日订单、原始已支付金额、已完成退款金额与净额趋势 |
 
 统计业务口径只在 [领域模型](./05-domain-model.md) 维护。响应字段随阶段四页面 datasource 用例冻结。
 
@@ -82,7 +82,7 @@ applies_to: order operations demo HTTP API target
 | 经营看板 | `/api/v1/dashboard/*` |
 | 搜索表格 | `GET /api/v1/orders` |
 | 联动表单提交 | 订单创建/编辑 |
-| 行级 Action | 订单履约、取消与退款审批 |
+| 行级 Action | 订单履约与取消；退款审批只在独立退款队列中使用 `/api/v1/refunds` Action |
 | UploadAction | 附件上传与订单绑定 |
 
 页面只使用固定协议已有的 datasource、Action、Reaction 和 mapping 能力。页面 YAML 实施时必须通过 [Schema-UI 固定版本](./02-schema-ui-integration.md) 校验。

@@ -69,6 +69,8 @@ Content-Type: application/json
 
 `PATCH /api/v1/orders/{orderId}` 仅允许 operator、admin，严格接受与创建相同的业务字段及正整数 `version`；`Idempotency-Key` 即使存在也被忽略。只有当前 version 的 `DRAFT` 可编辑，成功在单一事务内重写明细和总额、保持 `createdAt`、更新 `updatedAt` 并将 version 加一，返回 `200`。不存在、version 冲突和状态冲突分别返回 `404 NOT_FOUND`、`409 VERSION_CONFLICT` 和 `409 STATE_CONFLICT`。
 
+当前尚未启用退款表，因此上述编辑契约不读取退款聚合。阶段四启用退款时，这是既有订单写入语义的唯一扩展点：同一事务必须校验新总额不小于 `PENDING + COMPLETED` 占用并重新推导 paymentStatus；实现及集成门禁通过后，精确错误和并发语义必须迁入本段，不能只修改代码或阶段四审计计划。
+
 typed command 业务校验返回 `422 VALIDATION_FAILED` 与 camelCase 字段详情；缺失/非法幂等 header 或 JSON 结构/类型/整数词法返回 `400 INVALID_REQUEST`，非 JSON Content-Type 返回 `415 UNSUPPORTED_MEDIA_TYPE`。写请求按 role authorization → Content-Type → idempotency key/order ID → JSON 的顺序短路。SQLite BUSY/LOCKED 通过驱动错误码映射为 `503 SERVICE_UNAVAILABLE` 和 `Retry-After: 1`。
 
 ## 订单履约 Action API

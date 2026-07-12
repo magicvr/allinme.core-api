@@ -21,7 +21,7 @@ applies_to: order operations demo
 | Session | `id`、`user_id`、`token_id`、`expires_at`、`revoked_at` | JWT 的 `jti` 必须对应未撤销会话 |
 | Order | `id`、`customer_name`、`status`、`payment_status`、`currency`、`total_amount`、`version`、时间戳 | 金额使用整数最小货币单位；更新使用乐观锁 |
 | OrderItem | `id`、`order_id`、`sku`、`name`、`quantity`、`unit_price` | 数量为正；订单总额由明细计算 |
-| Refund | `id`、`order_id`、`amount`、`status`、`reason`、`version`、审核信息 | 累计成功退款不得超过已支付金额 |
+| Refund | `id`、`order_id`、`amount`、`status`、`reason`、`version`、审核信息 | `PENDING + COMPLETED` 共同占用额度且不得超过订单总额 |
 | Attachment | `id`、`order_id`、`original_name`、`stored_name`、`media_type`、`size`、`sha256` | 文件名由服务端生成；下载必须重新鉴权 |
 
 数据库时间统一保存 UTC，HTTP 使用 RFC 3339。ID 使用服务端生成、URL 安全且不暴露顺序规模的字符串。SQLite migrations、seed 和 reset 必须可重复执行；reset 仅在显式开发模式开放。
@@ -55,14 +55,17 @@ DRAFT -> CONFIRMED -> FULFILLING -> SHIPPED -> COMPLETED
 
 ## 4. 支付与退款
 
-订单支付状态独立于履约状态，首版为 `UNPAID`、`PAID`、`PARTIALLY_REFUNDED`、`REFUNDED`。seed 数据可以直接创建已支付订单，以覆盖退款流程。
+订单支付状态独立于履约状态，首版为 `UNPAID`、`PAID`、`PARTIALLY_REFUNDED`、`REFUNDED`。退款资格只看支付状态和可退额度，不看履约状态；因此包括 `CANCELLED + PAID` 在内的任意履约状态，只要支付状态为 `PAID` 或 `PARTIALLY_REFUNDED` 且仍有额度，均可申请退款。seed 数据可以直接创建这些组合以覆盖退款流程。
 
 退款持久化状态为 `PENDING`、`REJECTED`、`COMPLETED`。`APPROVED` 仅表示审批检查已通过的事务内过渡，不作为可查询或可长期停留的对外状态：
 
-1. `operator` 对已支付且仍有可退金额的订单发起退款；
+1. `operator` 或 `admin` 对已支付且仍有可退金额的订单发起退款；`availableRefundAmount = totalAmount - pendingAmount - completedAmount`，同一订单允许存在多笔 `PENDING`，但合计占用不得超过订单总额；
 2. `approver` 或 `admin` 审批待处理退款，申请人不得审批自己的申请；
 3. 通过审批后，本地 demo 在同一事务内执行退款、将状态从 `PENDING` 更新为 `COMPLETED`，并更新订单支付状态；任一步失败则整体回滚；
-4. 重复请求不得产生重复退款，创建退款必须使用幂等键。
+4. 拒绝只把退款改为 `REJECTED`，不修改订单版本或支付状态；该笔 `PENDING` 占用随之释放，可退金额立即回升；
+5. 重复请求不得产生重复退款，创建退款必须使用幂等键。
+
+已完成退款为 0 时，已支付订单保持 `PAID`；`0 < completedAmount < totalAmount` 时为 `PARTIALLY_REFUNDED`；`completedAmount == totalAmount` 时为 `REFUNDED`。退款审批成功原子增加订单版本并更新时间；申请和拒绝不修改订单版本。阶段四启用退款后，DRAFT 编辑还必须在同一事务校验新总额不小于 `PENDING + COMPLETED`，并按新总额重新推导支付状态。
 
 ## 5. 角色与权限
 
@@ -88,7 +91,7 @@ DRAFT -> CONFIRMED -> FULFILLING -> SHIPPED -> COMPLETED
 
 ## 7. 看板口径
 
-经营看板从同一 SQLite 数据生成，至少提供订单数、成交额、状态分布和近 7/30 日趋势。成交额按已支付金额减已完成退款统计；所有金额响应同时明确币种，seed 默认使用 `CNY`。
+经营看板从同一 SQLite 数据生成，至少提供订单数、状态分布和近 7/30 日趋势。金额明确拆为 `grossAmount`、`completedRefundAmount` 和 `netAmount = grossAmount - completedRefundAmount`：`grossAmount` 汇总支付状态为 `PAID`、`PARTIALLY_REFUNDED`、`REFUNDED` 的订单原始总额，履约状态不影响纳入；`completedRefundAmount` 只汇总 `COMPLETED` 退款。所有金额响应同时明确币种，seed 默认使用 `CNY`。
 
 看板只用于演示一致的数据读取，不承诺生产级财务口径或分析性能。
 
