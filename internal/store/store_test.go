@@ -127,7 +127,7 @@ func TestVersionTwoDatabaseUpgradesWithoutLosingAuthenticationData(t *testing.T)
 		t.Fatal(err)
 	}
 	defer database.Close()
-	if result.FromVersion != 2 || result.ToVersion != 4 {
+	if result.FromVersion != 2 || result.ToVersion != store.LatestSchemaVersion() {
 		t.Fatalf("migration = %+v", result)
 	}
 	var users, sessions, idempotencyTables int
@@ -184,7 +184,7 @@ func TestVersionThreeDatabaseUpgradesWithoutLosingOrders(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	if result.FromVersion != 3 || result.ToVersion != 4 {
+	if result.FromVersion != 3 || result.ToVersion != store.LatestSchemaVersion() {
 		t.Fatalf("migration = %+v", result)
 	}
 	var orders, items, idempotencyTables int
@@ -204,7 +204,7 @@ func TestVersionThreeDatabaseUpgradesWithoutLosingOrders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FromVersion != 4 || result.ToVersion != 4 {
+	if result.FromVersion != store.LatestSchemaVersion() || result.ToVersion != store.LatestSchemaVersion() {
 		t.Fatalf("repeated migration = %+v", result)
 	}
 	database.Close()
@@ -219,12 +219,12 @@ func TestIdempotencySchemaEnforcesScopeAndPayloadShape(t *testing.T) {
 	insert := `
 		INSERT INTO idempotency_keys(
 			principal_user_id, method, route, idempotency_key, request_digest,
-			order_id, snapshot_version, snapshot_json, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			order_id, snapshot_version, snapshot_json, snapshot_digest, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	valid := []any{
 		"user-1", "POST", "/api/v1/orders", "key-1", make([]byte, 32),
-		"ord_00000000000000000000000000000001", 1, `{"order":{"id":"ord_00000000000000000000000000000001"}}`, "2026-01-01T00:00:00Z",
+		"ord_00000000000000000000000000000001", 1, `{"order":{"id":"ord_00000000000000000000000000000001"}}`, make([]byte, 32), "2026-01-01T00:00:00Z",
 	}
 	if _, err := database.SQL().ExecContext(ctx, insert, valid...); err != nil {
 		t.Fatal(err)
@@ -243,6 +243,12 @@ func TestIdempotencySchemaEnforcesScopeAndPayloadShape(t *testing.T) {
 	invalidSnapshot[7] = `{`
 	if _, err := database.SQL().ExecContext(ctx, insert, invalidSnapshot...); err == nil {
 		t.Fatal("invalid snapshot error = nil")
+	}
+	invalidSnapshotDigest := append([]any(nil), valid...)
+	invalidSnapshotDigest[3] = "key-4"
+	invalidSnapshotDigest[8] = make([]byte, 31)
+	if _, err := database.SQL().ExecContext(ctx, insert, invalidSnapshotDigest...); err == nil {
+		t.Fatal("invalid snapshot digest error = nil")
 	}
 }
 

@@ -57,3 +57,28 @@ func TestRunWaitsForShutdownCompletionAfterTimeout(t *testing.T) {
 		t.Fatalf("shutdown calls = %d, want 2", shutdownCalls)
 	}
 }
+
+func TestRunStopsShutdownWatcherWhenServeFails(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	serveFailure := errors.New("listen failed")
+	shutdownCalled := make(chan struct{}, 1)
+	application := &API{
+		server:          &http.Server{},
+		logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		shutdownTimeout: time.Second,
+		serve:           func() error { return serveFailure },
+		shutdown: func(context.Context) error {
+			shutdownCalled <- struct{}{}
+			return nil
+		},
+	}
+	if err := application.Run(ctx); !errors.Is(err, serveFailure) {
+		t.Fatalf("Run error = %v", err)
+	}
+	cancel()
+	select {
+	case <-shutdownCalled:
+		t.Fatal("shutdown watcher survived serve failure")
+	case <-time.After(20 * time.Millisecond):
+	}
+}

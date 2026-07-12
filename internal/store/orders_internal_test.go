@@ -50,6 +50,77 @@ func TestOrderRepositoryListUsesTwoQueriesAndStableFiltering(t *testing.T) {
 	}
 }
 
+func TestOrderRepositoryListCountAndPageShareSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "orders.db")
+	reader, err := Open(context.Background(), path, OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reader.Close() })
+	if _, err := reader.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.Seed(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.SeedOrderDemo(context.Background(), time.Date(2026, 7, 12, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	writer, err := Open(context.Background(), path, OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Close() })
+
+	countComplete := make(chan struct{})
+	allowPage := make(chan struct{})
+	queries := 0
+	reader.queryObserver = func() {
+		queries++
+		if queries == 1 {
+			close(countComplete)
+			<-allowPage
+		}
+	}
+	type listResult struct {
+		page order.Page
+		err  error
+	}
+	result := make(chan listResult, 1)
+	go func() {
+		page, err := reader.ListOrders(context.Background(), order.ListQuery{Page: 1, PageSize: 20, Sort: "createdAt"})
+		result <- listResult{page: page, err: err}
+	}()
+
+	select {
+	case <-countComplete:
+	case <-time.After(time.Second):
+		t.Fatal("COUNT query did not reach coordination point")
+	}
+	if _, err := writer.SQL().Exec(`INSERT INTO orders(id, customer_name, status, payment_status, currency, total_amount, version, created_at, updated_at) VALUES ('ord_ffffffffffffffffffffffffffffffff', 'Concurrent', 'DRAFT', 'UNPAID', 'CNY', 1, 1, '2026-03-01T00:00:00Z', '2026-03-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	close(allowPage)
+	select {
+	case listed := <-result:
+		if listed.err != nil {
+			t.Fatal(listed.err)
+		}
+		if queries != 2 || listed.page.Total != 6 || len(listed.page.Items) != 6 {
+			t.Fatalf("snapshot page total=%d items=%d queries=%d", listed.page.Total, len(listed.page.Items), queries)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("list did not complete")
+	}
+	var persisted int
+	if err := writer.SQL().QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&persisted); err != nil {
+		t.Fatal(err)
+	}
+	if persisted != 7 {
+		t.Fatalf("persisted orders = %d, want 7", persisted)
+	}
+}
+
 func TestOrderRepositoryDetailAndCorruptData(t *testing.T) {
 	database := openSeededOrderDatabase(t)
 	result, found, err := database.GetOrder(context.Background(), "ord_00000000000000000000000000000001")
@@ -71,6 +142,23 @@ func TestOrderRepositoryDetailAndCorruptData(t *testing.T) {
 	}
 	if _, err := database.ListOrders(context.Background(), order.ListQuery{Page: 1, PageSize: 20, Sort: "createdAt"}); !errors.Is(err, order.ErrInternal) {
 		t.Fatalf("closed database list error = %v", err)
+	}
+}
+
+func TestOrderRepositoryRejectsNonCanonicalTimes(t *testing.T) {
+	for _, column := range []string{"created_at", "updated_at"} {
+		t.Run(column, func(t *testing.T) {
+			database := openSeededOrderDatabase(t)
+			if _, err := database.SQL().Exec(`PRAGMA ignore_check_constraints = ON; UPDATE orders SET ` + column + ` = '2026-01-01T08:00:00+08:00' WHERE id = 'ord_00000000000000000000000000000001'; PRAGMA ignore_check_constraints = OFF;`); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := database.GetOrder(context.Background(), "ord_00000000000000000000000000000001"); !errors.Is(err, order.ErrInternal) {
+				t.Fatalf("detail corrupt time error = %v", err)
+			}
+			if _, err := database.ListOrders(context.Background(), order.ListQuery{Page: 1, PageSize: 20, Sort: "createdAt"}); !errors.Is(err, order.ErrInternal) {
+				t.Fatalf("list corrupt time error = %v", err)
+			}
+		})
 	}
 }
 

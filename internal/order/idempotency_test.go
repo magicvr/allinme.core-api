@@ -80,6 +80,7 @@ func TestCreateReplayRejectsUnknownOrCorruptSnapshot(t *testing.T) {
 	}{
 		{name: "customer", replacements: [][2]string{{`"customerName":"Alice"`, `"customerName":"Bob"`}}},
 		{name: "item", replacements: [][2]string{{`"sku":"SKU"`, `"sku":"OTHER"`}}},
+		{name: "item ID", replacements: [][2]string{{`itm_0000000000000000000000000000000a`, `itm_0000000000000000000000000000000b`}}},
 		{name: "amount", replacements: [][2]string{{`"totalAmount":100`, `"totalAmount":200`}, {`"unitPrice":100`, `"unitPrice":200`}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

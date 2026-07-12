@@ -3,9 +3,12 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/magicvr/allinme.core-api/internal/order"
 )
 
 func TestFailedMigrationRollsBackSchemaAndVersion(t *testing.T) {
@@ -135,5 +138,87 @@ func TestIdempotencyMigrationFailureKeepsVersionThreeAndRollsBackPartialSchema(t
 	}
 	if idempotencyTables != 0 {
 		t.Fatalf("partial idempotency tables = %d", idempotencyTables)
+	}
+}
+
+func TestVersionFourIdempotencyRowsUpgradeWithoutUnsafeReplay(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "allinme.db"), OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, migration := range migrations[:4] {
+		if err := database.WithTx(ctx, func(transaction *sql.Tx) error {
+			if _, err := transaction.ExecContext(ctx, migration.sql); err != nil {
+				return err
+			}
+			_, err := transaction.ExecContext(ctx, "PRAGMA user_version = "+strconv.Itoa(migration.version))
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := database.SQL().ExecContext(ctx, `INSERT INTO idempotency_keys(principal_user_id, method, route, idempotency_key, request_digest, order_id, snapshot_version, snapshot_json, created_at) VALUES ('user-1', 'POST', '/api/v1/orders', 'legacy-key', zeroblob(32), 'ord_00000000000000000000000000000001', 1, '{"order":{}}', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	result, err := database.Migrate(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FromVersion != 4 || result.ToVersion != 5 {
+		t.Fatalf("migration = %+v", result)
+	}
+	var snapshotDigest []byte
+	if err := database.SQL().QueryRowContext(ctx, `SELECT snapshot_digest FROM idempotency_keys WHERE idempotency_key = 'legacy-key'`).Scan(&snapshotDigest); err != nil {
+		t.Fatal(err)
+	}
+	if snapshotDigest != nil {
+		t.Fatalf("legacy snapshot digest = %x, want NULL", snapshotDigest)
+	}
+	_, found, err := database.GetIdempotency(ctx, order.IdempotencyScope{PrincipalUserID: "user-1", Method: "POST", Route: "/api/v1/orders", Key: "legacy-key"})
+	if found || !errors.Is(err, order.ErrInternal) {
+		t.Fatalf("legacy replay found=%v error=%v", found, err)
+	}
+}
+
+func TestSnapshotIntegrityMigrationFailureKeepsVersionFour(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "allinme.db"), OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, migration := range migrations[:4] {
+		if err := database.WithTx(ctx, func(transaction *sql.Tx) error {
+			if _, err := transaction.ExecContext(ctx, migration.sql); err != nil {
+				return err
+			}
+			_, err := transaction.ExecContext(ctx, "PRAGMA user_version = "+strconv.Itoa(migration.version))
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := database.SQL().ExecContext(ctx, `ALTER TABLE idempotency_keys ADD COLUMN snapshot_digest BLOB`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Migrate(ctx); err == nil {
+		t.Fatal("v5 migration error = nil")
+	}
+	version, err := database.SchemaVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 4 {
+		t.Fatalf("schema version = %d, want 4", version)
 	}
 }

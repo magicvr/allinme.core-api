@@ -65,7 +65,7 @@ Content-Type: application/json
 
 `POST /api/v1/orders` 仅允许 operator、admin，并要求唯一的 `Idempotency-Key` header；key 为 `1..128` bytes，匹配 `[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`。请求严格接受 `customerName/currency/items`，明细包含 `sku/name/quantity/unitPrice`，拒绝未知字段、多余 JSON、非整数词法和超过 64 KiB 的 body。服务端 trim 字符串、只接受 `CNY` 并计算总额。首次与相同 normalized body 的重放都返回 `201`；相同主体、method、route/key 的不同 body 返回 `409 IDEMPOTENCY_CONFLICT`。
 
-创建结果保存为不可变 snapshot v1。订单后续被编辑后，重放仍返回首次创建时 version 1、原始时间和明细，不读取当前订单补字段；重放会从快照中的创建事实重新计算 normalized digest，并拒绝重复明细 ID。未知版本、损坏或被篡改的 JSON、重复明细 ID 及元数据错配安全返回 `500 INTERNAL_ERROR`，不会重新创建。幂等作用域包含 principal user ID、method、route 和 key。
+创建结果保存为不可变 snapshot v1。订单后续被编辑后，重放仍返回首次创建时 version 1、原始时间和明细，不读取当前订单补字段；重放会先用独立保存的 `snapshot_digest` 校验完整 JSON，再从快照中的创建事实重新计算 normalized request digest，并拒绝重复明细 ID。未知版本、损坏或被篡改的 JSON、合法但被替换的明细 ID、重复明细 ID 及元数据错配安全返回 `500 INTERNAL_ERROR`，不会重新创建。幂等作用域包含 principal user ID、method、route 和 key。
 
 `PATCH /api/v1/orders/{orderId}` 仅允许 operator、admin，严格接受与创建相同的业务字段及正整数 `version`；`Idempotency-Key` 即使存在也被忽略。只有当前 version 的 `DRAFT` 可编辑，成功在单一事务内重写明细和总额、保持 `createdAt`、更新 `updatedAt` 并将 version 加一，返回 `200`。不存在、version 冲突和状态冲突分别返回 `404 NOT_FOUND`、`409 VERSION_CONFLICT` 和 `409 STATE_CONFLICT`。
 

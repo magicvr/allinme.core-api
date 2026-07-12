@@ -32,6 +32,7 @@ type IdempotencyRecord struct {
 	OrderID         string
 	SnapshotVersion int64
 	SnapshotJSON    []byte
+	SnapshotDigest  [sha256.Size]byte
 	CreatedAt       string
 }
 
@@ -94,6 +95,10 @@ func decodeSnapshot(record IdempotencyRecord, expected IdempotencyScope) (Order,
 	}
 	if !bytes.Equal(record.Scope.RequestDigest[:], expected.RequestDigest[:]) {
 		return Order{}, ErrIdempotencyConflict
+	}
+	snapshotDigest := sha256.Sum256(record.SnapshotJSON)
+	if !bytes.Equal(record.SnapshotDigest[:], snapshotDigest[:]) {
+		return Order{}, ErrInternal
 	}
 	decoder := json.NewDecoder(bytes.NewReader(record.SnapshotJSON))
 	decoder.DisallowUnknownFields()
@@ -181,7 +186,7 @@ func (service *Service) Create(ctx context.Context, principal auth.Principal, ke
 	if err != nil {
 		return Order{}, fmt.Errorf("encode order snapshot: %w", err)
 	}
-	record, _, err := service.repository.CreateOrderIdempotent(ctx, IdempotentCreatePersistence{Create: CreatePersistence{ID: orderID, CustomerName: normalized.CustomerName, Currency: normalized.Currency, TotalAmount: total, CreatedAt: FormatTime(now), Items: items}, Record: IdempotencyRecord{Scope: scope, OrderID: orderID, SnapshotVersion: SnapshotVersionOne, SnapshotJSON: snapshot, CreatedAt: FormatTime(now)}})
+	record, _, err := service.repository.CreateOrderIdempotent(ctx, IdempotentCreatePersistence{Create: CreatePersistence{ID: orderID, CustomerName: normalized.CustomerName, Currency: normalized.Currency, TotalAmount: total, CreatedAt: FormatTime(now), Items: items}, Record: IdempotencyRecord{Scope: scope, OrderID: orderID, SnapshotVersion: SnapshotVersionOne, SnapshotJSON: snapshot, SnapshotDigest: sha256.Sum256(snapshot), CreatedAt: FormatTime(now)}})
 	if err != nil {
 		return Order{}, fmt.Errorf("create order: %w", err)
 	}

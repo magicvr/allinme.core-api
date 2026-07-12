@@ -118,10 +118,15 @@ func (application *API) Handler() http.Handler {
 }
 
 func (application *API) Run(ctx context.Context) error {
+	serveComplete := make(chan struct{})
 	shutdownComplete := make(chan struct{})
 	go func() {
 		defer close(shutdownComplete)
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-serveComplete:
+			return
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), application.shutdownTimeout)
 		defer cancel()
 		if err := application.shutdownServer(shutdownCtx); err != nil {
@@ -138,9 +143,8 @@ func (application *API) Run(ctx context.Context) error {
 		serve = application.serve
 	}
 	err := serve()
-	if ctx.Err() != nil {
-		<-shutdownComplete
-	}
+	close(serveComplete)
+	<-shutdownComplete
 	application.Close()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve HTTP: %w", err)

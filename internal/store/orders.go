@@ -25,10 +25,10 @@ func (database *DB) ListOrders(ctx context.Context, query order.ListQuery) (page
 	}()
 
 	where, arguments := orderWhere(query)
-	database.observeQuery()
 	if err := transaction.QueryRowContext(ctx, "SELECT COUNT(*) FROM orders o "+where, arguments...).Scan(&page.Total); err != nil {
 		return order.Page{}, fmt.Errorf("count orders: %w", err)
 	}
+	database.observeQuery()
 	sortColumn := map[string]string{
 		"createdAt": "o.created_at", "updatedAt": "o.updated_at", "totalAmount": "o.total_amount",
 		"customerName": "o.customer_name", "status": "o.status",
@@ -42,11 +42,11 @@ func (database *DB) ListOrders(ctx context.Context, query order.ListQuery) (page
 	}
 	offset := (query.Page - 1) * query.PageSize
 	pageArguments := append(append([]any{}, arguments...), query.PageSize, offset)
-	database.observeQuery()
 	rows, err := transaction.QueryContext(ctx, `SELECT o.id, o.customer_name, o.status, o.payment_status, o.currency, o.total_amount, o.version, o.created_at, o.updated_at FROM orders o `+where+` ORDER BY `+sortColumn+` `+direction+`, o.id `+direction+` LIMIT ? OFFSET ?`, pageArguments...)
 	if err != nil {
 		return order.Page{}, fmt.Errorf("query orders: %w", err)
 	}
+	database.observeQuery()
 	defer rows.Close()
 	for rows.Next() {
 		result, scanErr := scanOrder(rows)
@@ -139,7 +139,7 @@ func (database *DB) CreateOrderIdempotent(ctx context.Context, persistence order
 			_ = transaction.Rollback()
 		}
 	}()
-	insert, err := transaction.ExecContext(ctx, `INSERT OR IGNORE INTO idempotency_keys(principal_user_id, method, route, idempotency_key, request_digest, order_id, snapshot_version, snapshot_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, persistence.Record.Scope.PrincipalUserID, persistence.Record.Scope.Method, persistence.Record.Scope.Route, persistence.Record.Scope.Key, persistence.Record.Scope.RequestDigest[:], persistence.Record.OrderID, persistence.Record.SnapshotVersion, string(persistence.Record.SnapshotJSON), persistence.Record.CreatedAt)
+	insert, err := transaction.ExecContext(ctx, `INSERT OR IGNORE INTO idempotency_keys(principal_user_id, method, route, idempotency_key, request_digest, order_id, snapshot_version, snapshot_json, snapshot_digest, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, persistence.Record.Scope.PrincipalUserID, persistence.Record.Scope.Method, persistence.Record.Scope.Route, persistence.Record.Scope.Key, persistence.Record.Scope.RequestDigest[:], persistence.Record.OrderID, persistence.Record.SnapshotVersion, string(persistence.Record.SnapshotJSON), persistence.Record.SnapshotDigest[:], persistence.Record.CreatedAt)
 	if err != nil {
 		return order.IdempotencyRecord{}, false, fmt.Errorf("reserve idempotency key: %w", err)
 	}
@@ -172,31 +172,33 @@ func (database *DB) CreateOrderIdempotent(ctx context.Context, persistence order
 
 func (database *DB) GetIdempotency(ctx context.Context, scope order.IdempotencyScope) (order.IdempotencyRecord, bool, error) {
 	var result order.IdempotencyRecord
-	var digest []byte
-	err := database.sql.QueryRowContext(ctx, `SELECT principal_user_id, method, route, idempotency_key, request_digest, order_id, snapshot_version, snapshot_json, created_at FROM idempotency_keys WHERE principal_user_id = ? AND method = ? AND route = ? AND idempotency_key = ?`, scope.PrincipalUserID, scope.Method, scope.Route, scope.Key).Scan(&result.Scope.PrincipalUserID, &result.Scope.Method, &result.Scope.Route, &result.Scope.Key, &digest, &result.OrderID, &result.SnapshotVersion, &result.SnapshotJSON, &result.CreatedAt)
+	var digest, snapshotDigest []byte
+	err := database.sql.QueryRowContext(ctx, `SELECT principal_user_id, method, route, idempotency_key, request_digest, order_id, snapshot_version, snapshot_json, snapshot_digest, created_at FROM idempotency_keys WHERE principal_user_id = ? AND method = ? AND route = ? AND idempotency_key = ?`, scope.PrincipalUserID, scope.Method, scope.Route, scope.Key).Scan(&result.Scope.PrincipalUserID, &result.Scope.Method, &result.Scope.Route, &result.Scope.Key, &digest, &result.OrderID, &result.SnapshotVersion, &result.SnapshotJSON, &snapshotDigest, &result.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return order.IdempotencyRecord{}, false, nil
 	}
 	if err != nil {
 		return order.IdempotencyRecord{}, false, classifyOrderError(fmt.Errorf("read idempotency key: %w", err))
 	}
-	if len(digest) != len(result.Scope.RequestDigest) {
+	if len(digest) != len(result.Scope.RequestDigest) || len(snapshotDigest) != len(result.SnapshotDigest) {
 		return order.IdempotencyRecord{}, false, order.Internal(errors.New("invalid idempotency digest"))
 	}
 	copy(result.Scope.RequestDigest[:], digest)
+	copy(result.SnapshotDigest[:], snapshotDigest)
 	return result, true, nil
 }
 
 func getIdempotencyRecordTx(ctx context.Context, transaction *sql.Tx, scope order.IdempotencyScope) (order.IdempotencyRecord, error) {
 	var result order.IdempotencyRecord
-	var digest []byte
-	if err := transaction.QueryRowContext(ctx, `SELECT principal_user_id, method, route, idempotency_key, request_digest, order_id, snapshot_version, snapshot_json, created_at FROM idempotency_keys WHERE principal_user_id = ? AND method = ? AND route = ? AND idempotency_key = ?`, scope.PrincipalUserID, scope.Method, scope.Route, scope.Key).Scan(&result.Scope.PrincipalUserID, &result.Scope.Method, &result.Scope.Route, &result.Scope.Key, &digest, &result.OrderID, &result.SnapshotVersion, &result.SnapshotJSON, &result.CreatedAt); err != nil {
+	var digest, snapshotDigest []byte
+	if err := transaction.QueryRowContext(ctx, `SELECT principal_user_id, method, route, idempotency_key, request_digest, order_id, snapshot_version, snapshot_json, snapshot_digest, created_at FROM idempotency_keys WHERE principal_user_id = ? AND method = ? AND route = ? AND idempotency_key = ?`, scope.PrincipalUserID, scope.Method, scope.Route, scope.Key).Scan(&result.Scope.PrincipalUserID, &result.Scope.Method, &result.Scope.Route, &result.Scope.Key, &digest, &result.OrderID, &result.SnapshotVersion, &result.SnapshotJSON, &snapshotDigest, &result.CreatedAt); err != nil {
 		return order.IdempotencyRecord{}, fmt.Errorf("read idempotency replay: %w", err)
 	}
-	if len(digest) != len(result.Scope.RequestDigest) {
+	if len(digest) != len(result.Scope.RequestDigest) || len(snapshotDigest) != len(result.SnapshotDigest) {
 		return order.IdempotencyRecord{}, errors.New("invalid idempotency digest")
 	}
 	copy(result.Scope.RequestDigest[:], digest)
+	copy(result.SnapshotDigest[:], snapshotDigest)
 	return result, nil
 }
 
@@ -420,7 +422,7 @@ func scanOrder(row rowScanner) (order.Order, error) {
 	if err != nil {
 		return order.Order{}, fmt.Errorf("parse order updated time: %w", err)
 	}
-	if !order.ValidOrderID(result.ID) || result.CustomerName == "" || !result.Status.Valid() || !result.PaymentStatus.Valid() || result.Currency != "CNY" || result.TotalAmount < 1 || result.TotalAmount > 9999999999 || result.Version < 1 {
+	if order.FormatTime(result.CreatedAt) != createdAt || order.FormatTime(result.UpdatedAt) != updatedAt || !order.ValidOrderID(result.ID) || result.CustomerName == "" || !result.Status.Valid() || !result.PaymentStatus.Valid() || result.Currency != "CNY" || result.TotalAmount < 1 || result.TotalAmount > 9999999999 || result.Version < 1 {
 		return order.Order{}, errors.New("invalid order data")
 	}
 	return result, nil
