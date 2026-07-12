@@ -53,6 +53,37 @@ func TestOrderRepositoryListUsesBoundedQueriesAndStableFiltering(t *testing.T) {
 	}
 }
 
+func TestOrderRepositoryListPreservesFractionalSecondFilterSemantics(t *testing.T) {
+	database := openSeededOrderDatabase(t)
+
+	from := time.Date(2026, 1, 1, 0, 0, 0, 500_000_000, time.UTC)
+	page, err := database.ListOrders(context.Background(), order.ListQuery{CreatedFrom: &from, Page: 1, PageSize: 20, Sort: "createdAt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 5 || len(page.Items) != 5 || page.Items[0].ID != "ord_00000000000000000000000000000002" {
+		t.Fatalf("fractional createdFrom page = %+v", page)
+	}
+
+	to := time.Date(2026, 1, 1, 8, 0, 0, 500_000_000, time.FixedZone("UTC+8", 8*60*60))
+	page, err = database.ListOrders(context.Background(), order.ListQuery{CreatedTo: &to, Page: 1, PageSize: 20, Sort: "createdAt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != "ord_00000000000000000000000000000001" {
+		t.Fatalf("fractional createdTo page = %+v", page)
+	}
+
+	exact := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	page, err = database.ListOrders(context.Background(), order.ListQuery{CreatedFrom: &exact, CreatedTo: &exact, Page: 1, PageSize: 20, Sort: "createdAt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != "ord_00000000000000000000000000000001" {
+		t.Fatalf("exact boundary page = %+v", page)
+	}
+}
+
 func TestOrderRepositoryListCountAndPageShareSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "orders.db")
 	reader, err := Open(context.Background(), path, OpenCreate)

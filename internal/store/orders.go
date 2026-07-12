@@ -96,13 +96,26 @@ func orderWhere(query order.ListQuery) (string, []any) {
 	}
 	if query.CreatedFrom != nil {
 		conditions = append(conditions, "o.created_at >= ?")
-		arguments = append(arguments, query.CreatedFrom.UTC().Format(time.RFC3339))
+		arguments = append(arguments, orderCreatedFromBoundary(*query.CreatedFrom))
 	}
 	if query.CreatedTo != nil {
 		conditions = append(conditions, "o.created_at <= ?")
-		arguments = append(arguments, query.CreatedTo.UTC().Format(time.RFC3339))
+		arguments = append(arguments, orderCreatedToBoundary(*query.CreatedTo))
 	}
 	return "WHERE " + strings.Join(conditions, " AND "), arguments
+}
+
+func orderCreatedFromBoundary(value time.Time) string {
+	value = value.UTC()
+	boundary := value.Truncate(time.Second)
+	if !value.Equal(boundary) {
+		boundary = boundary.Add(time.Second)
+	}
+	return boundary.Format(time.RFC3339)
+}
+
+func orderCreatedToBoundary(value time.Time) string {
+	return value.UTC().Truncate(time.Second).Format(time.RFC3339)
 }
 
 func asciiLower(value string) string {
