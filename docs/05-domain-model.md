@@ -47,7 +47,7 @@ DRAFT -> CONFIRMED -> FULFILLING -> SHIPPED -> COMPLETED
 | 完成 | `SHIPPED` | `COMPLETED` | `operator`、`admin` |
 | 取消 | `DRAFT`、`CONFIRMED`、`FULFILLING` | `CANCELLED` | `operator`、`admin` |
 
-所有写操作必须提交当前 `version`。版本不匹配返回冲突，状态非法返回业务冲突；前端的按钮显隐不构成授权或状态校验。
+订单创建不接受客户端 `version`，由服务端将初始版本设为 `1`；编辑和状态 Action 必须提交当前 `version`。版本不匹配返回冲突，状态非法返回业务冲突；前端的按钮显隐不构成授权或状态校验。
 
 订单创建后的 `version` 为 `1`，每次成功编辑或状态 Action 原子增加 `1`；`created_at` 创建后不可变，成功写操作更新 `updated_at`，失败和幂等重放不修改时间。冲突按资源存在性、version、源状态顺序分类：不存在、版本冲突、状态冲突分别保持可区分。
 
