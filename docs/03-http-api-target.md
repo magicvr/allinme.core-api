@@ -23,7 +23,7 @@ applies_to: order operations demo HTTP API target
 - 创建型关键操作支持幂等；资源更新和状态 Action 使用 `version` 乐观锁。
 - 错误响应具有稳定机器码、安全消息、request ID 和可选字段级详情。
 
-目标列表 envelope 与错误字段的具体名称仍是草案，应在首个业务 endpoint 实现时冻结。
+尚未进入活跃实施计划的列表 envelope 与错误字段仍是草案。订单 API 已进入阶段三，query、DTO、错误、CORS、幂等和成功状态的唯一冻结输入是[阶段三活跃计划](./audit/0003-2026-07-12-plan.md#3-已冻结的-http-与幂等契约)；本文件订单表只维护 endpoint 范围与跨阶段边界，不复制冻结字段。
 
 ## 2. 已实现运行状态
 
@@ -40,28 +40,30 @@ applies_to: order operations demo HTTP API target
 
 ## 4. 订单（draft target）
 
-| Method | Path | 最低权限 | 行为 |
+| Method | Path | 允许角色 | 行为 |
 |---|---|---|---|
-| `GET` | `/api/v1/orders` | viewer | 搜索、筛选、排序和分页 |
-| `POST` | `/api/v1/orders` | operator | 创建草稿订单，支持幂等 |
-| `GET` | `/api/v1/orders/{orderId}` | viewer | 返回订单详情、附件摘要和可执行能力 |
-| `PATCH` | `/api/v1/orders/{orderId}` | operator | 编辑草稿并校验 `version` |
-| `POST` | `/api/v1/orders/{orderId}/confirm` | operator | 确认订单 |
-| `POST` | `/api/v1/orders/{orderId}/fulfill` | operator | 开始履约 |
-| `POST` | `/api/v1/orders/{orderId}/ship` | operator | 标记发货 |
-| `POST` | `/api/v1/orders/{orderId}/complete` | operator | 完成订单 |
-| `POST` | `/api/v1/orders/{orderId}/cancel` | operator | 取消订单 |
+| `GET` | `/api/v1/orders` | authenticated | 搜索、筛选、排序和分页 |
+| `POST` | `/api/v1/orders` | operator、admin | 创建草稿订单，支持幂等 |
+| `GET` | `/api/v1/orders/{orderId}` | authenticated | 返回订单详情和可执行能力；阶段三不含附件摘要 |
+| `PATCH` | `/api/v1/orders/{orderId}` | operator、admin | 编辑草稿并校验 `version` |
+| `POST` | `/api/v1/orders/{orderId}/confirm` | operator、admin | 确认订单 |
+| `POST` | `/api/v1/orders/{orderId}/fulfill` | operator、admin | 开始履约 |
+| `POST` | `/api/v1/orders/{orderId}/ship` | operator、admin | 标记发货 |
+| `POST` | `/api/v1/orders/{orderId}/complete` | operator、admin | 完成订单 |
+| `POST` | `/api/v1/orders/{orderId}/cancel` | operator、admin | 取消订单 |
 
-状态转换、角色权限、金额计算和业务不变量只在 [领域模型](./05-domain-model.md) 维护。列表目标支持关键词、订单/支付状态、创建日期、分页和 allowlist 排序；具体 query 名称与 envelope 在阶段三实现时冻结。
+状态转换、角色权限、金额计算和业务不变量只在 [领域模型](./05-domain-model.md) 维护。订单 query、分页、排序和 envelope 已在[阶段三活跃计划](./audit/0003-2026-07-12-plan.md#3-已冻结的-http-与幂等契约)冻结；实现完成后随 endpoint 一起迁入当前 API，本文件不维护第二份字段清单。
 
 列表可返回按当前主体与资源计算的 `canXxx` 展示字段，但 Action 必须重新鉴权和校验。创建/编辑由服务端根据订单项计算总额，不接受客户端总额作为事实。
+
+附件摘要随阶段五附件生命周期一起新增并冻结；阶段三订单 DTO 不预留 `attachments` 字段。订单 endpoint 实现时以阶段三活跃计划中的冻结 query、DTO、CORS、幂等和错误契约为准，再迁入当前 API。
 
 ## 5. 退款（draft target）
 
 | Method | Path | 最低权限 | 行为 |
 |---|---|---|---|
 | `GET` | `/api/v1/refunds` | approver | 查询待审批及历史退款 |
-| `POST` | `/api/v1/orders/{orderId}/refunds` | operator | 幂等发起退款 |
+| `POST` | `/api/v1/orders/{orderId}/refunds` | operator | 幂等发起退款；幂等作用域包含 method 与 route/operation，可复用订单创建使用过的 key |
 | `POST` | `/api/v1/refunds/{refundId}/approve` | approver | 审批并执行本地退款 |
 | `POST` | `/api/v1/refunds/{refundId}/reject` | approver | 拒绝退款 |
 
