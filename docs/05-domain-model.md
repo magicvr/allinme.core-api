@@ -26,6 +26,8 @@ applies_to: order operations demo
 
 数据库时间统一保存 UTC，HTTP 使用 RFC 3339。ID 使用服务端生成、URL 安全且不暴露顺序规模的字符串。SQLite migrations、seed 和 reset 必须可重复执行；reset 仅在显式开发模式开放。
 
+阶段三订单金额使用 `int64` 最小货币单位，币种只接受 `CNY`。订单必须包含 `1..100` 个明细，每项 `quantity=1..10_000`、`unit_price=1..9_999_999_999`，因此 `total_amount` 合法范围为 `1..9_999_999_999`；service 使用 checked multiplication/addition 重算总额，数据库使用同范围 CHECK。阶段三不支持赠品或零金额订单；未来如需支持，必须先修改本领域模型再调整数据库与 HTTP 契约。
+
 ## 3. 订单状态
 
 目标订单状态：
@@ -46,6 +48,8 @@ DRAFT -> CONFIRMED -> FULFILLING -> SHIPPED -> COMPLETED
 | 取消 | `DRAFT`、`CONFIRMED`、`FULFILLING` | `CANCELLED` | `operator`、`admin` |
 
 所有写操作必须提交当前 `version`。版本不匹配返回冲突，状态非法返回业务冲突；前端的按钮显隐不构成授权或状态校验。
+
+订单创建后的 `version` 为 `1`，每次成功编辑或状态 Action 原子增加 `1`；`created_at` 创建后不可变，成功写操作更新 `updated_at`，失败和幂等重放不修改时间。冲突按资源存在性、version、源状态顺序分类：不存在、版本冲突、状态冲突分别保持可区分。
 
 `admin` 是首批业务能力中 `operator` 与 `approver` 的显式超集，但角色本身不存在可排序层级。实现必须复用 `internal/auth.Role`、`auth.Principal` 和 `auth.RoleAllowed` 的显式 allowlist，不在订单模块复制角色常量或通过字符串比较推导权限。
 

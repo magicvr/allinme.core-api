@@ -12,7 +12,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
       - name: Checkout core API
@@ -39,9 +39,6 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Race test
-        run: go test -race ./...
-
       - name: Validate documentation
         shell: pwsh
         run: ./docs/audit/validate.ps1
@@ -49,3 +46,29 @@ jobs:
       - name: Test documentation validator
         shell: pwsh
         run: ./docs/audit/validate.tests.ps1
+
+  race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout core API
+        uses: actions/checkout@v4
+
+      - name: Checkout protocol fixtures
+        uses: actions/checkout@v4
+        with:
+          repository: magicvr/schema-ui-docs
+          ref: d2f0fc0877dc6550c9fe7e3635b25c7ec72b4ddd
+          path: schema-ui-docs
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Race test
+        env:
+          SCHEMA_UI_FIXTURES: ${{ github.workspace }}/schema-ui-docs/conformance/fixtures
+        run: go test -race ./... -count=1
