@@ -83,13 +83,13 @@ func TestOrderRoutesQueryDetailAndErrors(t *testing.T) {
 		t.Fatalf("invalid id = %d %s", response.Code, response.Body.String())
 	}
 	for _, test := range []struct {
-		method, path string
-		status       int
-	}{{http.MethodPost, "/api/v1/orders", http.StatusUnauthorized}, {http.MethodPatch, "/api/v1/orders", http.StatusNotFound}} {
+		method, path, allow string
+		status              int
+	}{{http.MethodPost, "/api/v1/orders", "", http.StatusUnauthorized}, {http.MethodPatch, "/api/v1/orders", "GET, POST", http.StatusMethodNotAllowed}, {http.MethodPost, "/api/v1/orders/ord_00000000000000000000000000000001", "GET, PATCH", http.StatusMethodNotAllowed}} {
 		request = httptest.NewRequest(test.method, test.path, nil)
 		response = httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
-		if response.Code != test.status {
+		if response.Code != test.status || response.Header().Get("Allow") != test.allow {
 			t.Fatalf("%s %s = %d %s", test.method, test.path, response.Code, response.Body.String())
 		}
 	}
@@ -118,6 +118,13 @@ func TestOrderWriteRoutesStrictInputAndErrorMapping(t *testing.T) {
 	if response := request(http.MethodPost, "/api/v1/orders", valid, ""); response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"field":"Idempotency-Key"`) {
 		t.Fatalf("missing key = %d %s", response.Code, response.Body.String())
 	}
+	missingTypeAndKey := httptest.NewRequest(http.MethodPost, "/api/v1/orders", strings.NewReader(valid))
+	missingTypeAndKey.Header.Set("Authorization", "Bearer access-token")
+	missingTypeAndKeyResponse := httptest.NewRecorder()
+	handler.ServeHTTP(missingTypeAndKeyResponse, missingTypeAndKey)
+	if missingTypeAndKeyResponse.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("missing content type and key = %d %s", missingTypeAndKeyResponse.Code, missingTypeAndKeyResponse.Body.String())
+	}
 	if response := request(http.MethodPost, "/api/v1/orders", strings.Replace(valid, `2`, `2.0`, 1), "create-2"); response.Code != http.StatusBadRequest {
 		t.Fatalf("decimal quantity = %d %s", response.Code, response.Body.String())
 	}
@@ -128,6 +135,36 @@ func TestOrderWriteRoutesStrictInputAndErrorMapping(t *testing.T) {
 	handler.ServeHTTP(unsupportedResponse, unsupported)
 	if unsupportedResponse.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("unsupported = %d %s", unsupportedResponse.Code, unsupportedResponse.Body.String())
+	}
+	invalidIDType := httptest.NewRequest(http.MethodPatch, "/api/v1/orders/not-an-order", strings.NewReader(`{`))
+	invalidIDType.Header.Set("Authorization", "Bearer access-token")
+	invalidIDType.Header.Set("Content-Type", "text/plain")
+	invalidIDTypeResponse := httptest.NewRecorder()
+	handler.ServeHTTP(invalidIDTypeResponse, invalidIDType)
+	if invalidIDTypeResponse.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("invalid edit ID and content type = %d %s", invalidIDTypeResponse.Code, invalidIDTypeResponse.Body.String())
+	}
+	service.err = nil
+	for _, size := range []struct {
+		name   string
+		bytes  int
+		status int
+	}{{"at limit", 64 * 1024, http.StatusCreated}, {"over limit", 64*1024 + 1, http.StatusBadRequest}} {
+		body := valid + strings.Repeat(" ", size.bytes-len(valid))
+		if response := request(http.MethodPost, "/api/v1/orders", body, "body-"+strings.ReplaceAll(size.name, " ", "-")); response.Code != size.status {
+			t.Fatalf("body %s = %d %s", size.name, response.Code, response.Body.String())
+		}
+	}
+	validEdit := `{"customerName":"Alice","currency":"CNY","items":[{"sku":"SKU","name":"Item","quantity":1,"unitPrice":100}],"version":1}`
+	for _, size := range []struct {
+		name   string
+		bytes  int
+		status int
+	}{{"at limit", 64 * 1024, http.StatusOK}, {"over limit", 64*1024 + 1, http.StatusBadRequest}} {
+		body := validEdit + strings.Repeat(" ", size.bytes-len(validEdit))
+		if response := request(http.MethodPatch, "/api/v1/orders/ord_00000000000000000000000000000001", body, ""); response.Code != size.status {
+			t.Fatalf("edit body %s = %d %s", size.name, response.Code, response.Body.String())
+		}
 	}
 	authService.authenticatedRole = auth.RoleViewer
 	if response := request(http.MethodPost, "/api/v1/orders", `{`, "bad"); response.Code != http.StatusForbidden {
@@ -222,8 +259,11 @@ func TestOrderActionRoutesStrictInputAuthorizationAndConflicts(t *testing.T) {
 	if response := request(http.MethodPost, "/api/v1/orders/not-an-order/confirm", "application/json", `{`); response.Code != http.StatusNotFound {
 		t.Fatalf("invalid ID = %d %s", response.Code, response.Body.String())
 	}
-	if response := request(http.MethodGet, "/api/v1/orders/ord_00000000000000000000000000000001/confirm", "application/json", `{"version":1}`); response.Code != http.StatusNotFound {
-		t.Fatalf("action GET = %d %s", response.Code, response.Body.String())
+	if response := request(http.MethodPost, "/api/v1/orders/not-an-order/confirm", "text/plain", `{`); response.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("invalid action ID and content type = %d %s", response.Code, response.Body.String())
+	}
+	if response := request(http.MethodGet, "/api/v1/orders/ord_00000000000000000000000000000001/confirm", "application/json", `{"version":1}`); response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodPost {
+		t.Fatalf("action GET = %d Allow=%q %s", response.Code, response.Header().Get("Allow"), response.Body.String())
 	}
 }
 

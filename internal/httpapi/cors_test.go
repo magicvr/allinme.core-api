@@ -111,7 +111,7 @@ func TestCORSDisabledPreservesM3AAPI(t *testing.T) {
 	preflight.Header.Set("Access-Control-Request-Method", http.MethodGet)
 	preflightResponse := httptest.NewRecorder()
 	handler.ServeHTTP(preflightResponse, preflight)
-	if preflightResponse.Code != http.StatusNotFound || preflightResponse.Header().Get("Access-Control-Allow-Origin") != "" {
+	if preflightResponse.Code != http.StatusMethodNotAllowed || preflightResponse.Header().Get("Allow") != "GET, POST" || preflightResponse.Header().Get("Access-Control-Allow-Origin") != "" {
 		t.Fatalf("disabled preflight = %d %v", preflightResponse.Code, preflightResponse.Header())
 	}
 	request := corsRequest(http.MethodGet, "/api/v1/orders", testAllowedOrigin)

@@ -13,6 +13,7 @@ import (
 )
 
 func (database *DB) ListOrders(ctx context.Context, query order.ListQuery) (page order.Page, resultErr error) {
+	defer func() { resultErr = classifyOrderError(resultErr) }()
 	transaction, err := database.sql.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return order.Page{}, fmt.Errorf("begin order list transaction: %w", err)
@@ -71,7 +72,7 @@ func orderWhere(query order.ListQuery) (string, []any) {
 	conditions := []string{"1 = 1"}
 	arguments := []any{}
 	if query.Keyword != "" {
-		keyword := "%" + escapeLike(strings.ToLower(query.Keyword)) + "%"
+		keyword := "%" + escapeLike(asciiLower(query.Keyword)) + "%"
 		conditions = append(conditions, `(lower(o.id) LIKE ? ESCAPE '\' OR lower(o.customer_name) LIKE ? ESCAPE '\' OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND (lower(oi.sku) LIKE ? ESCAPE '\' OR lower(oi.name) LIKE ? ESCAPE '\')))`)
 		arguments = append(arguments, keyword, keyword, keyword, keyword)
 	}
@@ -94,19 +95,30 @@ func orderWhere(query order.ListQuery) (string, []any) {
 	return "WHERE " + strings.Join(conditions, " AND "), arguments
 }
 
+func asciiLower(value string) string {
+	buffer := []byte(value)
+	for index, current := range buffer {
+		if current >= 'A' && current <= 'Z' {
+			buffer[index] = current + ('a' - 'A')
+		}
+	}
+	return string(buffer)
+}
+
 func escapeLike(value string) string {
 	value = strings.ReplaceAll(value, `\`, `\\`)
 	value = strings.ReplaceAll(value, `%`, `\%`)
 	return strings.ReplaceAll(value, `_`, `\_`)
 }
 
-func (database *DB) GetOrder(ctx context.Context, id string) (order.Order, bool, error) {
+func (database *DB) GetOrder(ctx context.Context, id string) (result order.Order, found bool, resultErr error) {
+	defer func() { resultErr = classifyOrderError(resultErr) }()
 	transaction, err := database.sql.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return order.Order{}, false, fmt.Errorf("begin order detail transaction: %w", err)
 	}
 	defer transaction.Rollback()
-	result, found, err := getOrderTx(ctx, transaction, id)
+	result, found, err = getOrderTx(ctx, transaction, id)
 	if err != nil || !found {
 		return order.Order{}, found, err
 	}

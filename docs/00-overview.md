@@ -1,7 +1,7 @@
 ---
 status: active
 owner: 后端团队
-last_updated: 2026-07-12
+last_updated: 2026-07-13
 applies_to: allinme.core-api
 ---
 
@@ -15,7 +15,10 @@ applies_to: allinme.core-api
 
 `allinme.core-api` 是 Go HTTP 服务，也是 Schema-UI 协议的生产消费者和订单运营 demo API 宿主。当前已实现：
 
-- API 进程启动、路由和健康检查；
+- API 进程启动、健康/readiness 检查和有序 shutdown；
+- SQLite migration/seed/reset、账号、会话、订单、订单项和幂等快照持久化；
+- 本地账号登录、JWT Bearer session 撤销和 `viewer`、`operator`、`approver`、`admin` 四角色授权；
+- 订单列表/详情、幂等创建、草稿编辑、履约 Action 和可选可信 origin CORS；
 - Schema-UI 协议算法的 Go 实现与 conformance 验证；
 - 请求构造、响应映射、Action、Reaction、表格状态和上传执行语义；
 - 后端测试、vet 与 CI 门禁。
@@ -52,7 +55,11 @@ applies_to: allinme.core-api
 | 路径 | 职责 |
 |---|---|
 | `cmd/api/main.go` | API 进程入口与监听配置 |
-| `internal/httpapi/handler.go` | HTTP 路由；当前仅提供 `GET /healthz` |
+| `internal/app/api.go` | API 装配、共享数据库/进程锁所有权与有序 shutdown |
+| `internal/httpapi/` | health/readiness、认证、订单和 CORS 路由及稳定错误映射 |
+| `internal/auth/` | 本地账号、JWT、session 与角色授权 |
+| `internal/order/` | 订单领域模型、查询/写入 service、状态机与幂等快照 |
+| `internal/store/` | SQLite、migration/seed、认证与订单 repository |
 | `internal/protocol/version_negotiation.go` | 页面协议版本与能力协商 |
 | `internal/protocol/request_construction.go` | 结构化请求构造 |
 | `internal/protocol/response_mapping.go` | 响应映射 |
@@ -67,9 +74,9 @@ applies_to: allinme.core-api
 
 | 能力 | 当前状态 | 目标状态 |
 |---|---|---|
-| HTTP | 仅 `GET /healthz` | 页面、认证、订单、退款、附件和看板 API |
-| 持久化 | 无 | SQLite + 可重复 migrations/seed |
-| 认证授权 | 无 | 本地账号、JWT Bearer、角色与资源级授权 |
+| HTTP | health/readiness、认证、订单查询/写入/履约 Action、CORS | 页面、退款、附件和看板 API |
+| 持久化 | SQLite + 可重复 migrations/seed/reset；账号、session、订单和幂等快照 | 退款、附件元数据与页面配置持久化 |
+| 认证授权 | 本地账号、JWT Bearer、可撤销 session 与四角色订单授权 | 退款、附件和页面资源级授权 |
 | 页面配置 | 无 | YAML 源文件校验后以 JSON 下发 |
 | 文件 | 无 | 本地受控目录 + SQLite 元数据 + 鉴权下载 |
 
@@ -81,7 +88,7 @@ applies_to: allinme.core-api
 - 前端显隐、禁用、确认和 capability 检查不能替代后端鉴权与数据校验。
 - `internal/protocol` 用于证明 Go 对共享契约的解释一致，不代表所有算法都应暴露为 HTTP 端点。
 - 业务 API 必须明确请求、响应、错误、幂等和权限，不得依赖前端猜测。
-- 当前 HTTP 面仅有健康检查；未来端点在代码落地时同步更新 API 文档和场景。
+- 当前 HTTP 面以 [当前 API](./03-http-api.md) 为准；退款、附件、看板和页面端点仍是后续阶段目标。
 
 ## 6. 开始工作
 

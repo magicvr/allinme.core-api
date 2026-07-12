@@ -18,12 +18,15 @@ import (
 )
 
 type API struct {
-	server    *http.Server
-	probe     *store.Probe
-	database  *store.DB
-	lock      *applock.Lock
-	logger    *slog.Logger
-	closeOnce sync.Once
+	server          *http.Server
+	serve           func() error
+	shutdown        func(context.Context) error
+	shutdownTimeout time.Duration
+	probe           *store.Probe
+	database        *store.DB
+	lock            *applock.Lock
+	logger          *slog.Logger
+	closeOnce       sync.Once
 }
 
 func NewAPI(configuration config.Config, logger *slog.Logger) (*API, error) {
@@ -106,7 +109,7 @@ func newAPI(configuration config.Config, signingKey []byte, corsAllowedOrigin st
 			Handler:           httpapi.NewHandler(dependencies),
 			ReadHeaderTimeout: 5 * time.Second,
 		},
-		probe: probe, database: database, lock: lock, logger: logger,
+		probe: probe, database: database, lock: lock, logger: logger, shutdownTimeout: 10 * time.Second,
 	}, nil
 }
 
@@ -119,15 +122,22 @@ func (application *API) Run(ctx context.Context) error {
 	go func() {
 		defer close(shutdownComplete)
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), application.shutdownTimeout)
 		defer cancel()
-		if err := application.server.Shutdown(shutdownCtx); err != nil {
+		if err := application.shutdownServer(shutdownCtx); err != nil {
 			application.logger.Error("server shutdown failed", "error", err)
+			if err := application.shutdownServer(context.Background()); err != nil {
+				application.logger.Error("server shutdown completion failed", "error", err)
+			}
 		}
 	}()
 
 	application.logger.Info("API listening", "address", application.server.Addr)
-	err := application.server.ListenAndServe()
+	serve := application.server.ListenAndServe
+	if application.serve != nil {
+		serve = application.serve
+	}
+	err := serve()
 	if ctx.Err() != nil {
 		<-shutdownComplete
 	}
@@ -138,16 +148,27 @@ func (application *API) Run(ctx context.Context) error {
 	return nil
 }
 
+func (application *API) shutdownServer(ctx context.Context) error {
+	if application.shutdown != nil {
+		return application.shutdown(ctx)
+	}
+	return application.server.Shutdown(ctx)
+}
+
 func (application *API) Close() {
 	application.closeOnce.Do(func() {
-		application.probe.Close()
+		if application.probe != nil {
+			application.probe.Close()
+		}
 		if application.database != nil {
 			if err := application.database.Close(); err != nil {
 				application.logger.Error("close database failed", "error", err)
 			}
 		}
-		if err := application.lock.Close(); err != nil {
-			application.logger.Error("release API process lock failed", "error", err)
+		if application.lock != nil {
+			if err := application.lock.Close(); err != nil {
+				application.logger.Error("release API process lock failed", "error", err)
+			}
 		}
 	})
 }

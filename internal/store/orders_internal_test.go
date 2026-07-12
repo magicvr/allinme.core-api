@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -61,12 +62,46 @@ func TestOrderRepositoryDetailAndCorruptData(t *testing.T) {
 	if _, err := database.SQL().Exec(`PRAGMA ignore_check_constraints = ON; UPDATE orders SET status = 'BROKEN' WHERE id = 'ord_00000000000000000000000000000001'; PRAGMA ignore_check_constraints = OFF;`); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := database.GetOrder(context.Background(), "ord_00000000000000000000000000000001"); err == nil {
-		t.Fatal("corrupt order returned no error")
+	if _, _, err := database.GetOrder(context.Background(), "ord_00000000000000000000000000000001"); !errors.Is(err, order.ErrInternal) {
+		t.Fatalf("corrupt order error = %v", err)
 	}
 	database.Close()
-	if _, _, err := database.GetOrder(context.Background(), "ord_00000000000000000000000000000002"); err == nil {
-		t.Fatal("closed database returned no error")
+	if _, _, err := database.GetOrder(context.Background(), "ord_00000000000000000000000000000002"); !errors.Is(err, order.ErrInternal) {
+		t.Fatalf("closed database detail error = %v", err)
+	}
+	if _, err := database.ListOrders(context.Background(), order.ListQuery{Page: 1, PageSize: 20, Sort: "createdAt"}); !errors.Is(err, order.ErrInternal) {
+		t.Fatalf("closed database list error = %v", err)
+	}
+}
+
+func TestOrderRepositorySearchFoldsOnlyASCII(t *testing.T) {
+	database := openSeededOrderDatabase(t)
+	fixtures := []struct {
+		id, customer string
+	}{
+		{"ord_0000000000000000000000000000000a", "Änne"},
+		{"ord_0000000000000000000000000000000b", "上海客户"},
+	}
+	for _, fixture := range fixtures {
+		if _, err := database.SQL().Exec(`INSERT INTO orders(id, customer_name, status, payment_status, currency, total_amount, version, created_at, updated_at) VALUES (?, ?, 'DRAFT', 'UNPAID', 'CNY', 1, 1, '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z')`, fixture.id, fixture.customer); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, keyword := range []string{"Änne", "ÄNNE", "上海客户"} {
+		page, err := database.ListOrders(context.Background(), order.ListQuery{Keyword: keyword, Page: 1, PageSize: 20, Sort: "createdAt"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if page.Total != 1 || len(page.Items) != 1 {
+			t.Fatalf("keyword %q page = %+v", keyword, page)
+		}
+	}
+	page, err := database.ListOrders(context.Background(), order.ListQuery{Keyword: "änne", Page: 1, PageSize: 20, Sort: "createdAt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 0 {
+		t.Fatalf("non-ASCII folded unexpectedly: %+v", page)
 	}
 }
 

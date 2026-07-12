@@ -26,7 +26,7 @@ type OrderService interface {
 	Transition(context.Context, auth.Principal, string, order.Action, order.TransitionCommand) (order.Order, error)
 }
 
-const orderWriteBodyLimit = 128 * 1024
+const orderWriteBodyLimit = 64 * 1024
 const orderActionBodyLimit = 1 * 1024
 
 var validIdempotencyKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
@@ -102,6 +102,10 @@ func registerOrderRoutes(mux *http.ServeMux, authService AuthService, service Or
 		writeJSON(response, http.StatusOK, makeOrderDTO(principal, result, true))
 	}))
 	createHandler := RequireAuthentication(authService)(RequireRoles(auth.RoleOperator, auth.RoleAdmin)(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if err := requireJSONContentType(request); err != nil {
+			handleOrderInputError(response, request, err)
+			return
+		}
 		key := request.Header.Get("Idempotency-Key")
 		if len(request.Header.Values("Idempotency-Key")) != 1 || !validIdempotencyKey.MatchString(key) {
 			writeErrorDetails(response, request, http.StatusBadRequest, "INVALID_REQUEST", "invalid request", []errorDetail{{Field: "Idempotency-Key", Message: "must be a valid idempotency key"}})
@@ -120,6 +124,10 @@ func registerOrderRoutes(mux *http.ServeMux, authService AuthService, service Or
 		writeJSON(response, http.StatusCreated, makeOrderDTO(principal, result, true))
 	})))
 	editHandler := RequireAuthentication(authService)(RequireRoles(auth.RoleOperator, auth.RoleAdmin)(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if err := requireJSONContentType(request); err != nil {
+			handleOrderInputError(response, request, err)
+			return
+		}
 		id := request.PathValue("orderId")
 		if !order.ValidOrderID(id) {
 			writeError(response, request, http.StatusNotFound, "NOT_FOUND", "order not found")
@@ -137,11 +145,17 @@ func registerOrderRoutes(mux *http.ServeMux, authService AuthService, service Or
 		}
 		writeJSON(response, http.StatusOK, makeOrderDTO(principal, result, true))
 	})))
-	mux.Handle("/api/v1/orders", orderCollectionRoute(listHandler, createHandler))
-	mux.Handle("/api/v1/orders/{orderId}", orderDetailRoute(detailHandler, editHandler))
+	collectionRoute := orderCollectionMetadata()
+	detailRoute := orderDetailMetadata()
+	mux.Handle(collectionRoute.pattern, orderRoute(collectionRoute, map[string]http.Handler{http.MethodGet: listHandler, http.MethodPost: createHandler}))
+	mux.Handle(detailRoute.pattern, orderRoute(detailRoute, map[string]http.Handler{http.MethodGet: detailHandler, http.MethodPatch: editHandler}))
 	if len(actionEnabled) == 0 || actionEnabled[0] {
 		for action, target := range map[string]order.Action{"confirm": order.ActionConfirm, "fulfill": order.ActionFulfill, "ship": order.ActionShip, "complete": order.ActionComplete, "cancel": order.ActionCancel} {
 			actionHandler := RequireAuthentication(authService)(RequireRoles(auth.RoleOperator, auth.RoleAdmin)(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				if err := requireJSONContentType(request); err != nil {
+					handleOrderInputError(response, request, err)
+					return
+				}
 				id := request.PathValue("orderId")
 				if !order.ValidOrderID(id) {
 					writeError(response, request, http.StatusNotFound, "NOT_FOUND", "order not found")
@@ -159,26 +173,24 @@ func registerOrderRoutes(mux *http.ServeMux, authService AuthService, service Or
 				}
 				writeJSON(response, http.StatusOK, makeOrderDTO(principal, result, true))
 			})))
-			mux.Handle("/api/v1/orders/{orderId}/"+action, actionRoute(actionHandler))
+			route := orderActionMetadata(action)
+			mux.Handle(route.pattern, orderRoute(route, map[string]http.Handler{http.MethodPost: actionHandler}))
 		}
 	}
 }
 
-func actionRoute(post http.Handler) http.Handler {
+func orderRoute(route routeMetadata, handlers map[string]http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodPost {
-			http.NotFound(response, request)
+		handler, ok := handlers[request.Method]
+		if !ok || !route.methods[request.Method] {
+			methodNotAllowed(response, request, route.allow)
 			return
 		}
-		post.ServeHTTP(response, request)
+		handler.ServeHTTP(response, request)
 	})
 }
 
 func decodeActionVersion(response http.ResponseWriter, request *http.Request) (int64, error) {
-	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
-		return 0, errUnsupportedMedia
-	}
 	var input struct {
 		Version json.RawMessage `json:"version"`
 	}
@@ -195,38 +207,6 @@ func decodeActionVersion(response http.ResponseWriter, request *http.Request) (i
 		return 0, errors.New("invalid action version")
 	}
 	return version, nil
-}
-
-func orderCollectionRoute(get, post http.Handler) http.Handler {
-	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		switch request.Method {
-		case http.MethodGet:
-			get.ServeHTTP(response, request)
-		case http.MethodPost:
-			post.ServeHTTP(response, request)
-		case http.MethodHead:
-			response.Header().Set("Allow", http.MethodGet)
-			writeError(response, request, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
-		default:
-			http.NotFound(response, request)
-		}
-	})
-}
-
-func orderDetailRoute(get, patch http.Handler) http.Handler {
-	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		switch request.Method {
-		case http.MethodGet:
-			get.ServeHTTP(response, request)
-		case http.MethodPatch:
-			patch.ServeHTTP(response, request)
-		case http.MethodHead:
-			response.Header().Set("Allow", http.MethodGet)
-			writeError(response, request, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
-		default:
-			http.NotFound(response, request)
-		}
-	})
 }
 
 type writeItemInput struct {
@@ -274,9 +254,8 @@ func decodeEditCommand(response http.ResponseWriter, request *http.Request) (ord
 }
 
 func decodeOrderJSON(response http.ResponseWriter, request *http.Request, destination any) error {
-	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
-		return errUnsupportedMedia
+	if err := requireJSONContentType(request); err != nil {
+		return err
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, orderWriteBodyLimit))
 	decoder.DisallowUnknownFields()
@@ -285,6 +264,14 @@ func decodeOrderJSON(response http.ResponseWriter, request *http.Request, destin
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return errors.New("invalid JSON body")
+	}
+	return nil
+}
+
+func requireJSONContentType(request *http.Request) error {
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return errUnsupportedMedia
 	}
 	return nil
 }

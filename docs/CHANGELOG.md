@@ -31,4 +31,5 @@
 
 ### Changed
 
+- 修复阶段三验收复核发现的 shutdown 超时资源生命周期、订单 `405`/`Allow`、写请求短路顺序、只读 SQLite 错误分类、64 KiB body 上限、非 ASCII 搜索原值和幂等快照完整性校验偏差，并更新项目总纲。
 - 协议 fixture pin 的当前值统一由 Schema-UI 接入文档维护，README 和 CHANGELOG 不再复制 SHA。

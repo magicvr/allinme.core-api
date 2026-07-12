@@ -5,29 +5,46 @@ import "strings"
 type routeMetadata struct {
 	pattern string
 	methods map[string]bool
+	allow   string
 }
 
 func activeRouteMetadata(dependencies Dependencies) []routeMetadata {
 	routes := make([]routeMetadata, 0, 5)
 	if dependencies.Auth != nil {
 		routes = append(routes,
-			routeMetadata{pattern: "/api/v1/auth/login", methods: methodSet("POST")},
-			routeMetadata{pattern: "/api/v1/auth/me", methods: methodSet("GET")},
-			routeMetadata{pattern: "/api/v1/auth/logout", methods: methodSet("POST")},
+			newRouteMetadata("/api/v1/auth/login", "POST"),
+			newRouteMetadata("/api/v1/auth/me", "GET"),
+			newRouteMetadata("/api/v1/auth/logout", "POST"),
 		)
 	}
 	if dependencies.Auth != nil && dependencies.Orders != nil {
 		routes = append(routes,
-			routeMetadata{pattern: "/api/v1/orders", methods: methodSet("GET", "POST")},
-			routeMetadata{pattern: "/api/v1/orders/{orderId}", methods: methodSet("GET", "PATCH")},
+			orderCollectionMetadata(),
+			orderDetailMetadata(),
 		)
 		if dependencies.OrderActions {
 			for _, action := range []string{"confirm", "fulfill", "ship", "complete", "cancel"} {
-				routes = append(routes, routeMetadata{pattern: "/api/v1/orders/{orderId}/" + action, methods: methodSet("POST")})
+				routes = append(routes, orderActionMetadata(action))
 			}
 		}
 	}
 	return routes
+}
+
+func newRouteMetadata(pattern string, methods ...string) routeMetadata {
+	return routeMetadata{pattern: pattern, methods: methodSet(methods...), allow: strings.Join(methods, ", ")}
+}
+
+func orderCollectionMetadata() routeMetadata {
+	return newRouteMetadata("/api/v1/orders", "GET", "POST")
+}
+
+func orderDetailMetadata() routeMetadata {
+	return newRouteMetadata("/api/v1/orders/{orderId}", "GET", "PATCH")
+}
+
+func orderActionMetadata(action string) routeMetadata {
+	return newRouteMetadata("/api/v1/orders/{orderId}/"+action, "POST")
 }
 
 func methodSet(methods ...string) map[string]bool {
