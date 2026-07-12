@@ -2,3 +2,6 @@
 *.exe
 *.test
 *.out
+
+# Codex local cache
+.codex-cache/
