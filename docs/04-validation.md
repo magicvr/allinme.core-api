@@ -59,7 +59,7 @@ go test ./...
 | readiness | yes | `go test ./internal/httpapi ./internal/app -count=1` | method、ready/not-ready、超时、关闭、恢复、错误安全和 liveness 解耦 |
 | 认证 | yes | `go test ./internal/auth ./internal/store ./internal/httpapi ./internal/app -count=1` | 严格 JWT、密码边界、真实 SQLite session、登录限流、login/me/logout、撤销 session 与测试专用角色策略 handler |
 | 订单查询 | no | 阶段三 M1-B 只读 app 集成通过时 | 覆盖搜索/分页边界、详情、四角色读取和稳定排序；不等待 CORS 门禁 |
-| 订单写入/幂等 | no | 阶段三 M2-B 创建编辑/幂等集成通过时 | 覆盖金额、创建/编辑、相同 key 重放、不同 body 冲突和并发只创建一次；不等待 CORS 门禁 |
+| 订单写入/幂等 | no | 阶段三 M2-B1 创建编辑/幂等集成通过时 | 覆盖金额、创建/编辑、相同 key 重放、不同 body 冲突和并发只创建一次；不等待 CORS 门禁 |
 | 订单履约 Action | no | 阶段三 M3-A Action 集成通过时 | 覆盖乐观锁、全部合法状态转换、非法转换和版本冲突；不等待 CORS 门禁 |
 | CORS | no | 阶段三 M3-B CORS 集成通过时 | 配置失败、actual/preflight、Vary、route metadata、短路优先级和自动化跨源 smoke |
 | 退款 | no | 阶段四新增退款集成测试时 | 覆盖可退金额、申请/审批分离、审批事务和订单支付状态一致性 |
