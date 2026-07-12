@@ -13,10 +13,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: allinme.core-api
 
     steps:
       - name: Checkout core API
         uses: actions/checkout@v4
+        with:
+          path: allinme.core-api
 
       - name: Checkout protocol fixtures
         uses: actions/checkout@v4
@@ -28,7 +33,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: allinme.core-api/go.mod
           cache: true
 
       - name: Test
@@ -50,10 +55,15 @@ jobs:
   race:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: allinme.core-api
 
     steps:
       - name: Checkout core API
         uses: actions/checkout@v4
+        with:
+          path: allinme.core-api
 
       - name: Checkout protocol fixtures
         uses: actions/checkout@v4
@@ -65,7 +75,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: allinme.core-api/go.mod
           cache: true
 
       - name: Race test
