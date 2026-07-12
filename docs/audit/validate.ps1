@@ -67,8 +67,12 @@ foreach ($file in $markdownFiles) {
     }
 }
 
-$diffOutput = & git -C $repoRoot diff HEAD --check 2>&1
-if ($LASTEXITCODE -ne 0) {
+$previousErrorAction = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$diffOutput = & git -C $repoRoot diff HEAD --check 2>$null
+$diffExitCode = $LASTEXITCODE
+$ErrorActionPreference = $previousErrorAction
+if ($diffExitCode -ne 0) {
     foreach ($line in $diffOutput) {
         $failures.Add("git diff HEAD --check: $line")
     }
