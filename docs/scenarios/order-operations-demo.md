@@ -24,6 +24,8 @@ applies_to: order operations demo
 
 所有参与者先通过本地账号登录获取 JWT。切换角色必须重新登录对应账号，不接受客户端声明角色。
 
+阶段四的退款队列仅供 `approver`/`admin` 审批使用。`operator` 发起退款后只通过订单 `paymentStatus`、`availableRefundAmount` 和 `canRequestRefund` 观察聚合结果，不提供逐笔退款历史；若后续产品要求申请人逐笔跟踪，必须先扩展目标 API 和场景，再实现页面，阶段六不得临时放宽审批队列角色。
+
 ## 3. 主流程
 
 本节使用的 page ID 均为 provisional 叙述标识，最终值随阶段六页面文件和目标 API 一起冻结。

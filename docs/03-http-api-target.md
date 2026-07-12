@@ -31,7 +31,7 @@ applies_to: order operations demo HTTP API target
 
 ## 3. 页面配置（draft target）
 
-| Method | Path | 权限 | 行为 |
+| Method | Path | 允许角色 | 行为 |
 |---|---|---|---|
 | `GET` | `/api/v1/pages` | authenticated | 返回当前角色可访问页面摘要 |
 | `GET` | `/api/v1/pages/{pageId}` | page-specific | 返回启动时已校验的 Schema-UI JSON 页面 |
@@ -49,7 +49,7 @@ applies_to: order operations demo HTTP API target
 | Method | Path | 允许角色 | 行为 |
 |---|---|---|---|
 | `GET` | `/api/v1/refunds` | `approver`、`admin` | 查询待审批及历史退款 |
-| `POST` | `/api/v1/orders/{orderId}/refunds` | `operator`、`admin` | 幂等发起退款；幂等作用域包含 method 与 route/operation，可复用订单创建使用过的 key |
+| `POST` | `/api/v1/orders/{orderId}/refunds` | `operator`、`admin` | 幂等发起退款；幂等作用域包含主体、method、operation、orderId 与 key，不同订单及订单创建可复用同一 key |
 | `POST` | `/api/v1/refunds/{refundId}/approve` | `approver`、`admin` | 审批并执行本地退款 |
 | `POST` | `/api/v1/refunds/{refundId}/reject` | `approver`、`admin` | 拒绝退款 |
 
@@ -67,7 +67,7 @@ applies_to: order operations demo HTTP API target
 
 ## 7. 看板（draft target）
 
-| Method | Path | 权限 | 行为 |
+| Method | Path | 允许角色 | 行为 |
 |---|---|---|---|
 | `GET` | `/api/v1/dashboard/summary` | authenticated | 订单数、原始已支付金额、已完成退款金额、净额和币种 |
 | `GET` | `/api/v1/dashboard/order-status` | authenticated | 订单状态分布 |
