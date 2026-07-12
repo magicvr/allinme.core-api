@@ -23,7 +23,7 @@ applies_to: order operations demo HTTP API target
 - 创建型关键操作支持幂等；资源更新和状态 Action 使用 `version` 乐观锁。
 - 错误响应具有稳定机器码、安全消息、request ID 和可选字段级详情。
 
-尚未进入活跃实施计划的列表 envelope 与错误字段仍是草案。订单 API 已进入阶段三，query、DTO、错误、CORS、幂等和成功状态的唯一冻结输入是[阶段三活跃计划](./audit/0003-2026-07-12-plan.md#3-已冻结的-http-与幂等契约)；本文件订单表只维护 endpoint 范围与跨阶段边界，不复制冻结字段。
+事实源按关注点拆分：状态机、金额、角色和业务不变量只在[领域模型](./05-domain-model.md)维护；本文件维护目标 endpoint 范围与跨阶段边界；订单 API 处于阶段三 active 期间，query、DTO、错误、CORS、幂等和成功状态只在[阶段三活跃计划](./audit/0003-2026-07-12-plan.md#3-已冻结的-http-与幂等契约)维护；实现完成后迁入[当前 HTTP API](./03-http-api.md)。其他文档只链接这些来源，不复制完整规则。
 
 ## 2. 已实现运行状态
 
@@ -52,7 +52,7 @@ applies_to: order operations demo HTTP API target
 | `POST` | `/api/v1/orders/{orderId}/complete` | operator、admin | 完成订单 |
 | `POST` | `/api/v1/orders/{orderId}/cancel` | operator、admin | 取消订单 |
 
-状态转换、角色权限、金额计算和业务不变量只在 [领域模型](./05-domain-model.md) 维护。订单 query、分页、排序和 envelope 已在[阶段三活跃计划](./audit/0003-2026-07-12-plan.md#3-已冻结的-http-与幂等契约)冻结；实现完成后随 endpoint 一起迁入当前 API，本文件不维护第二份字段清单。
+状态转换、角色权限、金额计算和业务不变量只在[领域模型](./05-domain-model.md)维护。订单 query、分页、排序、DTO、错误和 CORS 在阶段三 active 期间只由[阶段三活跃计划](./audit/0003-2026-07-12-plan.md#3-已冻结的-http-与幂等契约)维护；实现完成后随 endpoint 一起迁入当前 API，本文件不维护第二份字段清单。
 
 列表可返回按当前主体与资源计算的 `canXxx` 展示字段，但 Action 必须重新鉴权和校验。创建/编辑由服务端根据订单项计算总额，不接受客户端总额作为事实。
 
