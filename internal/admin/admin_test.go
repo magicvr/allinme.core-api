@@ -49,6 +49,20 @@ func TestMigrateSeedAndReset(t *testing.T) {
 	if err := database.SQL().QueryRow("SELECT version FROM seed_versions WHERE name = 'runtime'").Scan(&version); err != nil || version != 1 {
 		t.Fatalf("runtime seed version = %d, error = %v", version, err)
 	}
+	database.Close()
+	values := map[string]string{"DATA_DIR": configuration.DataDir, "DEMO_ACCOUNT_PASSWORD": "123456789012"}
+	if err := admin.Execute(context.Background(), mapLookup(values), []string{"reset"}, &output, logger); err != nil {
+		t.Fatalf("demo reset error = %v", err)
+	}
+	database, err = store.Open(context.Background(), configuration.DatabasePath, store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	var orders int
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&orders); err != nil || orders != 6 {
+		t.Fatalf("reset demo orders = %d, error = %v", orders, err)
+	}
 }
 
 func TestProductionResetIsRejectedBeforeDeletion(t *testing.T) {
@@ -136,6 +150,10 @@ func TestExecuteDevelopmentSeedAndResetRequirePasswordBeforeDatabaseAccess(t *te
 	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM users`).Scan(&users); err != nil || users != 4 {
 		t.Fatalf("users = %d, error = %v", users, err)
 	}
+	var orders int
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&orders); err != nil || orders != 6 {
+		t.Fatalf("orders = %d, error = %v", orders, err)
+	}
 }
 
 func TestExecuteSeedReportsCommittedRuntimeWhenAuthGroupFails(t *testing.T) {
@@ -202,6 +220,15 @@ func TestExecuteProductionBootstrapAdmin(t *testing.T) {
 	values["DEMO_ACCOUNT_PASSWORD"] = "should-not-be-read"
 	if err := admin.Execute(context.Background(), mapLookup(values), []string{"seed"}, io.Discard, nil); err != nil {
 		t.Fatalf("production seed error = %v", err)
+	}
+	database, err := store.Open(context.Background(), filepath.Join(dataDir, "allinme.db"), store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	var orders int
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&orders); err != nil || orders != 0 {
+		t.Fatalf("production seed orders = %d, error = %v", orders, err)
 	}
 }
 

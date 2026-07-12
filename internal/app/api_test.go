@@ -150,6 +150,11 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 	if status := requestStatus(application.Handler(), "/readyz"); status != http.StatusOK {
 		t.Fatalf("readiness = %d", status)
 	}
+	for _, path := range []string{"/api/v1/orders", "/api/v1/orders/ord_00000000000000000000000000000001"} {
+		if response := requestWithToken(http.MethodGet, path); response.Code != http.StatusNotFound {
+			t.Fatalf("schema-only order route %s = %d %s", path, response.Code, response.Body.String())
+		}
+	}
 
 	for _, role := range []string{"viewer", "operator", "approver", "admin"} {
 		request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"username":"`+role+`","password":"123456789012"}`))

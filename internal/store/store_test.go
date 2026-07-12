@@ -39,14 +39,14 @@ func TestOpenConfiguresPragmasAndMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
-	if first.FromVersion != 0 || first.ToVersion != 2 {
+	if first.FromVersion != 0 || first.ToVersion != 3 {
 		t.Fatalf("first migration = %+v", first)
 	}
 	second, err := database.Migrate(ctx)
 	if err != nil {
 		t.Fatalf("second Migrate() error = %v", err)
 	}
-	if second.FromVersion != 2 || second.ToVersion != 2 {
+	if second.FromVersion != 3 || second.ToVersion != 3 {
 		t.Fatalf("second migration = %+v", second)
 	}
 }
@@ -82,7 +82,7 @@ func TestVersionOneDatabaseIsOutdatedAndUpgradesWithoutLosingSeeds(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FromVersion != 1 || result.ToVersion != 2 {
+	if result.FromVersion != 1 || result.ToVersion != 3 {
 		t.Fatalf("migration = %+v", result)
 	}
 	var appliedAt string
@@ -91,6 +91,57 @@ func TestVersionOneDatabaseIsOutdatedAndUpgradesWithoutLosingSeeds(t *testing.T)
 	}
 	if appliedAt != "preserved" {
 		t.Fatalf("applied_at = %q, want preserved", appliedAt)
+	}
+}
+
+func TestVersionTwoDatabaseUpgradesWithoutLosingAuthenticationData(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "allinme.db")
+	database, err := store.Open(ctx, path, store.OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SQL().ExecContext(ctx, `
+		CREATE TABLE seed_versions (name TEXT PRIMARY KEY, version INTEGER NOT NULL, applied_at TEXT NOT NULL);
+		CREATE TABLE users (
+			id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
+			role TEXT NOT NULL CHECK (role IN ('viewer', 'operator', 'approver', 'admin')),
+			disabled_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+		);
+		CREATE TABLE sessions (
+			id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), token_id TEXT NOT NULL UNIQUE,
+			expires_at TEXT NOT NULL, revoked_at TEXT, created_at TEXT NOT NULL
+		);
+		INSERT INTO users(id, username, password_hash, role, created_at, updated_at)
+		VALUES ('user-preserved', 'viewer', 'hash', 'viewer', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+		INSERT INTO sessions(id, user_id, token_id, expires_at, created_at)
+		VALUES ('session-preserved', 'user-preserved', 'token-preserved', '2027-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+		PRAGMA user_version = 2;
+	`); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	result, err := database.Migrate(ctx)
+	if err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if result.FromVersion != 2 || result.ToVersion != 3 {
+		t.Fatalf("migration = %+v", result)
+	}
+	var users, sessions, idempotencyTables int
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM users WHERE id = 'user-preserved'`).Scan(&users); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = 'session-preserved'`).Scan(&sessions); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'idempotency_keys'`).Scan(&idempotencyTables); err != nil {
+		t.Fatal(err)
+	}
+	if users != 1 || sessions != 1 || idempotencyTables != 0 {
+		t.Fatalf("users = %d, sessions = %d, idempotency tables = %d", users, sessions, idempotencyTables)
 	}
 }
 

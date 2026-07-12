@@ -132,10 +132,15 @@ func seedDemo(ctx context.Context, configuration config.DemoSeedConfig, output i
 	if err != nil {
 		return fmt.Errorf("auth demo seed failed after runtime seed committed: %w", err)
 	}
+	orderResult, err := database.SeedOrderDemo(ctx, time.Now())
+	if err != nil {
+		return fmt.Errorf("order demo seed failed after runtime and auth demo seeds committed: %w", err)
+	}
 	return writeSummary(output, "seed", struct {
-		Runtime store.SeedResult     `json:"runtime"`
-		Auth    store.AuthSeedResult `json:"auth"`
-	}{Runtime: runtimeResult, Auth: authResult})
+		Runtime store.SeedResult      `json:"runtime"`
+		Auth    store.AuthSeedResult  `json:"auth"`
+		Order   store.OrderSeedResult `json:"order"`
+	}{Runtime: runtimeResult, Auth: authResult, Order: orderResult})
 }
 
 func reset(ctx context.Context, configuration config.Config, output io.Writer, logger *slog.Logger) error {
@@ -218,11 +223,16 @@ func resetDemo(ctx context.Context, configuration config.DemoSeedConfig, output 
 	if err != nil {
 		return fmt.Errorf("auth demo seed failed after runtime seed committed: %w", err)
 	}
+	orderResult, err := database.SeedOrderDemo(ctx, time.Now())
+	if err != nil {
+		return fmt.Errorf("order demo seed failed after runtime and auth demo seeds committed: %w", err)
+	}
 	return writeSummary(output, "reset", struct {
 		Migration store.MigrationResult `json:"migration"`
 		Runtime   store.SeedResult      `json:"runtime"`
 		Auth      store.AuthSeedResult  `json:"auth"`
-	}{Migration: migration, Runtime: runtimeResult, Auth: authResult})
+		Order     store.OrderSeedResult `json:"order"`
+	}{Migration: migration, Runtime: runtimeResult, Auth: authResult, Order: orderResult})
 }
 
 func bootstrapAdmin(ctx context.Context, configuration config.BootstrapAdminConfig, output io.Writer) error {
