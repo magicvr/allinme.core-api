@@ -3,5 +3,8 @@
 *.test
 *.out
 
+# Local/CI fixed artifacts: binaries, DB backups, hashes, smoke evidence
+/artifacts/
+
 # Codex local cache
 .codex-cache/

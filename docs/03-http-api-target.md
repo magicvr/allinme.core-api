@@ -9,7 +9,7 @@ applies_to: order operations demo HTTP API target
 
 # 目标 HTTP API
 
-> 本文不描述当前可调用接口。通用原则是目标实现基线；所有具体 path、字段、错误码和页面 ID 均为 `draft target`，应在对应路线阶段实现时由测试和 Schema-UI 页面用例收敛，未收敛前不构成兼容性承诺。当前接口见 [当前 HTTP API](./03-http-api.md)。
+> 本文不描述当前可调用接口。通用原则是目标实现基线；所有具体 path、字段、错误码和页面 ID 均为 `draft target`，应在对应路线阶段实现时由测试与契约证据收敛，未收敛前不构成兼容性承诺。页面 YAML 与 Schema-UI 场景另属阶段六，不作为阶段三 endpoint 收敛前置。当前接口见 [当前 HTTP API](./03-http-api.md)。
 
 ## 1. 设计基线
 
@@ -109,6 +109,12 @@ applies_to: order operations demo HTTP API target
 - [验证规则](./04-validation.md)中对应门禁已启用；
 - 当前 API 文档和 CHANGELOG 已同步。
 
-仅业务 endpoint 额外要求业务用例/repository 类型、认证、权限、状态与并发测试，以及对应 Schema-UI datasource/Action 场景。`/healthz`、`/readyz` 等运行端点不要求虚构业务用例、repository 或 Schema-UI 映射。
+仅业务 endpoint 额外要求业务用例/repository 类型、认证、权限、状态与并发测试。`/healthz`、`/readyz` 等运行端点不要求虚构业务用例、repository 或 Schema-UI 映射。
+
+阶段收敛与页面场景分离：
+
+- 阶段三订单 endpoint 收敛到当前契约时，要求真实 HTTP、业务、权限、并发和稳定契约测试；阶段三最小跨源 CORS smoke 只证明浏览器 transport，不替代页面场景。
+- 只有 endpoint 被页面配置实际引用时，才在阶段六要求对应 Schema-UI datasource/Action 页面场景、页面 YAML、L0-L4 校验与页面级回归证据。
+- 阶段六页面门禁未完成不阻塞阶段三 endpoint 迁入当前 API 或阶段三归档。
 
 实现完成后，把该 endpoint 移入 [当前 HTTP API](./03-http-api.md)，目标文档只保留尚未实现的草案。
