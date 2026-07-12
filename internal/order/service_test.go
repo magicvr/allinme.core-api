@@ -44,8 +44,11 @@ func (repository *serviceRepository) ListOrders(context.Context, order.ListQuery
 func (repository *serviceRepository) GetOrder(context.Context, string) (order.Order, bool, error) {
 	return repository.result, repository.found, repository.err
 }
-func (repository *serviceRepository) CreateOrder(context.Context, order.CreatePersistence) (order.Order, error) {
-	return repository.result, repository.err
+func (repository *serviceRepository) GetIdempotency(context.Context, order.IdempotencyScope) (order.IdempotencyRecord, bool, error) {
+	return order.IdempotencyRecord{}, false, repository.err
+}
+func (repository *serviceRepository) CreateOrderIdempotent(_ context.Context, persistence order.IdempotentCreatePersistence) (order.IdempotencyRecord, bool, error) {
+	return persistence.Record, true, repository.err
 }
 func (repository *serviceRepository) UpdateDraft(context.Context, order.UpdateDraftPersistence) (order.Order, error) {
 	return repository.result, repository.err

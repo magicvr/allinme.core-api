@@ -25,10 +25,10 @@ const (
 )
 
 type ItemCommand struct {
-	SKU       string
-	Name      string
-	Quantity  int64
-	UnitPrice int64
+	SKU       string `json:"sku"`
+	Name      string `json:"name"`
+	Quantity  int64  `json:"quantity"`
+	UnitPrice int64  `json:"unitPrice"`
 }
 
 type CreateCommand struct {
@@ -98,33 +98,6 @@ func ParseIntegerLexeme(value string) (int64, error) {
 		return 0, errors.New("integer is outside int64 range")
 	}
 	return parsed, nil
-}
-
-func (service *Service) Create(ctx context.Context, principal auth.Principal, command CreateCommand) (Order, error) {
-	if !CanWrite(principal) {
-		return Order{}, ErrForbidden
-	}
-	normalized, total, err := validateFacts(command.CustomerName, command.Currency, command.Items)
-	if err != nil {
-		return Order{}, err
-	}
-	orderID, err := service.newOrderID()
-	if err != nil {
-		return Order{}, fmt.Errorf("generate order ID: %w", err)
-	}
-	items, err := service.persistenceItems(normalized.Items)
-	if err != nil {
-		return Order{}, err
-	}
-	now := FormatTime(UTCNow(service.clock))
-	result, err := service.repository.CreateOrder(ctx, CreatePersistence{
-		ID: orderID, CustomerName: normalized.CustomerName, Currency: normalized.Currency,
-		TotalAmount: total, CreatedAt: now, Items: items,
-	})
-	if err != nil {
-		return Order{}, fmt.Errorf("create order: %w", err)
-	}
-	return result, nil
 }
 
 func (service *Service) Edit(ctx context.Context, principal auth.Principal, id string, command EditCommand) (Order, error) {

@@ -163,6 +163,7 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 	if status := requestStatus(application.Handler(), "/readyz"); status != http.StatusOK {
 		t.Fatalf("readiness = %d", status)
 	}
+	roleTokens := map[string]string{}
 	for _, role := range []string{"viewer", "operator", "approver", "admin"} {
 		request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"username":"`+role+`","password":"123456789012"}`))
 		request.Header.Set("Content-Type", "application/json")
@@ -177,6 +178,7 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 		if err := json.NewDecoder(response.Body).Decode(&roleLogin); err != nil || roleLogin.AccessToken == "" {
 			t.Fatalf("decode %s login: %v", role, err)
 		}
+		roleTokens[role] = roleLogin.AccessToken
 		roleRequest := httptest.NewRequest(http.MethodGet, "/api/v1/orders?pageSize=1", nil)
 		roleRequest.Header.Set("Authorization", "Bearer "+roleLogin.AccessToken)
 		roleResponse := httptest.NewRecorder()
@@ -188,16 +190,61 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 			login.AccessToken = roleLogin.AccessToken
 		}
 	}
-	for _, requestCase := range []struct{ method, path string }{
-		{http.MethodPost, "/api/v1/orders"},
-		{http.MethodPatch, "/api/v1/orders/ord_00000000000000000000000000000001"},
-	} {
-		if response := requestWithToken(requestCase.method, requestCase.path); response.Code != http.StatusNotFound {
-			t.Fatalf("disabled order route %s %s = %d %s", requestCase.method, requestCase.path, response.Code, response.Body.String())
-		}
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewBufferString(`{"customerName":"Created","currency":"CNY","items":[{"sku":"NEW","name":"New Item","quantity":2,"unitPrice":300}]}`))
+	createRequest.Header.Set("Authorization", "Bearer "+roleTokens["operator"])
+	createRequest.Header.Set("Content-Type", "application/json")
+	createRequest.Header.Set("Idempotency-Key", "app-create-1")
+	createResponse := httptest.NewRecorder()
+	application.Handler().ServeHTTP(createResponse, createRequest)
+	if createResponse.Code != http.StatusCreated || !bytes.Contains(createResponse.Body.Bytes(), []byte(`"totalAmount":600`)) {
+		t.Fatalf("create order = %d %s", createResponse.Code, createResponse.Body.String())
 	}
-	if response := requestWithToken(http.MethodGet, "/api/v1/orders?pageSize=1"); response.Code != http.StatusOK {
-		t.Fatalf("orders after disabled write routes = %d %s", response.Code, response.Body.String())
+	var created struct {
+		ID      string `json:"id"`
+		Version int64  `json:"version"`
+	}
+	if err := json.NewDecoder(createResponse.Body).Decode(&created); err != nil || created.ID == "" || created.Version != 1 {
+		t.Fatalf("decode created: %+v %v", created, err)
+	}
+	replayRequest := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewBufferString(`{"items":[{"unitPrice":300,"quantity":2,"name":"New Item","sku":"NEW"}],"currency":"CNY","customerName":" Created "}`))
+	replayRequest.Header = createRequest.Header.Clone()
+	replayResponse := httptest.NewRecorder()
+	application.Handler().ServeHTTP(replayResponse, replayRequest)
+	if replayResponse.Code != http.StatusCreated || !bytes.Contains(replayResponse.Body.Bytes(), []byte(`"id":"`+created.ID+`"`)) {
+		t.Fatalf("replay = %d %s", replayResponse.Code, replayResponse.Body.String())
+	}
+	conflictRequest := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewBufferString(`{"customerName":"Different","currency":"CNY","items":[{"sku":"NEW","name":"New Item","quantity":2,"unitPrice":300}]}`))
+	conflictRequest.Header = createRequest.Header.Clone()
+	conflictResponse := httptest.NewRecorder()
+	application.Handler().ServeHTTP(conflictResponse, conflictRequest)
+	if conflictResponse.Code != http.StatusConflict || !bytes.Contains(conflictResponse.Body.Bytes(), []byte(`"code":"IDEMPOTENCY_CONFLICT"`)) {
+		t.Fatalf("idempotency conflict = %d %s", conflictResponse.Code, conflictResponse.Body.String())
+	}
+	editRequest := httptest.NewRequest(http.MethodPatch, "/api/v1/orders/"+created.ID, bytes.NewBufferString(`{"customerName":"Edited","currency":"CNY","items":[{"sku":"EDIT","name":"Edited Item","quantity":1,"unitPrice":700}],"version":1}`))
+	editRequest.Header.Set("Authorization", "Bearer "+roleTokens["admin"])
+	editRequest.Header.Set("Content-Type", "application/json")
+	editResponse := httptest.NewRecorder()
+	application.Handler().ServeHTTP(editResponse, editRequest)
+	if editResponse.Code != http.StatusOK || !bytes.Contains(editResponse.Body.Bytes(), []byte(`"version":2`)) {
+		t.Fatalf("edit = %d %s", editResponse.Code, editResponse.Body.String())
+	}
+	replayAfterEdit := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewBufferString(`{"customerName":"Created","currency":"CNY","items":[{"sku":"NEW","name":"New Item","quantity":2,"unitPrice":300}]}`))
+	replayAfterEdit.Header = createRequest.Header.Clone()
+	replayAfterEditResponse := httptest.NewRecorder()
+	application.Handler().ServeHTTP(replayAfterEditResponse, replayAfterEdit)
+	if replayAfterEditResponse.Code != http.StatusCreated || !bytes.Contains(replayAfterEditResponse.Body.Bytes(), []byte(`"version":1`)) || bytes.Contains(replayAfterEditResponse.Body.Bytes(), []byte(`"customerName":"Edited"`)) {
+		t.Fatalf("replay after edit = %d %s", replayAfterEditResponse.Code, replayAfterEditResponse.Body.String())
+	}
+	for _, role := range []string{"viewer", "approver"} {
+		denied := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewBufferString(`{"customerName":"Denied","currency":"CNY","items":[{"sku":"D","name":"Denied","quantity":1,"unitPrice":1}]}`))
+		denied.Header.Set("Authorization", "Bearer "+roleTokens[role])
+		denied.Header.Set("Content-Type", "application/json")
+		denied.Header.Set("Idempotency-Key", "denied-"+role)
+		deniedResponse := httptest.NewRecorder()
+		application.Handler().ServeHTTP(deniedResponse, denied)
+		if deniedResponse.Code != http.StatusForbidden {
+			t.Fatalf("%s create = %d %s", role, deniedResponse.Code, deniedResponse.Body.String())
+		}
 	}
 
 	application.Close()
