@@ -317,6 +317,60 @@ func TestTransitionOrderSameVersionConcurrentChangesOnce(t *testing.T) {
 	}
 }
 
+func TestTransitionOrderSameVersionAcrossTwoDatabasesChangesOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transition-race.db")
+	first, err := store.Open(context.Background(), path, store.OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = first.Close() })
+	if _, err := first.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.SeedOrderDemo(context.Background(), testTime()); err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.Open(context.Background(), path, store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = second.Close() })
+
+	persistence := order.TransitionPersistence{ID: "ord_00000000000000000000000000000001", Version: 1, AllowedSources: []order.Status{order.StatusDraft}, Target: order.StatusConfirmed, UpdatedAt: "2026-07-13T00:00:00Z"}
+	databases := []*store.DB{first, second}
+	start := make(chan struct{})
+	errorsFound := make([]error, len(databases))
+	var wait sync.WaitGroup
+	for index := range databases {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			<-start
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, errorsFound[index] = databases[index].TransitionOrder(ctx, persistence)
+		}(index)
+	}
+	close(start)
+	wait.Wait()
+
+	successes, conflictsOrUnavailable := 0, 0
+	for _, err := range errorsFound {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, order.ErrVersionConflict), errors.Is(err, order.ErrUnavailable):
+			conflictsOrUnavailable++
+		default:
+			t.Fatalf("two-database transition error = %v", err)
+		}
+	}
+	result, found, err := first.GetOrder(context.Background(), persistence.ID)
+	if err != nil || !found || successes != 1 || conflictsOrUnavailable != 1 || result.Status != order.StatusConfirmed || result.Version != 2 {
+		t.Fatalf("successes=%d conflictsOrUnavailable=%d errors=%v order=%+v found=%v err=%v", successes, conflictsOrUnavailable, errorsFound, result, found, err)
+	}
+}
+
 func TestTransitionOrderCancelFromEveryLegalSource(t *testing.T) {
 	database := openSeededOrderDatabaseForWrite(t)
 	for _, id := range []string{

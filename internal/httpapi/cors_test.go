@@ -31,6 +31,14 @@ func TestCORSActualRequestsAndShortCircuitOrder(t *testing.T) {
 		t.Fatalf("denied actual = %d headers=%v authCount=%d body=%s", deniedResponse.Code, deniedResponse.Header(), authService.authenticateCount, deniedResponse.Body.String())
 	}
 
+	duplicateOrigin := corsRequest(http.MethodGet, "/api/v1/orders", testAllowedOrigin)
+	duplicateOrigin.Header.Add("Origin", "https://evil.example.com")
+	duplicateOriginResponse := httptest.NewRecorder()
+	handler.ServeHTTP(duplicateOriginResponse, duplicateOrigin)
+	if duplicateOriginResponse.Code != http.StatusForbidden || !strings.Contains(duplicateOriginResponse.Body.String(), `"code":"CORS_ORIGIN_DENIED"`) {
+		t.Fatalf("duplicate actual origin = %d %s", duplicateOriginResponse.Code, duplicateOriginResponse.Body.String())
+	}
+
 	unknown := corsRequest(http.MethodGet, "/api/v1/unknown", "https://evil.example.com")
 	unknownResponse := httptest.NewRecorder()
 	handler.ServeHTTP(unknownResponse, unknown)
@@ -105,13 +113,29 @@ func TestCORSPreflightMatrixUsesKnownRoutes(t *testing.T) {
 	}
 }
 
+func TestCORSPreflightRejectsDuplicateSingleValueHeaders(t *testing.T) {
+	handler := httpapi.NewHandler(httpapi.Dependencies{Logger: discardLogger(), Auth: &fakeAuthService{}, Orders: &fakeOrderService{}, OrderActions: true, CORSAllowedOrigin: testAllowedOrigin})
+	for _, header := range []string{"Origin", "Access-Control-Request-Method"} {
+		t.Run(header, func(t *testing.T) {
+			request := corsRequest(http.MethodOptions, "/api/v1/orders", testAllowedOrigin)
+			request.Header.Set("Access-Control-Request-Method", http.MethodGet)
+			request.Header.Add(header, map[string]string{"Origin": "https://evil.example.com", "Access-Control-Request-Method": http.MethodPost}[header])
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"code":"CORS_PREFLIGHT_DENIED"`) {
+				t.Fatalf("duplicate %s = %d %s", header, response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestCORSDisabledPreservesM3AAPI(t *testing.T) {
 	handler := httpapi.NewHandler(httpapi.Dependencies{Logger: discardLogger(), Auth: &fakeAuthService{}, Orders: &fakeOrderService{result: testOrder()}, OrderActions: true})
 	preflight := corsRequest(http.MethodOptions, "/api/v1/orders", testAllowedOrigin)
 	preflight.Header.Set("Access-Control-Request-Method", http.MethodGet)
 	preflightResponse := httptest.NewRecorder()
 	handler.ServeHTTP(preflightResponse, preflight)
-	if preflightResponse.Code != http.StatusNotFound || preflightResponse.Header().Get("Access-Control-Allow-Origin") != "" {
+	if preflightResponse.Code != http.StatusMethodNotAllowed || preflightResponse.Header().Get("Allow") != "GET, POST" || preflightResponse.Header().Get("Access-Control-Allow-Origin") != "" {
 		t.Fatalf("disabled preflight = %d %v", preflightResponse.Code, preflightResponse.Header())
 	}
 	request := corsRequest(http.MethodGet, "/api/v1/orders", testAllowedOrigin)

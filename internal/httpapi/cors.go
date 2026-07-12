@@ -23,11 +23,12 @@ func corsMiddleware(allowedOrigin string, routes []routeMetadata, next http.Hand
 		return next
 	}
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		origin := request.Header.Get("Origin")
-		if origin == "" {
+		origins := request.Header.Values("Origin")
+		if len(origins) == 0 {
 			next.ServeHTTP(response, request)
 			return
 		}
+		origin := origins[0]
 		if request.Method == http.MethodOptions {
 			handleCORSPreflight(response, request, allowedOrigin, routes)
 			return
@@ -37,7 +38,7 @@ func corsMiddleware(allowedOrigin string, routes []routeMetadata, next http.Hand
 			return
 		}
 		appendVary(response.Header(), "Origin")
-		if !validRequestOrigin(origin) || origin != allowedOrigin {
+		if len(origins) != 1 || !validRequestOrigin(origin) || origin != allowedOrigin {
 			writeError(response, request, http.StatusForbidden, "CORS_ORIGIN_DENIED", "origin denied")
 			return
 		}
@@ -53,10 +54,17 @@ func handleCORSPreflight(response http.ResponseWriter, request *http.Request, al
 		return
 	}
 	appendVary(response.Header(), "Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers")
-	origin := request.Header.Get("Origin")
-	requestedMethod := request.Header.Get("Access-Control-Request-Method")
+	origins := request.Header.Values("Origin")
+	requestedMethods := request.Header.Values("Access-Control-Request-Method")
+	origin, requestedMethod := "", ""
+	if len(origins) == 1 {
+		origin = origins[0]
+	}
+	if len(requestedMethods) == 1 {
+		requestedMethod = requestedMethods[0]
+	}
 	methodAllowed := requestedMethod == http.MethodOptions || matchRoute(routes, request.URL.Path, requestedMethod)
-	if !validRequestOrigin(origin) || origin != allowedOrigin || !methodAllowed || !validCORSRequestHeaders(request.Header.Values("Access-Control-Request-Headers")) {
+	if len(origins) != 1 || len(requestedMethods) != 1 || !validRequestOrigin(origin) || origin != allowedOrigin || !methodAllowed || !validCORSRequestHeaders(request.Header.Values("Access-Control-Request-Headers")) {
 		writeError(response, request, http.StatusForbidden, "CORS_PREFLIGHT_DENIED", "preflight denied")
 		return
 	}

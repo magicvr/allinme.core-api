@@ -32,6 +32,7 @@ type IdempotencyRecord struct {
 	OrderID         string
 	SnapshotVersion int64
 	SnapshotJSON    []byte
+	SnapshotDigest  [sha256.Size]byte
 	CreatedAt       string
 }
 
@@ -95,6 +96,10 @@ func decodeSnapshot(record IdempotencyRecord, expected IdempotencyScope) (Order,
 	if !bytes.Equal(record.Scope.RequestDigest[:], expected.RequestDigest[:]) {
 		return Order{}, ErrIdempotencyConflict
 	}
+	snapshotDigest := sha256.Sum256(record.SnapshotJSON)
+	if !bytes.Equal(record.SnapshotDigest[:], snapshotDigest[:]) {
+		return Order{}, ErrInternal
+	}
 	decoder := json.NewDecoder(bytes.NewReader(record.SnapshotJSON))
 	decoder.DisallowUnknownFields()
 	var snapshot snapshotV1
@@ -112,18 +117,36 @@ func decodeSnapshot(record IdempotencyRecord, expected IdempotencyScope) (Order,
 	}
 	result := Order{ID: value.ID, CustomerName: value.CustomerName, Status: value.Status, PaymentStatus: value.PaymentStatus, Currency: value.Currency, TotalAmount: value.TotalAmount, Version: value.Version, CreatedAt: createdAt, UpdatedAt: updatedAt, Items: make([]Item, 0, len(value.Items))}
 	command := CreateCommand{CustomerName: value.CustomerName, Currency: value.Currency, Items: make([]ItemCommand, 0, len(value.Items))}
+	itemIDs := make(map[string]bool, len(value.Items))
 	for _, item := range value.Items {
-		if !ValidItemID(item.ID) {
+		if !ValidItemID(item.ID) || itemIDs[item.ID] {
 			return Order{}, ErrInternal
 		}
+		itemIDs[item.ID] = true
 		command.Items = append(command.Items, ItemCommand{SKU: item.SKU, Name: item.Name, Quantity: item.Quantity, UnitPrice: item.UnitPrice})
 		result.Items = append(result.Items, Item{ID: item.ID, SKU: item.SKU, Name: item.Name, Quantity: item.Quantity, UnitPrice: item.UnitPrice})
 	}
 	normalized, total, err := validateFacts(command.CustomerName, command.Currency, command.Items)
-	if err != nil || normalized.CustomerName != command.CustomerName || total != value.TotalAmount {
+	if err != nil || !sameCreateFacts(normalized, command) || total != value.TotalAmount {
+		return Order{}, ErrInternal
+	}
+	digest, err := normalizedDigest(normalized)
+	if err != nil || !bytes.Equal(digest[:], record.Scope.RequestDigest[:]) {
 		return Order{}, ErrInternal
 	}
 	return result, nil
+}
+
+func sameCreateFacts(left, right CreateCommand) bool {
+	if left.CustomerName != right.CustomerName || left.Currency != right.Currency || len(left.Items) != len(right.Items) {
+		return false
+	}
+	for index := range left.Items {
+		if left.Items[index] != right.Items[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (service *Service) Create(ctx context.Context, principal auth.Principal, key string, command CreateCommand) (Order, error) {
@@ -163,7 +186,7 @@ func (service *Service) Create(ctx context.Context, principal auth.Principal, ke
 	if err != nil {
 		return Order{}, fmt.Errorf("encode order snapshot: %w", err)
 	}
-	record, _, err := service.repository.CreateOrderIdempotent(ctx, IdempotentCreatePersistence{Create: CreatePersistence{ID: orderID, CustomerName: normalized.CustomerName, Currency: normalized.Currency, TotalAmount: total, CreatedAt: FormatTime(now), Items: items}, Record: IdempotencyRecord{Scope: scope, OrderID: orderID, SnapshotVersion: SnapshotVersionOne, SnapshotJSON: snapshot, CreatedAt: FormatTime(now)}})
+	record, _, err := service.repository.CreateOrderIdempotent(ctx, IdempotentCreatePersistence{Create: CreatePersistence{ID: orderID, CustomerName: normalized.CustomerName, Currency: normalized.Currency, TotalAmount: total, CreatedAt: FormatTime(now), Items: items}, Record: IdempotencyRecord{Scope: scope, OrderID: orderID, SnapshotVersion: SnapshotVersionOne, SnapshotJSON: snapshot, SnapshotDigest: sha256.Sum256(snapshot), CreatedAt: FormatTime(now)}})
 	if err != nil {
 		return Order{}, fmt.Errorf("create order: %w", err)
 	}

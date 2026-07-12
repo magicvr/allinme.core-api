@@ -10,7 +10,7 @@ import (
 )
 
 func classifyOrderError(err error) error {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, order.ErrNotFound) || errors.Is(err, order.ErrVersionConflict) || errors.Is(err, order.ErrStateConflict) {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, order.ErrNotFound) || errors.Is(err, order.ErrVersionConflict) || errors.Is(err, order.ErrStateConflict) || errors.Is(err, order.ErrInternal) || errors.Is(err, order.ErrUnavailable) {
 		return err
 	}
 	var sqliteError *sqlite.Error

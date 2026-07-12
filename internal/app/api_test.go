@@ -165,7 +165,7 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 	if response := requestWithToken(http.MethodGet, "/api/v1/orders/ord_00000000000000000000000000000001"); response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"items":[{"id":"itm_`)) {
 		t.Fatalf("order detail = %d %s", response.Code, response.Body.String())
 	}
-	if response := requestWithToken(http.MethodHead, "/api/v1/orders"); response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet {
+	if response := requestWithToken(http.MethodHead, "/api/v1/orders"); response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != "GET, POST" {
 		t.Fatalf("orders HEAD = %d Allow=%q %s", response.Code, response.Header().Get("Allow"), response.Body.String())
 	}
 	if response := requestWithToken(http.MethodPost, "/api/v1/auth/logout"); response.Code != http.StatusNoContent {

@@ -1,10 +1,47 @@
+# Go build outputs
 /allinme.core-api
+/bin/
+/dist/
 *.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 *.test
 *.out
+
+# Test, coverage, and profiling outputs
+coverage.*
+*.cover
+*.coverprofile
+*.prof
+*.pprof
+
+# Local runtime data and temporary files
+/data/
+/.tmp/
+/tmp/
+*.log
+*.tmp
+
+# Local environment and secret files
+.env
+.env.*
+!.env.example
+
+# Go workspace files are machine-local for this module
+go.work
+go.work.sum
 
 # Local/CI fixed artifacts: binaries, DB backups, hashes, smoke evidence
 /artifacts/
 
-# Codex local cache
+# Local editor and tool state
+.idea/
+.vscode/*.local.json
 .codex-cache/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

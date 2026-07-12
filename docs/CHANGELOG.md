@@ -31,4 +31,7 @@
 
 ### Changed
 
+- 增加 additive migration v5 与独立 snapshot SHA-256，拒绝合法 item ID 替换；补充非 UTC `Z` 损坏时间、COUNT/page 同 SQLite snapshot 并发证据和 listener 提前失败 watcher 回收。
+- 修复订单读取聚合完整性、v4 幂等记录升级重放、shutdown 超时强制关闭、严格 query string 解析、重复 CORS 单值 header 和编辑资源错误优先级；补充对应损坏数据与回归测试。
+- 修复阶段三验收复核发现的 shutdown 超时资源生命周期、订单 `405`/`Allow`、写请求短路顺序、只读 SQLite 错误分类、64 KiB body 上限、非 ASCII 搜索原值和幂等快照完整性校验偏差，并更新项目总纲。
 - 协议 fixture pin 的当前值统一由 Schema-UI 接入文档维护，README 和 CHANGELOG 不再复制 SHA。
