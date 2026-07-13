@@ -1,7 +1,7 @@
 ---
 status: planned
 owner: 后端团队
-last_updated: 2026-07-12
+last_updated: 2026-07-13
 applies_to: order operations demo
 ---
 
@@ -12,6 +12,8 @@ applies_to: order operations demo
 本场景把 Schema-UI 的看板、搜索表格、联动表单、行级 Action 和上传能力映射到同一套可持久化订单数据。页面配置来自后端，业务请求经过真实认证、授权、校验和 SQLite 事务；重启保留操作结果，reset/seed 可恢复基线。
 
 本文件描述业务验收，不复制协议仓中的页面 YAML。页面结构与执行语义以 [`schema-ui-docs` 场景](../../../schema-ui-docs/docs/05-scenarios/README.md) 为准。
+
+截至阶段四，真实登录、订单、退款和看板 API 已实现并有 SQLite/JWT 集成证据；本场景中的页面加载、附件上传/绑定/下载和前端 Action reload 仍是阶段五/六目标，不表示当前 endpoint 已存在。
 
 ## 2. 参与者
 

@@ -6,6 +6,9 @@
 
 ### Added
 
+- 实现阶段四退款闭环：additive schema v6、独立退款幂等 snapshot、可退额度、申请/审批/拒绝、writer fence/双 CAS、跨连接竞争、严格 UTF-8/JSON/JWT/CORS 路由和真实 app 重启集成。
+- 实现阶段四经营看板：summary、订单状态分布、UTC 7/30 日趋势、固定 seed 快照、负 trend bucket、单 SQLite snapshot、退款后金额变化和独立路由禁用装配。
+- 增加 schema-only v6 产物证据与旧 v5 binary 整库恢复验证，明确回退必须停写并恢复 migration 前主库/WAL/SHM 集合，恢复点之后写入全部丢失。
 - 实现阶段三 M3-B 可选可信 origin CORS、严格 preflight/actual 短路、连接取消中止和结构化 access log outcome，并补充真实 app 跨源 smoke、重启回归与全仓测试证据。
 - 实现阶段三 M3-A 订单履约 Action：confirm/fulfill/ship/complete/cancel 状态机、version 条件更新、冲突分类、并发单次成功、真实 JWT/SQLite 集成和路由关闭回退。
 - 实现阶段三 M2 订单草稿创建/编辑：严格 JSON 与整数词法、服务端金额计算、version 乐观锁、四角色授权和真实 JWT/SQLite 集成。

@@ -1,7 +1,7 @@
 ---
 status: active
 owner: 后端团队
-last_updated: 2026-07-12
+last_updated: 2026-07-13
 applies_to: order operations demo target
 ---
 
@@ -9,7 +9,7 @@ applies_to: order operations demo target
 
 ## 1. 使用方式
 
-本路线从已实现运行基础和认证授权的服务推进到完整订单运营 demo。当前至少包含 `GET /healthz`、`GET /readyz` 以及 login/me/logout 三条认证 API；阶段三再增量交付订单能力。阶段按依赖顺序实施；每阶段只有在代码、测试、API 文档和场景证据齐全后才标记完成。后续阶段的目标接口不代表当前可用。
+本路线从已实现运行基础、认证授权、订单、退款和看板服务推进到完整订单运营 demo。阶段按依赖顺序实施；每阶段只有在代码、测试、API 文档和场景证据齐全后才标记完成。后续阶段的目标接口不代表当前可用。
 
 ## 2. 阶段一：运行基础（已实现）
 
@@ -38,7 +38,7 @@ applies_to: order operations demo target
 
 完成证据：认证集成测试使用真实 HTTP 与临时 SQLite，日志和响应不泄露密码、哈希或 token。
 
-## 4. 阶段三：订单查询与履约
+## 4. 阶段三：订单查询与履约（已实现）
 
 目标：打通订单查询、草稿写入和履约 API/CORS 闭环，为阶段六页面配置提供稳定契约。
 
@@ -52,7 +52,7 @@ applies_to: order operations demo target
 
 完成证据：M1/M2/M3 的真实认证 HTTP fixture、非法状态/权限/并发测试和自动化可信 origin OPTIONS + 订单请求 smoke 通过。阶段三不创建页面 YAML、不启动页面模块，真实页面加载、Schema-UI mapping 和 L0-L4 校验仍属于阶段六。
 
-## 5. 阶段四：退款与看板
+## 5. 阶段四：退款与看板（已实现）
 
 目标：覆盖需要审批的状态变化和多数据源只读页面。
 
@@ -62,6 +62,8 @@ applies_to: order operations demo target
 - 明确 seed 数据与看板统计口径，测试跨接口数据一致性。
 
 完成证据：退款写请求成功或失败后重新查询退款队列与订单可得到一致结果，看板响应与订单/退款数据一致；真实页面 Action reload 与渲染证据属于阶段六。
+
+实施证据见活跃的 [阶段四计划](./audit/0004-2026-07-13-plan.md) 与 [checklist](./audit/0004-2026-07-13-checklist.md)：已实现 additive schema v6、退款独立幂等 snapshot、writer fence/CAS 并发不变量、严格 HTTP/JWT/CORS 闭环、固定 seed 看板、UTC 7/30 日趋势、旧 v5 整库恢复边界及全仓 test/vet/race 门禁。计划只在用户确认完成报告后归档。
 
 ## 6. 阶段五：附件
 

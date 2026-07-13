@@ -46,14 +46,7 @@ applies_to: order operations demo HTTP API target
 
 ## 5. 退款（已迁入当前 API）
 
-| Method | Path | 允许角色 | 行为 |
-|---|---|---|---|
-| `GET` | `/api/v1/refunds` | `approver`、`admin` | 查询待审批及历史退款 |
-| `POST` | `/api/v1/orders/{orderId}/refunds` | `operator`、`admin` | 幂等发起退款；幂等作用域包含主体、method、operation、orderId 与 key，不同订单及订单创建可复用同一 key |
-| `POST` | `/api/v1/refunds/{refundId}/approve` | `approver`、`admin` | 审批并执行本地退款 |
-| `POST` | `/api/v1/refunds/{refundId}/reject` | `approver`、`admin` | 拒绝退款 |
-
-退款状态和审批规则以 [领域模型](./05-domain-model.md) 为唯一事实源。已实现的请求字段、响应 envelope、错误码和短路顺序见 [当前 HTTP API](./03-http-api.md)。
+退款 endpoint、角色、幂等、请求字段、响应 envelope、错误码和短路顺序已全部迁入 [当前 HTTP API](./03-http-api.md)，本目标文档不再重复维护。退款状态和审批规则仍以 [领域模型](./05-domain-model.md) 为唯一事实源。
 
 ## 6. 附件（draft target）
 
@@ -67,13 +60,7 @@ applies_to: order operations demo HTTP API target
 
 ## 7. 看板（已迁入当前 API）
 
-| Method | Path | 允许角色 | 行为 |
-|---|---|---|---|
-| `GET` | `/api/v1/dashboard/summary` | authenticated | 订单数、原始已支付金额、已完成退款金额、净额和币种 |
-| `GET` | `/api/v1/dashboard/order-status` | authenticated | 订单状态分布 |
-| `GET` | `/api/v1/dashboard/trend` | authenticated | 7/30 日订单、原始已支付金额、已完成退款金额与净额趋势 |
-
-统计业务口径只在 [领域模型](./05-domain-model.md) 维护。已实现的 query、响应字段、UTC 窗口和错误语义见 [当前 HTTP API](./03-http-api.md)。
+看板 endpoint、角色、query、响应字段、UTC 窗口和错误语义已全部迁入 [当前 HTTP API](./03-http-api.md)，本目标文档不再重复维护。统计业务口径只在 [领域模型](./05-domain-model.md) 维护。
 
 ## 8. Schema-UI 映射
 

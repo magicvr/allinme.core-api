@@ -16,18 +16,18 @@ applies_to: allinme.core-api
 `allinme.core-api` 是 Go HTTP 服务，也是 Schema-UI 协议的生产消费者和订单运营 demo API 宿主。当前已实现：
 
 - API 进程启动、健康/readiness 检查和有序 shutdown；
-- SQLite migration/seed/reset、账号、会话、订单、订单项和幂等快照持久化；
+- SQLite migration/seed/reset、账号、会话、订单、订单项、退款和两类幂等快照持久化；
 - 本地账号登录、JWT Bearer session 撤销和 `viewer`、`operator`、`approver`、`admin` 四角色授权；
-- 订单列表/详情、幂等创建、草稿编辑、履约 Action 和可选可信 origin CORS；
+- 订单列表/详情、幂等创建、草稿编辑、履约 Action、退款申请/审批/拒绝、经营看板和可选可信 origin CORS；
 - Schema-UI 协议算法的 Go 实现与 conformance 验证；
 - 请求构造、响应映射、Action、Reaction、表格状态和上传执行语义；
 - 后端测试、vet 与 CI 门禁。
 
 目标态（`target`）提供可重复演示且具有真实状态变化的订单运营能力：
 
-- SQLite 持久化的账号、订单、订单项、退款、附件和会话数据；
+- SQLite 持久化的附件元数据和本地文件内容；
 - 本地账号登录与 JWT Bearer 认证，内置 `viewer`、`operator`、`approver`、`admin` 角色；
-- 搜索分页、联动表单、履约与退款 Action、经营看板和附件上传 API；
+- 附件上传、绑定和鉴权下载 API；
 - 仓内 YAML 页面源文件，经启动时校验后由 JSON API 下发；
 - 本地文件存储附件内容、SQLite 保存元数据，以及可重复的 reset/seed 命令。
 
@@ -56,10 +56,10 @@ applies_to: allinme.core-api
 |---|---|
 | `cmd/api/main.go` | API 进程入口与监听配置 |
 | `internal/app/api.go` | API 装配、共享数据库/进程锁所有权与有序 shutdown |
-| `internal/httpapi/` | health/readiness、认证、订单和 CORS 路由及稳定错误映射 |
+| `internal/httpapi/` | health/readiness、认证、订单、退款、看板和 CORS 路由及稳定错误映射 |
 | `internal/auth/` | 本地账号、JWT、session 与角色授权 |
-| `internal/order/` | 订单领域模型、查询/写入 service、状态机与幂等快照 |
-| `internal/store/` | SQLite、migration/seed、认证与订单 repository |
+| `internal/order/` | 订单/退款领域模型、查询/写入/看板 service、状态机与幂等快照 |
+| `internal/store/` | SQLite、migration/seed、认证、订单、退款与看板 repository |
 | `internal/protocol/version_negotiation.go` | 页面协议版本与能力协商 |
 | `internal/protocol/request_construction.go` | 结构化请求构造 |
 | `internal/protocol/response_mapping.go` | 响应映射 |
@@ -74,9 +74,9 @@ applies_to: allinme.core-api
 
 | 能力 | 当前状态 | 目标状态 |
 |---|---|---|
-| HTTP | health/readiness、认证、订单查询/写入/履约 Action、CORS | 页面、退款、附件和看板 API |
-| 持久化 | SQLite + 可重复 migrations/seed/reset；账号、session、订单和幂等快照 | 退款、附件元数据与页面配置持久化 |
-| 认证授权 | 本地账号、JWT Bearer、可撤销 session 与四角色订单授权 | 退款、附件和页面资源级授权 |
+| HTTP | health/readiness、认证、订单查询/写入/履约 Action、退款、看板、CORS | 页面和附件 API |
+| 持久化 | SQLite + 可重复 migrations/seed/reset；账号、session、订单、退款和幂等快照 | 附件元数据与页面配置持久化 |
+| 认证授权 | 本地账号、JWT Bearer、可撤销 session 与四角色订单/退款/看板授权 | 附件和页面资源级授权 |
 | 页面配置 | 无 | YAML 源文件校验后以 JSON 下发 |
 | 文件 | 无 | 本地受控目录 + SQLite 元数据 + 鉴权下载 |
 
@@ -88,7 +88,7 @@ applies_to: allinme.core-api
 - 前端显隐、禁用、确认和 capability 检查不能替代后端鉴权与数据校验。
 - `internal/protocol` 用于证明 Go 对共享契约的解释一致，不代表所有算法都应暴露为 HTTP 端点。
 - 业务 API 必须明确请求、响应、错误、幂等和权限，不得依赖前端猜测。
-- 当前 HTTP 面以 [当前 API](./03-http-api.md) 为准；退款、附件、看板和页面端点仍是后续阶段目标。
+- 当前 HTTP 面以 [当前 API](./03-http-api.md) 为准；附件和页面端点仍是后续阶段目标。
 
 ## 6. 开始工作
 
