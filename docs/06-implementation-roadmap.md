@@ -74,13 +74,14 @@ applies_to: order operations demo target
 - 实现鉴权下载、订单删除清理和未绑定文件过期清理；
 - 测试超限、伪造类型、路径穿越、部分失败和磁盘错误。
 
-完成证据：Schema-UI UploadAction 返回稳定附件 ID，订单提交后可通过受保护 API 下载。
+完成证据：上传 endpoint 返回可供阶段六 UploadAction 消费的稳定附件 ID，订单提交后可通过受保护 API 下载；本阶段不验收页面 YAML、UploadAction 映射或页面回归。
 
 ## 7. 阶段六：页面配置
 
 目标：后端下发经过固定协议版本校验的完整 demo 页面。
 
 - 在 `internal/pages/yaml/*.yaml` 维护订单列表、订单编辑、退款处理、经营看板和附件场景；
+- 完成 UploadAction 到阶段五上传/绑定契约的页面映射，并纳入页面 fixture、L0-L4 与页面回归；
 - Go 测试使用 `schema-ui-docs` 固定版本校验页面，`internal/pages` 通过 `go:embed` 嵌入源文件；
 - 启动时再次解析和校验嵌入页面，失败则拒绝启动；通过 allowlist 页面 ID 返回 JSON；
 - 按角色控制页面入口可见性，API 继续独立授权。
