@@ -63,7 +63,7 @@ applies_to: order operations demo target
 
 完成证据：退款写请求成功或失败后重新查询退款队列与订单可得到一致结果，看板响应与订单/退款数据一致；真实页面 Action reload 与渲染证据属于阶段六。
 
-实施证据见活跃的 [阶段四计划](./audit/0004-2026-07-13-plan.md) 与 [checklist](./audit/0004-2026-07-13-checklist.md)：已实现 additive schema v6、退款独立幂等 snapshot、writer fence/CAS 并发不变量、严格 HTTP/JWT/CORS 闭环、固定 seed 看板、UTC 7/30 日趋势、旧 v5 整库恢复边界及全仓 test/vet/race 门禁。计划只在用户确认完成报告后归档。
+实施证据见已归档的 [阶段四计划](./audit/archived/0004-2026-07-13-plan.md) 与 [checklist](./audit/archived/0004-2026-07-13-checklist.md)：已实现 additive schema v6、退款独立幂等 snapshot、writer fence/CAS 并发不变量、严格 HTTP/JWT/CORS 闭环、固定 seed 看板、UTC 7/30 日趋势、旧 v5 整库恢复边界及全仓 test/vet/race 门禁。
 
 ## 6. 阶段五：附件
 
