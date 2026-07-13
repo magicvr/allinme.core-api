@@ -3,7 +3,7 @@ status: target
 principles_stage: baseline
 endpoints_stage: draft
 owner: 后端团队
-last_updated: 2026-07-12
+last_updated: 2026-07-13
 applies_to: order operations demo HTTP API target
 ---
 
@@ -31,7 +31,7 @@ applies_to: order operations demo HTTP API target
 
 ## 3. 页面配置（draft target）
 
-| Method | Path | 权限 | 行为 |
+| Method | Path | 允许角色 | 行为 |
 |---|---|---|---|
 | `GET` | `/api/v1/pages` | authenticated | 返回当前角色可访问页面摘要 |
 | `GET` | `/api/v1/pages/{pageId}` | page-specific | 返回启动时已校验的 Schema-UI JSON 页面 |
@@ -44,16 +44,9 @@ applies_to: order operations demo HTTP API target
 
 附件摘要随阶段五附件生命周期一起新增并冻结；阶段三订单 DTO 不预留 `attachments` 字段。
 
-## 5. 退款（draft target）
+## 5. 退款（已迁入当前 API）
 
-| Method | Path | 最低权限 | 行为 |
-|---|---|---|---|
-| `GET` | `/api/v1/refunds` | approver | 查询待审批及历史退款 |
-| `POST` | `/api/v1/orders/{orderId}/refunds` | operator | 幂等发起退款；幂等作用域包含 method 与 route/operation，可复用订单创建使用过的 key |
-| `POST` | `/api/v1/refunds/{refundId}/approve` | approver | 审批并执行本地退款 |
-| `POST` | `/api/v1/refunds/{refundId}/reject` | approver | 拒绝退款 |
-
-退款状态和审批规则以 [领域模型](./05-domain-model.md) 为唯一事实源。请求字段、响应 envelope 与错误码在阶段四实现时冻结。
+退款 endpoint、角色、幂等、请求字段、响应 envelope、错误码和短路顺序已全部迁入 [当前 HTTP API](./03-http-api.md)，本目标文档不再重复维护。退款状态和审批规则仍以 [领域模型](./05-domain-model.md) 为唯一事实源。
 
 ## 6. 附件（draft target）
 
@@ -65,15 +58,9 @@ applies_to: order operations demo HTTP API target
 
 首版目标允许 PDF、PNG 和 JPEG，单文件目标上限 10 MiB；允许类型和上限在阶段五威胁测试完成后冻结。服务端检测内容、生成文件名并计算摘要，不返回本地路径或公开静态 URL。
 
-## 7. 看板（draft target）
+## 7. 看板（已迁入当前 API）
 
-| Method | Path | 权限 | 行为 |
-|---|---|---|---|
-| `GET` | `/api/v1/dashboard/summary` | viewer | 订单数、成交额、退款额和币种 |
-| `GET` | `/api/v1/dashboard/order-status` | viewer | 订单状态分布 |
-| `GET` | `/api/v1/dashboard/trend` | viewer | 7/30 日订单与净成交趋势 |
-
-统计业务口径只在 [领域模型](./05-domain-model.md) 维护。响应字段随阶段四页面 datasource 用例冻结。
+看板 endpoint、角色、query、响应字段、UTC 窗口和错误语义已全部迁入 [当前 HTTP API](./03-http-api.md)，本目标文档不再重复维护。统计业务口径只在 [领域模型](./05-domain-model.md) 维护。
 
 ## 8. Schema-UI 映射
 
@@ -82,7 +69,7 @@ applies_to: order operations demo HTTP API target
 | 经营看板 | `/api/v1/dashboard/*` |
 | 搜索表格 | `GET /api/v1/orders` |
 | 联动表单提交 | 订单创建/编辑 |
-| 行级 Action | 订单履约、取消与退款审批 |
+| 行级 Action | 订单履约与取消；退款审批只在独立退款队列中使用 `/api/v1/refunds` Action |
 | UploadAction | 附件上传与订单绑定 |
 
 页面只使用固定协议已有的 datasource、Action、Reaction 和 mapping 能力。页面 YAML 实施时必须通过 [Schema-UI 固定版本](./02-schema-ui-integration.md) 校验。

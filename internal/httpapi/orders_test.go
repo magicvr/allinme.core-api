@@ -39,16 +39,18 @@ func TestOrderRoutesQueryDetailAndErrors(t *testing.T) {
 	if _, ok := item["items"]; ok {
 		t.Fatal("list item exposes items")
 	}
-	if item["canEdit"] != false || item["canRequestRefund"] != false {
+	if item["canEdit"] != false || item["canRequestRefund"] != false || item["availableRefundAmount"] != float64(0) {
 		t.Fatalf("viewer capabilities = %+v", item)
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/api/v1/orders/ord_00000000000000000000000000000001", nil)
 	authService.authenticatedRole = auth.RoleOperator
+	service.result.PaymentStatus = order.PaymentStatusPaid
+	service.result.AvailableRefundAmount = 100
 	request.Header.Set("Authorization", "Bearer access-token")
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !contains(response.Body.String(), `"canEdit":true`) || !contains(response.Body.String(), `"items":[`) {
+	if response.Code != http.StatusOK || !contains(response.Body.String(), `"availableRefundAmount":100`) || !contains(response.Body.String(), `"canEdit":true`) || !contains(response.Body.String(), `"canRequestRefund":true`) || !contains(response.Body.String(), `"canApproveRefund":false`) || !contains(response.Body.String(), `"items":[`) {
 		t.Fatalf("detail = %d %s", response.Code, response.Body.String())
 	}
 
@@ -96,7 +98,10 @@ func TestOrderRoutesQueryDetailAndErrors(t *testing.T) {
 }
 
 func TestOrderWriteRoutesStrictInputAndErrorMapping(t *testing.T) {
-	service := &fakeOrderService{result: testOrder()}
+	result := testOrder()
+	result.PaymentStatus = order.PaymentStatusPaid
+	result.AvailableRefundAmount = 100
+	service := &fakeOrderService{result: result}
 	authService := &fakeAuthService{authenticatedRole: auth.RoleOperator}
 	handler := httpapi.NewHandler(httpapi.Dependencies{Logger: discardLogger(), Auth: authService, Orders: service})
 	request := func(method, path, body, key string) *httptest.ResponseRecorder {
@@ -112,7 +117,7 @@ func TestOrderWriteRoutesStrictInputAndErrorMapping(t *testing.T) {
 	}
 	valid := `{"customerName":" Alice ","currency":"CNY","items":[{"sku":" SKU ","name":" Item ","quantity":2,"unitPrice":100}]}`
 	response := request(http.MethodPost, "/api/v1/orders", valid, "create-1")
-	if response.Code != http.StatusCreated || service.createKey != "create-1" || service.createCommand.Items[0].Quantity != 2 {
+	if response.Code != http.StatusCreated || service.createKey != "create-1" || service.createCommand.Items[0].Quantity != 2 || !contains(response.Body.String(), `"availableRefundAmount":100`) || !contains(response.Body.String(), `"canRequestRefund":true`) || !contains(response.Body.String(), `"canApproveRefund":false`) {
 		t.Fatalf("create = %d %s key=%q command=%+v", response.Code, response.Body.String(), service.createKey, service.createCommand)
 	}
 	if response := request(http.MethodPost, "/api/v1/orders", valid, ""); response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"field":"Idempotency-Key"`) {
@@ -162,7 +167,7 @@ func TestOrderWriteRoutesStrictInputAndErrorMapping(t *testing.T) {
 		status int
 	}{{"at limit", 64 * 1024, http.StatusOK}, {"over limit", 64*1024 + 1, http.StatusBadRequest}} {
 		body := validEdit + strings.Repeat(" ", size.bytes-len(validEdit))
-		if response := request(http.MethodPatch, "/api/v1/orders/ord_00000000000000000000000000000001", body, ""); response.Code != size.status {
+		if response := request(http.MethodPatch, "/api/v1/orders/ord_00000000000000000000000000000001", body, ""); response.Code != size.status || (size.name == "at limit" && (!contains(response.Body.String(), `"availableRefundAmount":100`) || !contains(response.Body.String(), `"canRequestRefund":true`) || !contains(response.Body.String(), `"canApproveRefund":false`))) {
 			t.Fatalf("edit body %s = %d %s", size.name, response.Code, response.Body.String())
 		}
 	}
@@ -196,7 +201,10 @@ func TestOrderWriteRoutesStrictInputAndErrorMapping(t *testing.T) {
 }
 
 func TestOrderActionRoutesStrictInputAuthorizationAndConflicts(t *testing.T) {
-	service := &fakeOrderService{result: testOrder()}
+	result := testOrder()
+	result.PaymentStatus = order.PaymentStatusPaid
+	result.AvailableRefundAmount = 100
+	service := &fakeOrderService{result: result}
 	authService := &fakeAuthService{authenticatedRole: auth.RoleOperator}
 	handler := httpapi.NewHandler(httpapi.Dependencies{Logger: discardLogger(), Auth: authService, Orders: service, OrderActions: true})
 	request := func(method, path, contentType, body string) *httptest.ResponseRecorder {
@@ -211,7 +219,7 @@ func TestOrderActionRoutesStrictInputAuthorizationAndConflicts(t *testing.T) {
 	}
 	for path, action := range map[string]order.Action{"confirm": order.ActionConfirm, "fulfill": order.ActionFulfill, "ship": order.ActionShip, "complete": order.ActionComplete, "cancel": order.ActionCancel} {
 		response := request(http.MethodPost, "/api/v1/orders/ord_00000000000000000000000000000001/"+path, "application/json; charset=utf-8", `{"version":7}`)
-		if response.Code != http.StatusOK || service.action != action || service.transitionCommand.Version != 7 {
+		if response.Code != http.StatusOK || service.action != action || service.transitionCommand.Version != 7 || !contains(response.Body.String(), `"availableRefundAmount":100`) || !contains(response.Body.String(), `"canRequestRefund":true`) || !contains(response.Body.String(), `"canApproveRefund":false`) {
 			t.Fatalf("%s = %d %s action=%q command=%+v", path, response.Code, response.Body.String(), service.action, service.transitionCommand)
 		}
 	}

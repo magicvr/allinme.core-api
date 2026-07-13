@@ -56,16 +56,17 @@ type Item struct {
 }
 
 type Order struct {
-	ID            string
-	CustomerName  string
-	Status        Status
-	PaymentStatus PaymentStatus
-	Currency      string
-	TotalAmount   int64
-	Version       int64
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	Items         []Item
+	ID                    string
+	CustomerName          string
+	Status                Status
+	PaymentStatus         PaymentStatus
+	Currency              string
+	TotalAmount           int64
+	Version               int64
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	AvailableRefundAmount int64
+	Items                 []Item
 }
 
 type Capabilities struct {
@@ -87,6 +88,13 @@ func CapabilitiesFor(principal auth.Principal, status Status) Capabilities {
 		CanAdvance: canWrite && status.Advanceable(),
 		CanCancel:  canWrite && status.Cancellable(),
 	}
+}
+
+func CapabilitiesForOrder(principal auth.Principal, value Order) Capabilities {
+	capabilities := CapabilitiesFor(principal, value.Status)
+	capabilities.CanRequestRefund = CanRequestRefund(principal, value.PaymentStatus, value.AvailableRefundAmount)
+	capabilities.CanApproveRefund = false
+	return capabilities
 }
 
 func (status Status) Advanceable() bool {

@@ -24,15 +24,19 @@ type ReadinessProbe interface {
 }
 
 type Dependencies struct {
-	Logger            *slog.Logger
-	Readiness         ReadinessProbe
-	ReadinessTimeout  time.Duration
-	Auth              AuthService
-	LoginLimiter      *LoginLimiter
-	Orders            OrderService
-	OrderActions      bool
-	CORSAllowedOrigin string
-	Fallback          http.Handler
+	Logger                 *slog.Logger
+	Readiness              ReadinessProbe
+	ReadinessTimeout       time.Duration
+	Auth                   AuthService
+	LoginLimiter           *LoginLimiter
+	Orders                 OrderService
+	OrderActions           bool
+	Refunds                RefundService
+	Dashboard              DashboardService
+	DisableRefundRoutes    bool
+	DisableDashboardRoutes bool
+	CORSAllowedOrigin      string
+	Fallback               http.Handler
 }
 
 type statusResponse struct {
@@ -69,6 +73,8 @@ func NewHandler(dependencies Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	registerAuthRoutes(mux, dependencies.Auth, dependencies.LoginLimiter)
 	registerOrderRoutes(mux, dependencies.Auth, dependencies.Orders, dependencies.OrderActions)
+	registerRefundRoutes(mux, dependencies.Auth, dependencies.Refunds, dependencies.DisableRefundRoutes)
+	registerDashboardRoutes(mux, dependencies.Auth, dependencies.Dashboard, dependencies.DisableDashboardRoutes)
 	mux.HandleFunc("GET /healthz", func(response http.ResponseWriter, _ *http.Request) {
 		writeJSON(response, http.StatusOK, statusResponse{Status: "ok"})
 	})

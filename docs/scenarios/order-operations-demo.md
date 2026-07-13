@@ -1,7 +1,7 @@
 ---
 status: planned
 owner: 后端团队
-last_updated: 2026-07-12
+last_updated: 2026-07-13
 applies_to: order operations demo
 ---
 
@@ -13,6 +13,8 @@ applies_to: order operations demo
 
 本文件描述业务验收，不复制协议仓中的页面 YAML。页面结构与执行语义以 [`schema-ui-docs` 场景](../../../schema-ui-docs/docs/05-scenarios/README.md) 为准。
 
+截至阶段四，真实登录、订单、退款和看板 API 已实现并有 SQLite/JWT 集成证据；本场景中的页面加载、附件上传/绑定/下载和前端 Action reload 仍是阶段五/六目标，不表示当前 endpoint 已存在。
+
 ## 2. 参与者
 
 | 角色 | 场景职责 |
@@ -23,6 +25,8 @@ applies_to: order operations demo
 | admin | 拥有全部首批业务能力；账号管理属于后续目标 |
 
 所有参与者先通过本地账号登录获取 JWT。切换角色必须重新登录对应账号，不接受客户端声明角色。
+
+阶段四的退款队列仅供 `approver`/`admin` 审批使用。`operator` 发起退款后只通过订单 `paymentStatus`、`availableRefundAmount` 和 `canRequestRefund` 观察聚合结果，不提供逐笔退款历史；若后续产品要求申请人逐笔跟踪，必须先扩展目标 API 和场景，再实现页面，阶段六不得临时放宽审批队列角色。
 
 ## 3. 主流程
 

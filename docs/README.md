@@ -46,7 +46,7 @@ ADR 记录“为何选择”，不替代上述现行或目标规范。CHANGELOG 
 | 架构 | [`01-architecture.md`](./01-architecture.md) | Go 进程、HTTP 层与协议模块职责 |
 | 契约接入 | [`02-schema-ui-integration.md`](./02-schema-ui-integration.md) | 协议来源、固定版本、API 边界与升级纪律 |
 | 当前 API | [`03-http-api.md`](./03-http-api.md) | 已实现 HTTP 端点与验证证据 |
-| 目标 API | [`03-http-api-target.md`](./03-http-api-target.md) | 待实现的原则与 endpoint 草案 |
+| 目标 API | [`03-http-api-target.md`](./03-http-api-target.md) | 尚未实现的原则与 endpoint 草案；已实现能力只链接当前 API，不重复维护 |
 | 验证 | [`04-validation.md`](./04-validation.md) | test/vet 与 conformance 门禁 |
 | 领域 | [`05-domain-model.md`](./05-domain-model.md) | 订单、履约、退款、附件与权限目标 |
 | 路线 | [`06-implementation-roadmap.md`](./06-implementation-roadmap.md) | 目标能力实施顺序与完成标准 |

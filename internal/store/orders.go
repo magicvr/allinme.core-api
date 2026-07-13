@@ -68,6 +68,12 @@ func (database *DB) ListOrders(ctx context.Context, query order.ListQuery) (page
 	if err := validatePageOrderAggregates(ctx, transaction, page.Items); err != nil {
 		return order.Page{}, err
 	}
+	if len(page.Items) > 0 {
+		database.observeQuery()
+	}
+	if err := applyOrderRefundCapabilitiesTx(ctx, transaction, page.Items); err != nil {
+		return order.Page{}, err
+	}
 	if err := transaction.Commit(); err != nil {
 		return order.Page{}, fmt.Errorf("commit order list transaction: %w", err)
 	}
@@ -145,6 +151,12 @@ func (database *DB) GetOrder(ctx context.Context, id string) (result order.Order
 	if err != nil || !found {
 		return order.Order{}, found, err
 	}
+	database.observeQuery()
+	values := []order.Order{result}
+	if err := applyOrderRefundCapabilitiesTx(ctx, transaction, values); err != nil {
+		return order.Order{}, false, err
+	}
+	result = values[0]
 	if err := transaction.Commit(); err != nil {
 		return order.Order{}, false, fmt.Errorf("commit order detail transaction: %w", err)
 	}
@@ -236,12 +248,36 @@ func (database *DB) UpdateDraft(ctx context.Context, persistence order.UpdateDra
 			_ = transaction.Rollback()
 		}
 	}()
-	current, found, err := getOrderTx(ctx, transaction, persistence.ID)
+	currentVersion, currentStatus, found, err := getRawOrderVersionStatus(ctx, transaction, persistence.ID)
 	if err != nil {
 		return order.Order{}, err
 	}
 	if !found {
 		return order.Order{}, order.ErrNotFound
+	}
+	if currentVersion != persistence.Version {
+		return order.Order{}, order.ErrVersionConflict
+	}
+	if currentStatus != order.StatusDraft {
+		return order.Order{}, order.ErrStateConflict
+	}
+	fence, err := transaction.ExecContext(ctx, `UPDATE orders SET version = version WHERE id = ? AND version = ? AND status = 'DRAFT'`, persistence.ID, persistence.Version)
+	if err != nil {
+		return order.Order{}, fmt.Errorf("acquire edit order writer fence: %w", err)
+	}
+	fenceAffected, err := fence.RowsAffected()
+	if err != nil {
+		return order.Order{}, fmt.Errorf("read edit order writer fence rows: %w", err)
+	}
+	if fenceAffected != 1 {
+		return order.Order{}, classifyUpdateMiss(ctx, transaction, persistence.ID, persistence.Version)
+	}
+	current, found, err := getOrderTx(ctx, transaction, persistence.ID)
+	if err != nil {
+		return order.Order{}, err
+	}
+	if !found {
+		return order.Order{}, errors.New("fenced edit order is missing")
 	}
 	if current.Version != persistence.Version {
 		return order.Order{}, order.ErrVersionConflict
@@ -249,10 +285,33 @@ func (database *DB) UpdateDraft(ctx context.Context, persistence order.UpdateDra
 	if current.Status != order.StatusDraft {
 		return order.Order{}, order.ErrStateConflict
 	}
+	aggregate, err := loadRefundAggregateTx(ctx, transaction, persistence.ID)
+	if err != nil {
+		return order.Order{}, err
+	}
+	if err := validatePaymentStatusForRefundAggregate(current, aggregate); err != nil {
+		return order.Order{}, err
+	}
+	occupied, err := checkedRefundSum(aggregate.pending, aggregate.completed)
+	if err != nil {
+		return order.Order{}, err
+	}
+	if persistence.TotalAmount < occupied {
+		return order.Order{}, &order.ValidationError{Details: []order.FieldError{{Field: "items", Message: "calculated total must not be less than occupied refund amount"}}}
+	}
+	paymentStatus := current.PaymentStatus
+	if aggregate.rows == 0 && current.PaymentStatus == order.PaymentStatusUnpaid {
+		paymentStatus = order.PaymentStatusUnpaid
+	} else {
+		paymentStatus, err = paymentStatusForCompleted(persistence.TotalAmount, aggregate.completed)
+		if err != nil {
+			return order.Order{}, err
+		}
+	}
 	if current.Version == math.MaxInt64 {
 		return order.Order{}, errors.New("order version exhausted")
 	}
-	update, err := transaction.ExecContext(ctx, `UPDATE orders SET customer_name = ?, currency = ?, total_amount = ?, version = version + 1, updated_at = ? WHERE id = ? AND status = 'DRAFT' AND version = ?`, persistence.CustomerName, persistence.Currency, persistence.TotalAmount, persistence.UpdatedAt, persistence.ID, persistence.Version)
+	update, err := transaction.ExecContext(ctx, `UPDATE orders SET customer_name = ?, currency = ?, total_amount = ?, payment_status = ?, version = version + 1, updated_at = ? WHERE id = ? AND status = 'DRAFT' AND version = ?`, persistence.CustomerName, persistence.Currency, persistence.TotalAmount, paymentStatus, persistence.UpdatedAt, persistence.ID, persistence.Version)
 	if err != nil {
 		return order.Order{}, fmt.Errorf("update draft order: %w", err)
 	}
@@ -276,10 +335,28 @@ func (database *DB) UpdateDraft(ctx context.Context, persistence order.UpdateDra
 	if !found {
 		return order.Order{}, errors.New("updated order is missing")
 	}
+	updatedValues := []order.Order{result}
+	if err := applyOrderRefundCapabilitiesTx(ctx, transaction, updatedValues); err != nil {
+		return order.Order{}, err
+	}
+	result = updatedValues[0]
 	if err := transaction.Commit(); err != nil {
 		return order.Order{}, fmt.Errorf("commit edit order transaction: %w", err)
 	}
 	return result, nil
+}
+
+func getRawOrderVersionStatus(ctx context.Context, transaction *sql.Tx, orderID string) (int64, order.Status, bool, error) {
+	var version int64
+	var status order.Status
+	err := transaction.QueryRowContext(ctx, `SELECT version, status FROM orders WHERE id = ?`, orderID).Scan(&version, &status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", false, nil
+	}
+	if err != nil {
+		return 0, "", false, fmt.Errorf("read order version and status: %w", err)
+	}
+	return version, status, true, nil
 }
 
 func (database *DB) TransitionOrder(ctx context.Context, persistence order.TransitionPersistence) (result order.Order, resultErr error) {
@@ -334,6 +411,11 @@ func (database *DB) TransitionOrder(ctx context.Context, persistence order.Trans
 	if !found {
 		return order.Order{}, errors.New("transitioned order is missing")
 	}
+	transitionedValues := []order.Order{result}
+	if err := applyOrderRefundCapabilitiesTx(ctx, transaction, transitionedValues); err != nil {
+		return order.Order{}, err
+	}
+	result = transitionedValues[0]
 	if err := transaction.Commit(); err != nil {
 		return order.Order{}, fmt.Errorf("commit transition transaction: %w", err)
 	}

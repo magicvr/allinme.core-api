@@ -1,7 +1,7 @@
 ---
 status: active
 owner: 后端团队
-last_updated: 2026-07-12
+last_updated: 2026-07-13
 applies_to: implemented allinme.core-api HTTP API
 ---
 
@@ -57,7 +57,7 @@ Content-Type: application/json
 
 `GET /api/v1/orders` 要求有效 Bearer token，四个当前角色均可读取。query 支持 `q`、`status`、`paymentStatus`、`createdFrom`、`createdTo`、`page`、`pageSize`、`sort` 和 `order`；畸形百分号编码、非编码分号、重复或未知参数返回 `400 INVALID_REQUEST`。默认 `page=1`、`pageSize=20`、`sort=createdAt`、`order=desc`，排序字段只允许 `createdAt`、`updatedAt`、`totalAmount`、`customerName`、`status`，并使用订单 ID 作为同方向稳定次序。响应固定为 `items/total/page/pageSize`，列表项不含明细；repository 仍会批量校验当前页每个订单的明细数量、position、UTF-8、checked amount 和总额一致性，损坏聚合返回 `500 INTERNAL_ERROR`。
 
-`GET /api/v1/orders/{orderId}` 返回订单及按 position 排序的 `items`。非法格式和不存在的订单 ID 均返回 `404 NOT_FOUND`。列表和详情都返回按当前角色与订单状态计算的 `canEdit/canAdvance/canCancel/canRequestRefund/canApproveRefund`；阶段三退款能力尚未启用，后两项恒为 `false`。已知订单 path 的错误 method 返回 `405 METHOD_NOT_ALLOWED`；集合、详情和 Action 的 `Allow` 分别为 `GET, POST`、`GET, PATCH` 和 `POST`，`HEAD` 不受支持。
+`GET /api/v1/orders/{orderId}` 返回订单及按 position 排序的 `items`。非法格式和不存在的订单 ID 均返回 `404 NOT_FOUND`。除订单 create 幂等重放的冻结 snapshot v1 外，所有订单 DTO 都返回整数分 `availableRefundAmount`；`canRequestRefund` 仅在主体为 operator/admin、paymentStatus 为 `PAID/PARTIALLY_REFUNDED` 且可退金额大于零时为 `true`，订单 DTO 的 `canApproveRefund` 恒为 `false`。列表在同一只读 snapshot 中批量加载当前页退款占用，详情复用同一聚合规则；损坏退款、超额占用或 paymentStatus 映射不一致返回 `500 INTERNAL_ERROR`。已知订单 path 的错误 method 返回 `405 METHOD_NOT_ALLOWED`；集合、详情和 Action 的 `Allow` 分别为 `GET, POST`、`GET, PATCH` 和 `POST`，`HEAD` 不受支持。
 
 订单时间均为 UTC RFC3339，金额使用最小货币单位。当前错误沿用 request ID envelope，并增加可选 `error.details` 字段；可定位的 query 错误使用 `field/message` 元素，内部数据库和扫描错误只对外返回安全的 `500 INTERNAL_ERROR`。
 
@@ -69,6 +69,8 @@ Content-Type: application/json
 
 `PATCH /api/v1/orders/{orderId}` 仅允许 operator、admin，严格接受与创建相同的业务字段及正整数 `version`；`Idempotency-Key` 即使存在也被忽略。只有当前 version 的 `DRAFT` 可编辑，成功在单一事务内重写明细和总额、保持 `createdAt`、更新 `updatedAt` 并将 version 加一，返回 `200`。不存在、version 冲突和状态冲突分别返回 `404 NOT_FOUND`、`409 VERSION_CONFLICT` 和 `409 STATE_CONFLICT`。
 
+编辑在取得当前 version 的订单 writer fence 后，于同一事务校验旧订单、明细和退款聚合；新总额不得小于 `PENDING + COMPLETED` 占用，否则返回 `422 VALIDATION_FAILED` 与 `items` detail。合法编辑按新总额和已完成退款重新推导 paymentStatus，订单 version 只增加一次；损坏聚合返回 `500 INTERNAL_ERROR` 且不得由编辑顺带修复。edit/refund create、edit/approve 的跨连接竞争由 writer fence 和 CAS 序列化，锁竞争可暂时返回 `503 SERVICE_UNAVAILABLE`，原输入重试后稳定分类。
+
 typed command 业务校验返回 `422 VALIDATION_FAILED` 与 camelCase 字段详情；缺失/非法幂等 header 或 JSON 结构/类型/整数词法返回 `400 INVALID_REQUEST`，非 JSON Content-Type 返回 `415 UNSUPPORTED_MEDIA_TYPE`。写请求按 role authorization → Content-Type → idempotency key/order ID → JSON 的顺序短路。SQLite BUSY/LOCKED 通过驱动错误码映射为 `503 SERVICE_UNAVAILABLE` 和 `Retry-After: 1`。
 
 ## 订单履约 Action API
@@ -76,6 +78,26 @@ typed command 业务校验返回 `422 VALIDATION_FAILED` 与 camelCase 字段详
 `POST /api/v1/orders/{orderId}/confirm`、`fulfill`、`ship`、`complete` 和 `cancel` 仅允许 operator、admin。Action body 仅允许 `{"version":n}`，上限 1 KiB；Content-Type、严格 JSON、整数词法和 typed version 校验与草稿编辑保持相同错误语义。
 
 状态依次为 `DRAFT -> CONFIRMED -> FULFILLING -> SHIPPED -> COMPLETED`；cancel 只允许从 `DRAFT`、`CONFIRMED`、`FULFILLING` 进入 `CANCELLED`。成功原子递增 version、更新 `updatedAt` 并返回含有序 items 和当前 capability 的订单；失败不改变状态或时间。不存在、version 不匹配和源状态非法分别返回 `404 NOT_FOUND`、`409 VERSION_CONFLICT` 和 `409 STATE_CONFLICT`，version 与状态同时不匹配时优先返回 version 冲突。
+
+## 退款 API
+
+`GET /api/v1/refunds` 仅允许 approver、admin。query 只接受可选 `status=PENDING|REJECTED|COMPLETED`、规范 `orderId`、`page` 和 `pageSize`；默认 `page=1/pageSize=20`、最大 100，固定按 `createdAt DESC, id DESC` 排序。`sort/order`、未知、重复、空或非法参数返回 `400 INVALID_REQUEST`。COUNT、page rows 和 actor 批量加载共享显式只读事务；成功返回 `items/total/page/pageSize`。Refund DTO 固定包含 `id/orderId/amount/currency/reason/status/version/requestedBy/decidedBy/createdAt/updatedAt/decidedAt/canApprove/canReject`，未决定字段为 JSON `null`，审批 capability 仅对非申请人的 approver/admin 待处理退款为 true。
+
+`POST /api/v1/orders/{orderId}/refunds` 仅允许 operator、admin，要求唯一合法 `Idempotency-Key`，严格接受不超过 8 KiB 的 `{"amount":n,"reason":"...","orderVersion":n}`。JSON 字段名区分大小写，三个字段均为必填且不得重复；transport 在 JSON 解码前验证原始 UTF-8 bytes。未知或大小写错误字段、重复字段、多余 JSON、字符串/小数/指数/`null` 整数、非法 UTF-8 或超限 body 返回 `400 INVALID_REQUEST`。amount/reason/orderVersion 的 typed 边界失败返回 `422 VALIDATION_FAILED`。首次创建和相同 normalized request 重放均返回 `201` 与首次 PENDING Refund DTO；同一主体、operation、orderId 和 key 的不同事实返回 `409 IDEMPOTENCY_CONFLICT`。重放校验独立 refund snapshot v1 和摘要，不重新读取当前订单或退款，也不重复占用额度。
+
+`POST /api/v1/refunds/{refundId}/approve` 和 `/reject` 仅允许 approver、admin，严格接受不超过 8 KiB 的 `{"version":n}`；字段名区分大小写，`version` 必填且不得重复，并执行相同原始 UTF-8/JSON/整数门禁。approve 按 existence → version → PENDING → self-approval → order fence/聚合 → refund/order 双 CAS 分类，在单一事务完成退款并更新订单 paymentStatus/version/updatedAt；reject 按 existence → version → PENDING → self-approval → refund CAS 分类，不读取或修改订单。成功返回 `200` 当前终态 Refund DTO；不存在、版本、状态和 self-approval 分别映射为 `404 NOT_FOUND`、`409 VERSION_CONFLICT`、`409 STATE_CONFLICT` 和 `403 FORBIDDEN`。
+
+四条退款 path 均拒绝 `HEAD`，错误 method 的 `Allow` 只包含实际业务 method。SQLite BUSY/LOCKED 返回 `503 SERVICE_UNAVAILABLE` 与 `Retry-After: 1`；损坏 actor、退款事实、snapshot、聚合或关联返回安全的 `500 INTERNAL_ERROR`。
+
+## 经营看板 API
+
+三个看板 endpoint 均要求有效 Bearer token，viewer、operator、approver、admin 都可读取。`GET /api/v1/dashboard/summary` 不接受 query，返回 `orderCount/grossAmount/completedRefundAmount/netAmount/currency`；orderCount 统计全部订单，gross 只纳入当前 paymentStatus 为 `PAID/PARTIALLY_REFUNDED/REFUNDED` 的订单原始总额，completedRefundAmount 只纳入 `COMPLETED` 退款，summary net 为 checked `gross-completed` 且不得为负。
+
+`GET /api/v1/dashboard/order-status` 不接受 query，按 `DRAFT, CONFIRMED, FULFILLING, SHIPPED, COMPLETED, CANCELLED` 固定顺序返回全部状态，缺失状态补零。
+
+`GET /api/v1/dashboard/trend` 必须且只能提供一次严格 `days=7|30`；缺失、空值、重复、未知、前导零、符号或其他值返回 `400 INVALID_REQUEST` 与对应 field detail。窗口使用注入 clock 的 UTC 当日作为 endDate，包含首尾共 7/30 日；订单 count 和 gross 按 createdAt UTC 日期归属，完成退款按 decidedAt UTC 日期归属，缺失日期补零。每日 net 使用 checked subtraction 并允许合法负值，例如窗口外订单在窗口内完成退款。
+
+看板 repository 在显式只读事务中批量读取并校验订单、明细、退款和 paymentStatus 映射，同一响应来自单一 SQLite snapshot，不执行逐订单或逐退款查询。三个 endpoint 均拒绝 `HEAD`，支持与其他已注册 API 相同的 CORS、request ID、取消、`503 SERVICE_UNAVAILABLE` 和安全 `500 INTERNAL_ERROR` 语义。
 
 ## 浏览器 CORS
 
@@ -87,10 +109,10 @@ typed command 业务校验返回 `422 VALIDATION_FAILED` 与 camelCase 字段详
 
 所有响应回写 `X-Request-ID`。入站值只接受 `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`；空值或非法值替换为 `req_` 加 32 位小写十六进制值。错误响应、header 和访问日志使用同一 request ID。
 
-错误结构为 `{"error":{"code","message","requestId","details?"}}`。当前已实现 `NOT_READY`、`METHOD_NOT_ALLOWED`、`INTERNAL_ERROR`、认证错误、CORS 的 `CORS_ORIGIN_DENIED`/`CORS_PREFLIGHT_DENIED` 以及订单 query/write/action 的 `INVALID_REQUEST`、`FORBIDDEN`、`NOT_FOUND`、`VERSION_CONFLICT`、`STATE_CONFLICT`、`IDEMPOTENCY_CONFLICT`、`UNSUPPORTED_MEDIA_TYPE`、`VALIDATION_FAILED` 和 `SERVICE_UNAVAILABLE`。panic 发生在响应提交前时返回完整 `500 INTERNAL_ERROR`；提交后不重写已发送响应，只记录 panic 和最终可观察状态。
+错误结构为 `{"error":{"code","message","requestId","details?"}}`。当前已实现 `NOT_READY`、`METHOD_NOT_ALLOWED`、`INTERNAL_ERROR`、认证错误、CORS 的 `CORS_ORIGIN_DENIED`/`CORS_PREFLIGHT_DENIED`，以及订单、退款和看板使用的 `INVALID_REQUEST`、`FORBIDDEN`、`NOT_FOUND`、`VERSION_CONFLICT`、`STATE_CONFLICT`、`IDEMPOTENCY_CONFLICT`、`UNSUPPORTED_MEDIA_TYPE`、`VALIDATION_FAILED` 和 `SERVICE_UNAVAILABLE`。panic 发生在响应提交前时返回完整 `500 INTERNAL_ERROR`；提交后不重写已发送响应，只记录 panic 和最终可观察状态。
 
 ## 当前未实现
 
-- `/api/v1/*` 页面、退款、附件和看板 API。
+- `/api/v1/*` 页面和附件 API。
 
 新增 endpoint 只有在实现、测试和对应门禁齐全后才能写入本文。实现前的设计调整只修改 [目标 HTTP API](./03-http-api-target.md)。

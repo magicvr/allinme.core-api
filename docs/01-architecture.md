@@ -1,7 +1,7 @@
 ---
 status: active
 owner: 后端团队
-last_updated: 2026-07-12
+last_updated: 2026-07-13
 applies_to: allinme.core-api
 ---
 
@@ -9,15 +9,16 @@ applies_to: allinme.core-api
 
 ## 1. 当前形态
 
-服务使用 Go 标准库 HTTP 栈和 `database/sql`：`cmd/api` 是薄入口，`internal/app` 组装生命周期，`internal/httpapi` 提供运行状态、认证 API 与通用中间件，`internal/auth` 负责 bcrypt、JWT、session 用例和角色策略，`internal/store` 使用 `modernc.org/sqlite v1.53.0` 管理 SQLite。`internal/protocol/` 提供 Schema-UI 共享算法的 Go 实现和 conformance 证明，尚未暴露业务 API。
+服务使用 Go 标准库 HTTP 栈和 `database/sql`：`cmd/api` 是薄入口，`internal/app` 组装生命周期，`internal/httpapi` 提供运行状态、认证、订单、退款、看板 API 与通用中间件，`internal/auth` 负责 bcrypt、JWT、session 用例和角色策略，`internal/order` 持有订单/退款状态机、幂等和看板 service，`internal/store` 使用 `modernc.org/sqlite v1.53.0` 管理 SQLite v6。`internal/protocol/` 提供 Schema-UI 共享算法的 Go 实现和 conformance 证明，尚未暴露页面业务 API。
 
 | 层次 | 路径 | 当前职责 |
 |---|---|---|
 | 进程入口 | `cmd/api/`、`cmd/admin/` | 启动 API，执行 migrate/seed/reset/bootstrap-admin |
 | 应用装配 | `internal/app/`、`internal/config/` | 配置、依赖组装、关闭顺序和运行模式 |
-| HTTP 适配 | `internal/httpapi/` | health/ready、认证路由、限流、request ID、访问日志、recovery 和错误 envelope |
+| HTTP 适配 | `internal/httpapi/` | health/ready、认证、订单、退款、看板路由、CORS、限流、request ID、访问日志、recovery 和错误 envelope |
 | 认证用例 | `internal/auth/` | 密码、JWT、session 认证与角色 allowlist |
-| 数据存储 | `internal/store/` | SQLite、migration、users/session、seed、事务和 readiness 状态 |
+| 订单/退款用例 | `internal/order/` | 订单、履约、退款、capability、幂等 snapshot 和看板统计 service |
+| 数据存储 | `internal/store/` | SQLite v6、migration、users/session、订单/退款 seed、事务、repository 和 readiness 状态 |
 | 协议执行 | `internal/protocol/` | 与 Schema-UI conformance 对齐的纯算法 |
 
 业务能力增长时应保持 transport、业务用例和协议算法边界，避免把鉴权或业务规则写进 fixture 适配代码。

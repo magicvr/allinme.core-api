@@ -32,21 +32,22 @@ const orderActionBodyLimit = 1 * 1024
 var validIdempotencyKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 type orderDTO struct {
-	ID               string              `json:"id"`
-	CustomerName     string              `json:"customerName"`
-	Status           order.Status        `json:"status"`
-	PaymentStatus    order.PaymentStatus `json:"paymentStatus"`
-	Currency         string              `json:"currency"`
-	TotalAmount      int64               `json:"totalAmount"`
-	Version          int64               `json:"version"`
-	CreatedAt        string              `json:"createdAt"`
-	UpdatedAt        string              `json:"updatedAt"`
-	CanEdit          bool                `json:"canEdit"`
-	CanAdvance       bool                `json:"canAdvance"`
-	CanCancel        bool                `json:"canCancel"`
-	CanRequestRefund bool                `json:"canRequestRefund"`
-	CanApproveRefund bool                `json:"canApproveRefund"`
-	Items            []orderItemDTO      `json:"items,omitempty"`
+	ID                    string              `json:"id"`
+	CustomerName          string              `json:"customerName"`
+	Status                order.Status        `json:"status"`
+	PaymentStatus         order.PaymentStatus `json:"paymentStatus"`
+	Currency              string              `json:"currency"`
+	TotalAmount           int64               `json:"totalAmount"`
+	AvailableRefundAmount int64               `json:"availableRefundAmount"`
+	Version               int64               `json:"version"`
+	CreatedAt             string              `json:"createdAt"`
+	UpdatedAt             string              `json:"updatedAt"`
+	CanEdit               bool                `json:"canEdit"`
+	CanAdvance            bool                `json:"canAdvance"`
+	CanCancel             bool                `json:"canCancel"`
+	CanRequestRefund      bool                `json:"canRequestRefund"`
+	CanApproveRefund      bool                `json:"canApproveRefund"`
+	Items                 []orderItemDTO      `json:"items,omitempty"`
 }
 type orderItemDTO struct {
 	ID        string `json:"id"`
@@ -315,8 +316,8 @@ func handleOrderInputError(response http.ResponseWriter, request *http.Request, 
 }
 
 func makeOrderDTO(principal auth.Principal, value order.Order, includeItems bool) orderDTO {
-	capabilities := order.CapabilitiesFor(principal, value.Status)
-	dto := orderDTO{ID: value.ID, CustomerName: value.CustomerName, Status: value.Status, PaymentStatus: value.PaymentStatus, Currency: value.Currency, TotalAmount: value.TotalAmount, Version: value.Version, CreatedAt: order.FormatTime(value.CreatedAt), UpdatedAt: order.FormatTime(value.UpdatedAt), CanEdit: capabilities.CanEdit, CanAdvance: capabilities.CanAdvance, CanCancel: capabilities.CanCancel, CanRequestRefund: capabilities.CanRequestRefund, CanApproveRefund: capabilities.CanApproveRefund}
+	capabilities := order.CapabilitiesForOrder(principal, value)
+	dto := orderDTO{ID: value.ID, CustomerName: value.CustomerName, Status: value.Status, PaymentStatus: value.PaymentStatus, Currency: value.Currency, TotalAmount: value.TotalAmount, AvailableRefundAmount: value.AvailableRefundAmount, Version: value.Version, CreatedAt: order.FormatTime(value.CreatedAt), UpdatedAt: order.FormatTime(value.UpdatedAt), CanEdit: capabilities.CanEdit, CanAdvance: capabilities.CanAdvance, CanCancel: capabilities.CanCancel, CanRequestRefund: capabilities.CanRequestRefund, CanApproveRefund: capabilities.CanApproveRefund}
 	if includeItems {
 		dto.Items = make([]orderItemDTO, 0, len(value.Items))
 		for _, item := range value.Items {
