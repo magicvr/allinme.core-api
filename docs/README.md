@@ -1,6 +1,6 @@
 # 后端项目文档规则
 
-本目录记录 `allinme.core-api` 自身的架构、HTTP API、Schema-UI 接入、验证方式、场景说明、架构决策和审计过程。
+本目录记录 `allinme.core-api` 自身的架构、HTTP API、Schema-UI 接入、验证方式、场景说明、架构决策、实施计划和审计记录。
 
 ## 权威边界
 
@@ -52,7 +52,9 @@ ADR 记录“为何选择”，不替代上述现行或目标规范。CHANGELOG 
 | 路线 | [`06-implementation-roadmap.md`](./06-implementation-roadmap.md) | 目标能力实施顺序与完成标准 |
 | 场景 | [`scenarios/`](./scenarios/README.md) | 本后端如何支持业务工作流，不复制协议 YAML |
 | 决策 | [`decisions/`](./decisions/README.md) | 仅记录本仓实现选择，不替代协议 ADR |
-| 审计 | [`audit/`](./audit/README.md) | 活跃审计、编号和归档生命周期 |
+| 计划 | [`plans/`](./plans/README.md) | 实施计划、配套 checklist 与归档生命周期 |
+| 审计 | [`audits/`](./audits/README.md) | 不可覆盖的审计记录、发现与历史关系 |
+| 工具 | [`tools/`](./tools/README.md) | 文档结构、frontmatter 与链接验证脚本 |
 | 变更 | [`CHANGELOG.md`](./CHANGELOG.md) | 本仓 API 或集成行为变更 |
 
 ## 写作规则
@@ -62,6 +64,8 @@ ADR 记录“为何选择”，不替代上述现行或目标规范。CHANGELOG 
 - 不复制 Schema-UI 的字段表、Schema 或场景 YAML；使用稳定文件链接和固定 commit/tag 表达依赖。
 - 新增跨前后端字段或语义时，先在 `schema-ui-docs` 修改协议、Schema、fixtures 和 ADR，再更新消费者。
 - 仅影响本仓内部实现的重大选择写入 `decisions/`，文件名为 `NNNN-short-title.md`，编号全局递增。
+- 实施工作使用稳定 `PLN-NNNN` 标识，plan 与 checklist 同号；日期写入 frontmatter，不写入文件名。具体规则见 [`plans/README.md`](./plans/README.md)。
+- 每次正式审计都必须创建独立 `AUD-NNNN` 记录，即使没有发现问题也要记录范围、基线和验证结果。已关闭记录不得覆盖；后续意见通过新记录及 `related_audits` / `supersedes` 关联。具体规则见 [`audits/README.md`](./audits/README.md)。
 - 文档变化应与代码变化同一提交，运行 [`04-validation.md`](./04-validation.md) 中与影响范围匹配的检查。
 - 历史审计不得改写为当前规范；当前行为以总纲、架构、API、接入文档和源码为准。
 
@@ -71,4 +75,4 @@ ADR 记录“为何选择”，不替代上述现行或目标规范。CHANGELOG 
 2. 跨仓契约变化先走 Schema-UI 版本与 conformance 流程。
 3. 更新本仓实现、测试、事实源文档及引用方，并在 CHANGELOG 记录变化。
 4. 执行本地门禁；协议 pin 变化还需等待当前提交的远端 CI 成功。
-5. 全量复审使用 `.github/prompts/backend-full-audit-cycle.prompt.md`，归档必须经用户确认。
+5. 正式审计从 [`audits/README.md`](./audits/README.md) 选择全仓或计划审计入口；审计记录永久保留在原路径，计划归档仍须经用户确认。

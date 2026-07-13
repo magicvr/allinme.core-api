@@ -1,5 +1,6 @@
 ---
 status: active
+plan_id: PLN-0005
 owner: 后端团队
 created: 2026-07-13
 last_updated: 2026-07-14
@@ -8,7 +9,7 @@ applies_to: implementation roadmap phase 5 attachments
 
 # 阶段五：附件生命周期实施 Checklist
 
-配套计划：[阶段五附件生命周期开发计划](./0005-2026-07-13-plan.md)。除非条目按下列固定模板记录实际 Evidence，否则不得勾选；真实进程、跨平台、ENOSPC 和部署证据必须使用全局唯一 run ID，最终报告必须引用这些 run ID。
+配套计划：[阶段五附件生命周期开发计划](./PLN-0005-phase-05-attachment-lifecycle.md)。除非条目按下列固定模板记录实际 Evidence，否则不得勾选；真实进程、跨平台、ENOSPC 和部署证据必须使用全局唯一 run ID，最终报告必须引用这些 run ID。
 
 每个勾选项的 Evidence 固定记录：`Owner`、`Run ID`、`Date/Timezone`、`Revision`、`Environment`、`Command`、`Artifact Kind`、`Process Exit Code`、`Artifact/Log Path`、`Content SHA-256`、`Manifest Path/URL`、`Manifest SHA-256`、`Download URL`、`Retention Until`、`Result`、`Failure/Not-Run Reason`。manifest 自身的 SHA 记录在 run index，不写回 manifest 形成自引用。可执行/产物 Evidence 的 owner、run、revision、artifact kind、command、exit code、content/manifest SHA 和 manifest/run 关联不得写 `N/A`；只有 JSON schema 明确 optional 的字段可写 `null`，且必须同时填写结构化 `notApplicableReason`。禁止只写“已验证”或只引用第三方审计结论。条件门禁只有在记录批准人、N/A 原因和替代 gate 后才能以 `[x] N/A` 关闭；不得让永久未勾选项伪装成阶段完成。
 
@@ -38,7 +39,7 @@ applies_to: implementation roadmap phase 5 attachments
 - [ ] P0-20. 冻结统一 startup coordinator/typed gate API 与入口阶段矩阵：构造期使用 `StartupError{Stage, Kind, ExitCode, Err}`；listener 成功并 handoff 后才使用 `RunResult{Reason, ExitCode, Err}` 和 runtime `ExitReason`。`NewAPI`、`NewAuthenticatedAPI`、`Handler()`、embedded entry、migrate、seed、reset、cleanup 必须经过同一 owning abstraction；完整 API 顺序为“锁 → DB/root → compiled capability/schema gate → recovery → scan → service/handler → listener → 释放 maintenance → handoff/serve”，构造失败时按逆序关闭资源并释放 maintenance/API lock；`Handler()` 只在 ready 后可取，测试装配只能注入依赖不得旁路。schema-only `migrate` 是受限 migration path；production `bootstrap-admin` 是 maintenance-only 特殊 path，只复用 config、maintenance lock、DB、compiled gate 和逆序释放，不进入附件 root/recovery/scan/service。真实 `cmd/api` 进程证明构造期 schema gate 退出 78 而不是 1，并逐 startup stage 覆盖 external stop；listener 失败属于 StartupError=1，watchdog 只在 handoff 后参与 RunResult 竞争。
 - [ ] P0-21. 按 plan tracked 表把 P0-1 至 P0-25 恰好映射到八个独立工作包：Facts、Schema-Recovery、HTTP-Order、Lock、Baseline-Evidence、Files、Runtime、Release。每包记录可追责 owner、不同 reviewer、具体人员、输入 revision、阻塞项、出口条件、最大 effort 人日、revision/Evidence、协议影响和批准人；至少落实 3 名实现 owner、1 名独立 reviewer/批准人以及 Windows/Linux 环境 owner 后，才可采用 P0 6–10 工作日 elapsed 假设。单实现者场景按 P0 13–20 开发人日加 review/环境等待，elapsed 下限不低于 16 个工作日。全部完成后用实测结果替换 M1A/M2/M3A/5A-D/M1B/M3B/M4/5B/R 的原 ROM，分列 effort、elapsed、环境等待、review/修复缓冲、关键路径与资源不足降级顺序，重估前不承诺日期。
 - [ ] P0-22. 明确部署支持矩阵：至少选择并实测一个单机 profile（Windows Service/Task Scheduler 或 Linux systemd/timer）；未完成监督、cleanup 调度、退出码和恢复证据的平台只能标记为开发/CI 兼容，5A-D/5B 批准范围不得超出已验证 profile。由于本阶段不提供病毒扫描、配额、对象存储和完整审计策略，5B 产物与批准同样必须标记为单机受控 `internal/demo-only`，不构成正式生产、多副本或互联网不受控上传批准。
-- [ ] P0-23. 交付机器可解析的 Evidence/manifest 最小工具链，字段与 checklist 顶部模板完全一致；manifest SHA 只由 tracked run index 记录。`internal/testkit/phase5/testdata/evidence/` 提供 clean checkout 可复核的正反样例；真实 run 的小型 manifest/index 提交到 `docs/audit/evidence/phase5/<run-id>/`。默认大型后端为本仓库 GitHub Actions `phase5-evidence-<run-id>` artifact，工作流使用 `actions/upload-artifact@v4` 与 `retention-days: 180`，记录 Actions run/artifact 下载 URL，release owner 负责上传，仓库 Actions read 权限负责读取。先验证仓库/组织策略支持 180 天，并把 profile 写入 `docs/audit/evidence/phase5/storage-profile.json`；若不支持，必须先冻结至少 180 天保留且提供只读 URL 的替代后端。上传、URL、retention 或 SHA 校验失败保持 No-Go，不得退回本机 `/artifacts/`。validator 必须核对 revision、artifact kind、content/manifest SHA-256、退出码、路径/URL 可取得性和 manifest/run 关联；最终批准 bundle 保留到支持版本生命周期结束。P0-14、P0-19、P0-22 各产生至少一份真实样例及 validator 输出。
+- [ ] P0-23. 交付机器可解析的 Evidence/manifest 最小工具链，字段与 checklist 顶部模板完全一致；manifest SHA 只由 tracked run index 记录。`internal/testkit/phase5/testdata/evidence/` 提供 clean checkout 可复核的正反样例；真实 run 的小型 manifest/index 提交到 `docs/evidence/phase5/<run-id>/`。默认大型后端为本仓库 GitHub Actions `phase5-evidence-<run-id>` artifact，工作流使用 `actions/upload-artifact@v4` 与 `retention-days: 180`，记录 Actions run/artifact 下载 URL，release owner 负责上传，仓库 Actions read 权限负责读取。先验证仓库/组织策略支持 180 天，并把 profile 写入 `docs/evidence/phase5/storage-profile.json`；若不支持，必须先冻结至少 180 天保留且提供只读 URL 的替代后端。上传、URL、retention 或 SHA 校验失败保持 No-Go，不得退回本机 `/artifacts/`。validator 必须核对 revision、artifact kind、content/manifest SHA-256、退出码、路径/URL 可取得性和 manifest/run 关联；最终批准 bundle 保留到支持版本生命周期结束。P0-14、P0-19、P0-22 各产生至少一份真实样例及 validator 输出。
 - [ ] P0-24. 建立协议变更清单并只引用 plan 的单一事实源标识 `P5-CRITICAL`，不得在 checklist 复制成员编号集合；任何事务顺序、状态、DTO、错误码、digest/header 字节、Evidence schema/storage、锁/启动语义、integrity admission 或平台能力变化，必须在同一 revision 同步更新 plan/checklist/事实源/原子验收矩阵/Evidence 模板，记录受影响里程碑并重跑相关 gate，禁止局部放宽门禁。
 - [ ] P0-25. 交付 tracked、机器可解析的 requirements-to-test/evidence matrix 及 validator。每个 checklist 父项至少有一个稳定 acceptance ID `<parent-id>.A<n>`，并逐项记录 owner、test/command、artifact kind、适用平台、预期结果、实际 result、run ID 和 N/A 理由；先为当前所有复合条款拆分已知子项，重点覆盖 P0-3、P0-12、P0-15、P0-19、M2-6、M3B-6、M4-1/M4-5/M4-10 与 5B-4。validator 必须拒绝无子项、重复 ID、缺 owner/command/platform/result、父项已勾但子项未完成或矩阵与 `P5-CRITICAL` 漂移的状态。
 
@@ -139,7 +140,7 @@ applies_to: implementation roadmap phase 5 attachments
 
 - [ ] R1. 实现及集成门禁通过后，把附件 endpoint、multipart、DTO、下载 headers、订单字段和错误契约迁入当前 HTTP API；目标 API 删除已实现附件草案和重复细节。
 - [ ] R2. 同步 overview、architecture、domain model、roadmap、validation、scenario、README 和 CHANGELOG；不提前宣称页面、对象存储、病毒扫描或订单删除 endpoint。
-- [ ] R3. 冻结阶段五 baseline/merge base 并记录 baseline 与 HEAD；`docs/audit/validate.ps1`、`docs/audit/validate.tests.ps1`、`git diff --check <baseline>...HEAD` 和工作树 `git diff --check` 通过，跨文档角色、状态、大小、过期、路径和幂等口径一致。干净 HEAD 的空 diff 不能替代阶段变更检查。
+- [ ] R3. 冻结阶段五 baseline/merge base 并记录 baseline 与 HEAD；`docs/tools/validate.ps1`、`docs/tools/validate.tests.ps1`、`git diff --check <baseline>...HEAD` 和工作树 `git diff --check` 通过，跨文档角色、状态、大小、过期、路径和幂等口径一致。干净 HEAD 的空 diff 不能替代阶段变更检查。
 - [ ] R4. 最终 revision 实跑 `go test -tags phase5_test ./... -count=1`、`go vet -tags phase5_test ./...` 和独立 `go test -race -tags phase5_test ./... -count=1`；并对 `phase5_v6_gate`、`phase5_v7_schema_only`、`phase5_v7_5a` 分别执行非缓存 test、vet 和 api/admin build。不得用缓存、skip、临时 tag 或放宽 deadline 掩盖失败。
 - [ ] R5. 远端 Linux CI 的 test/race run、revision 和结果已记录；Windows 本地 reparse/rename 行为与 Linux CI 差异有说明。
 - [ ] R6. 交付 fail-closed 恢复手册：`verify-attachments --full` 的停服/锁/退出码/JSON 摘要、必须成套恢复的 DB/WAL/SHM/附件目录、允许人工隔离/删除的对象、禁止直接修改的状态，以及修复后重新执行完整性扫描的步骤。完成报告列出已实现范围、`internal/demo-only` 部署边界、未执行项和剩余风险；只有用户明确确认后才移动 plan/checklist 到 `archived/` 并更新归档索引。

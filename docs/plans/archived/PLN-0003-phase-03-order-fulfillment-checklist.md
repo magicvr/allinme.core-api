@@ -1,5 +1,6 @@
 ---
 status: archived
+plan_id: PLN-0003
 owner: 后端团队
 created: 2026-07-12
 last_updated: 2026-07-13
@@ -8,7 +9,7 @@ applies_to: implementation roadmap phase 3 order query and fulfillment
 
 # 阶段三：订单查询与履约 Checklist
 
-配套计划：[阶段三订单查询与履约开发计划](./0003-2026-07-12-plan.md)。事实源按关注点拆分：领域规则见[领域模型](../../05-domain-model.md)，阶段三详细 HTTP/CORS 契约见 plan §3-§4，endpoint 范围见[目标 HTTP API](../../03-http-api-target.md)，本 checklist 只记录可观察能力和发布证据。
+配套计划：[阶段三订单查询与履约开发计划](./PLN-0003-phase-03-order-fulfillment.md)。事实源按关注点拆分：领域规则见[领域模型](../../05-domain-model.md)，阶段三详细 HTTP/CORS 契约见 plan §3-§4，endpoint 范围见[目标 HTTP API](../../03-http-api-target.md)，本 checklist 只记录可观察能力和发布证据。
 
 统一测试规范：测试名、helper 和测试 seam 均可替换；并发/连接测试设置不超过 10 秒的 deadline，并在 cleanup 释放 goroutine、channel、事务、DB、server 和临时目录。日志和失败输出不得包含 Authorization、token、密码、请求 body 或幂等 snapshot。等价实现须在对应证据中记录替代方式和理由。带 `-run` 的命令仅用于开发加速，不是硬门禁；若记录为辅助证据，必须用 `go test -json` 同时证明至少命中一个预期测试。
 

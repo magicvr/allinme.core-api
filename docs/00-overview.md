@@ -1,7 +1,7 @@
 ---
 status: active
 owner: 后端团队
-last_updated: 2026-07-13
+last_updated: 2026-07-14
 applies_to: allinme.core-api
 ---
 
@@ -47,7 +47,8 @@ applies_to: allinme.core-api
 | [06-implementation-roadmap.md](./06-implementation-roadmap.md) | 维护者 / AI | 从当前态到完整 demo 的实施阶段 |
 | [scenarios/](./scenarios/README.md) | 产品 / 开发 / 测试 | 本仓业务工作流覆盖 |
 | [decisions/](./decisions/README.md) | 维护者 | 后端内部架构决策 |
-| [audit/](./audit/README.md) | 维护者 / AI | 审计生命周期与活跃清单 |
+| [plans/](./plans/README.md) | 维护者 / AI | 实施计划、checklist 与归档索引 |
+| [audits/](./audits/README.md) | 维护者 / AI | 审计记录、发现历史与追溯关系 |
 | [CHANGELOG.md](./CHANGELOG.md) | 所有人 | 本仓变更记录 |
 
 ## 3. 代码地图

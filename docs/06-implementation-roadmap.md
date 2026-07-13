@@ -22,13 +22,13 @@ applies_to: order operations demo target
 
 完成证据：空库迁移、重复迁移、reset/seed、进程重启持久化和错误映射测试通过。
 
-实现使用 `modernc.org/sqlite v1.53.0`、`cmd/admin` 和 `internal/config|app|store`。实施证据见已归档的 [阶段一 1A 计划](./audit/archived/0001-2026-07-12-plan.md) 与 [checklist](./audit/archived/0001-2026-07-12-checklist.md)。角色账号依赖认证 schema，在阶段二补入 seed；订单和关键业务状态依赖订单 schema，在阶段三补入 seed。
+实现使用 `modernc.org/sqlite v1.53.0`、`cmd/admin` 和 `internal/config|app|store`。实施证据见已归档的 [阶段一 1A 计划](./plans/archived/PLN-0001-phase-01-runtime-foundation.md) 与 [checklist](./plans/archived/PLN-0001-phase-01-runtime-foundation-checklist.md)。角色账号依赖认证 schema，在阶段二补入 seed；订单和关键业务状态依赖订单 schema，在阶段三补入 seed。
 
 ## 3. 阶段二：认证授权（已实现）
 
 目标：本地账号登录、JWT Bearer 和可撤销会话可独立工作。
 
-实施证据见已归档的 [阶段二认证授权计划](./audit/archived/0002-2026-07-12-plan.md) 与 [checklist](./audit/archived/0002-2026-07-12-checklist.md)。已实现 migration v2、development auth seed、production bootstrap、密钥配置、严格 JWT/session 校验、登录限流、角色策略和三条认证 API。
+实施证据见已归档的 [阶段二认证授权计划](./plans/archived/PLN-0002-phase-02-authentication-authorization.md) 与 [checklist](./plans/archived/PLN-0002-phase-02-authentication-authorization-checklist.md)。已实现 migration v2、development auth seed、production bootstrap、密钥配置、严格 JWT/session 校验、登录限流、角色策略和三条认证 API。
 
 - 实现密码哈希、登录、当前用户和登出；
 - JWT 使用短时效、唯一 token ID，并关联 SQLite session；
@@ -42,7 +42,7 @@ applies_to: order operations demo target
 
 目标：打通订单查询、草稿写入和履约 API/CORS 闭环，为阶段六页面配置提供稳定契约。
 
-阶段三按三个端到端里程碑实施，详细门禁见[归档计划](./audit/archived/0003-2026-07-12-plan.md)与[checklist](./audit/archived/0003-2026-07-12-checklist.md)：M1 交付真实登录可用的列表/详情纵切，M2 交付真实 app 中的创建/编辑/幂等纵切，M3 交付履约 Action、CORS、重启/reset 和文档收敛。schema migration 只前进；每个里程碑都必须可启动、可演示、可独立合并，并可通过关闭对应路由或配置回退功能且保持已迁移数据库可用。
+阶段三按三个端到端里程碑实施，详细门禁见[归档计划](./plans/archived/PLN-0003-phase-03-order-fulfillment.md)与[checklist](./plans/archived/PLN-0003-phase-03-order-fulfillment-checklist.md)：M1 交付真实登录可用的列表/详情纵切，M2 交付真实 app 中的创建/编辑/幂等纵切，M3 交付履约 Action、CORS、重启/reset 和文档收敛。schema migration 只前进；每个里程碑都必须可启动、可演示、可独立合并，并可通过关闭对应路由或配置回退功能且保持已迁移数据库可用。
 
 - 实现订单搜索、筛选、排序、分页和详情；
 - 实现创建、编辑、确认、开始履约、发货、完成和取消；
@@ -63,7 +63,7 @@ applies_to: order operations demo target
 
 完成证据：退款写请求成功或失败后重新查询退款队列与订单可得到一致结果，看板响应与订单/退款数据一致；真实页面 Action reload 与渲染证据属于阶段六。
 
-实施证据见已归档的 [阶段四计划](./audit/archived/0004-2026-07-13-plan.md) 与 [checklist](./audit/archived/0004-2026-07-13-checklist.md)：已实现 additive schema v6、退款独立幂等 snapshot、writer fence/CAS 并发不变量、严格 HTTP/JWT/CORS 闭环、固定 seed 看板、UTC 7/30 日趋势、旧 v5 整库恢复边界及全仓 test/vet/race 门禁。
+实施证据见已归档的 [阶段四计划](./plans/archived/PLN-0004-phase-04-refunds-dashboard.md) 与 [checklist](./plans/archived/PLN-0004-phase-04-refunds-dashboard-checklist.md)：已实现 additive schema v6、退款独立幂等 snapshot、writer fence/CAS 并发不变量、严格 HTTP/JWT/CORS 闭环、固定 seed 看板、UTC 7/30 日趋势、旧 v5 整库恢复边界及全仓 test/vet/race 门禁。
 
 ## 6. 阶段五：附件
 

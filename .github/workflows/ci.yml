@@ -47,11 +47,11 @@ jobs:
 
       - name: Validate documentation
         shell: pwsh
-        run: ./docs/audit/validate.ps1
+        run: ./docs/tools/validate.ps1
 
       - name: Test documentation validator
         shell: pwsh
-        run: ./docs/audit/validate.tests.ps1
+        run: ./docs/tools/validate.tests.ps1
 
   race:
     runs-on: ubuntu-latest

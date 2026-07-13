@@ -1,5 +1,6 @@
 ---
 status: archived
+plan_id: PLN-0001
 owner: 后端团队
 created: 2026-07-12
 last_updated: 2026-07-12
@@ -169,4 +170,4 @@ go test -race ./...
 | Windows link/reparse 绕过 reset 边界 | 规范化并检查目录与目标，拒绝链接/junction/reparse，basename 严格 allowlist |
 | API 持有 SQLite/WAL 句柄导致 reset 不完整 | reset 明确要求 API 停止；文件占用/删除失败时终止且不继续 migrate/seed |
 
-实施清单见 [`0001-2026-07-12-checklist.md`](./0001-2026-07-12-checklist.md)。
+实施清单见 [阶段一 1A Checklist](./PLN-0001-phase-01-runtime-foundation-checklist.md)。

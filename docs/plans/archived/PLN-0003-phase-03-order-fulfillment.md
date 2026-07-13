@@ -1,5 +1,6 @@
 ---
 status: archived
+plan_id: PLN-0003
 owner: 后端团队
 created: 2026-07-12
 last_updated: 2026-07-13
@@ -324,8 +325,8 @@ git diff HEAD --check
 CI 维持两个全局 job：主 `test` job 在 10 分钟预算内执行全量普通 test、vet 和文档门禁，独立 `race` job 使用 15 分钟预算并显式加载同一 Schema-UI fixtures。里程碑记录的是各内部 gate 两条包级命令的耗时，最终发布记录两个全局 CI job 的耗时。耗时仅用于诊断锁等待、容量变化和后续基线比较，不设置额外通过阈值，也不因机器差异单独判定产品失败；不得通过放宽单测试 deadline 掩盖卡死或锁等待问题。Windows 本地若当前用户执行策略为 `RemoteSigned`/`AllSigned`/`Restricted`，应使用：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/audit/validate.ps1
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/audit/validate.tests.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.tests.ps1
 ```
 
 若本机执行策略已允许直接运行仓库脚本，也可使用 `powershell.exe -NoProfile -File ...`；CI 使用 Ubuntu runner 的 `pwsh`。
@@ -351,7 +352,7 @@ JSON 数字边界固定为可观察词法行为：quantity、unitPrice、version
 
 查询时间在 HTTP 边界使用 `time.Parse(time.RFC3339)`，例如 `2026-01-01T00:00:00+08:00` 规范化为 `2025-12-31T16:00:00Z`；repository 接收 `time.Time` 并按时间瞬间比较，响应和数据库订单时间始终输出 UTC `Z`，不得直接按原始 offset 字符串比较。
 
-自动化证据固定使用 store 内部 executor/query observer 断言列表空页执行 COUNT + page 两次查询，非空页再执行一次批量明细完整性查询，且无逐订单查询；用协调点和第二个 DB 证明三者共享同一 snapshot。扫描失败通过 store 包内测试专用 row scanner/executor stub 注入，不向生产 repository 接口增加故障开关；损坏数据通过临时 SQLite fixture 在测试连接上启用 `PRAGMA ignore_check_constraints=ON` 后直接插入非法枚举、金额、时间、UTF-8、position、明细数量或聚合总额，随后恢复约束并验证 repository 安全分类，禁止修改正式 migration 来制造坏数据。分别覆盖单连接池等待、双 DB BUSY/LOCKED、typed Unavailable 的 HTTP 503 映射。测试名称和内部 seam 名可替换，checklist Evidence 必须记录实际名称与命令，不能只写“代码审查通过”。文档门禁仍使用 `docs/audit/validate.ps1` 检查 frontmatter、相对链接与 `git diff HEAD --check`，`validate.tests.ps1` 验证合法 fixture 成功、缺失链接 fixture 失败和 fragment 只校验文件目标。
+自动化证据固定使用 store 内部 executor/query observer 断言列表空页执行 COUNT + page 两次查询，非空页再执行一次批量明细完整性查询，且无逐订单查询；用协调点和第二个 DB 证明三者共享同一 snapshot。扫描失败通过 store 包内测试专用 row scanner/executor stub 注入，不向生产 repository 接口增加故障开关；损坏数据通过临时 SQLite fixture 在测试连接上启用 `PRAGMA ignore_check_constraints=ON` 后直接插入非法枚举、金额、时间、UTF-8、position、明细数量或聚合总额，随后恢复约束并验证 repository 安全分类，禁止修改正式 migration 来制造坏数据。分别覆盖单连接池等待、双 DB BUSY/LOCKED、typed Unavailable 的 HTTP 503 映射。测试名称和内部 seam 名可替换，checklist Evidence 必须记录实际名称与命令，不能只写“代码审查通过”。文档门禁仍使用 `docs/tools/validate.ps1` 检查 frontmatter、相对链接与 `git diff HEAD --check`，`validate.tests.ps1` 验证合法 fixture 成功、缺失链接 fixture 失败和 fragment 只校验文件目标。
 
 ## 10. 完成标准
 
@@ -369,4 +370,4 @@ JSON 数字边界固定为可观察词法行为：quantity、unitPrice、version
 
 阶段六门禁独立包含页面 YAML、L0-L4 校验、页面 action/reaction、完整 Schema-UI 浏览器场景和页面级回归证据；这些未完成不阻塞阶段三归档，也不阻塞订单 endpoint 迁入当前 API，更不得由阶段三最小跨源 smoke 冒充完成。
 
-归档是完成报告之后的后置动作，不属于 checklist：先汇报已完成项、未执行项和剩余风险，只有用户明确确认后，才将 `0003` 计划/checklist 移入 `docs/audit/archived/` 并更新活跃与归档索引。
+归档是完成报告之后的后置动作，不属于 checklist：先汇报已完成项、未执行项和剩余风险，只有用户明确确认后，才将 `PLN-0003` 计划/checklist 移入 `docs/plans/archived/` 并更新活跃与归档索引。

@@ -1,5 +1,6 @@
 ---
 status: archived
+plan_id: PLN-0004
 owner: 后端团队
 created: 2026-07-13
 last_updated: 2026-07-13

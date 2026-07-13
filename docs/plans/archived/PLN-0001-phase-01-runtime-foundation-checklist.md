@@ -1,5 +1,6 @@
 ---
 status: archived
+plan_id: PLN-0001
 owner: 后端团队
 created: 2026-07-12
 last_updated: 2026-07-12
@@ -8,7 +9,7 @@ applies_to: implementation roadmap phase 1A runtime foundation
 
 # 阶段一 1A：运行基础 Checklist
 
-配套计划：[`0001-2026-07-12-plan.md`](./0001-2026-07-12-plan.md)。只有实现、测试、文档与验证证据全部满足时才勾选；不得因“已有代码”提前标记完成。
+配套计划：[阶段一 1A 运行基础开发计划](./PLN-0001-phase-01-runtime-foundation.md)。只有实现、测试、文档与验证证据全部满足时才勾选；不得因“已有代码”提前标记完成。
 
 ## A. 开工前基线
 

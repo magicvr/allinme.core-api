@@ -1,5 +1,6 @@
 ---
 status: archived
+plan_id: PLN-0002
 owner: 后端团队
 created: 2026-07-12
 last_updated: 2026-07-12
@@ -8,7 +9,7 @@ applies_to: implementation roadmap phase 2 authentication and authorization
 
 # 阶段二：认证授权 Checklist
 
-配套计划：[阶段二认证授权开发计划](./0002-2026-07-12-plan.md)。只有实现、测试、文档与验证证据全部满足时才勾选；计划本身完成不代表阶段二实现完成。
+配套计划：[阶段二认证授权开发计划](./PLN-0002-phase-02-authentication-authorization.md)。只有实现、测试、文档与验证证据全部满足时才勾选；计划本身完成不代表阶段二实现完成。
 
 ## A. 开工基线与依赖
 
