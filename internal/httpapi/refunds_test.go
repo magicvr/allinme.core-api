@@ -99,6 +99,10 @@ func TestRefundCreateRouteStrictInputAndErrorMapping(t *testing.T) {
 	for _, body := range [][]byte{
 		[]byte(`{"amount":1.0,"reason":"request","orderVersion":3}`),
 		[]byte(`{"amount":1,"reason":"request","orderVersion":3,"extra":true}`),
+		[]byte(`{"Amount":1,"Reason":"request","OrderVersion":3}`),
+		[]byte(`{"amount":1,"amount":2,"reason":"request","orderVersion":3}`),
+		[]byte(`{"amount":1,"reason":null,"orderVersion":3}`),
+		[]byte(`{"amount":1,"reason":"request"}`),
 		[]byte(`{"amount":1,"reason":"request","orderVersion":3}{}`),
 		bytes.Repeat([]byte(" "), 8*1024+1),
 	} {
@@ -167,7 +171,15 @@ func TestRefundDecisionRoutesStrictInputAndConflicts(t *testing.T) {
 	if response := request("approve", valid, "application/json", "bad"); response.Code != http.StatusNotFound {
 		t.Fatalf("ID before JSON = %d %s", response.Code, response.Body.String())
 	}
-	for _, body := range [][]byte{[]byte(`{"version":1.0}`), []byte(`{"version":"1"}`), []byte(`{"version":1,"extra":true}`)} {
+	for _, body := range [][]byte{
+		[]byte(`{"version":1.0}`),
+		[]byte(`{"version":"1"}`),
+		[]byte(`{"version":1,"extra":true}`),
+		[]byte(`{"Version":1}`),
+		[]byte(`{"version":1,"version":2}`),
+		[]byte(`{}`),
+		[]byte(`{"version":1}{}`),
+	} {
 		if response := request("approve", body, "application/json", "rfd_00000000000000000000000000000001"); response.Code != http.StatusBadRequest {
 			t.Fatalf("invalid version body = %d %s", response.Code, response.Body.String())
 		}

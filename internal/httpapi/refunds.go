@@ -224,47 +224,87 @@ func readRefundBody(response http.ResponseWriter, request *http.Request) ([]byte
 }
 
 func decodeRefundRequestBody(body []byte) (order.RefundRequestCommand, error) {
-	var input struct {
-		Amount       json.RawMessage `json:"amount"`
-		Reason       string          `json:"reason"`
-		OrderVersion json.RawMessage `json:"orderVersion"`
-	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
+	fields, err := decodeExactJSONObject(body, "amount", "reason", "orderVersion")
+	if err != nil {
 		return order.RefundRequestCommand{}, errors.New("invalid refund body")
 	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return order.RefundRequestCommand{}, errors.New("invalid refund body")
-	}
-	amount, err := parseRawInteger(input.Amount)
+	amount, err := parseRawInteger(fields["amount"])
 	if err != nil {
 		return order.RefundRequestCommand{}, errors.New("invalid integer field")
 	}
-	orderVersion, err := parseRawInteger(input.OrderVersion)
+	reason, err := parseExactJSONString(fields["reason"])
+	if err != nil {
+		return order.RefundRequestCommand{}, errors.New("invalid refund body")
+	}
+	orderVersion, err := parseRawInteger(fields["orderVersion"])
 	if err != nil {
 		return order.RefundRequestCommand{}, errors.New("invalid integer field")
 	}
-	return order.RefundRequestCommand{Amount: amount, Reason: input.Reason, OrderVersion: orderVersion}, nil
+	return order.RefundRequestCommand{Amount: amount, Reason: reason, OrderVersion: orderVersion}, nil
 }
 
 func decodeRefundVersionBody(body []byte) (int64, error) {
-	var input struct {
-		Version json.RawMessage `json:"version"`
-	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
+	fields, err := decodeExactJSONObject(body, "version")
+	if err != nil {
 		return 0, errors.New("invalid refund body")
 	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return 0, errors.New("invalid refund body")
-	}
-	version, err := parseRawInteger(input.Version)
+	version, err := parseRawInteger(fields["version"])
 	if err != nil {
 		return 0, errors.New("invalid integer field")
 	}
 	return version, nil
+}
+
+func decodeExactJSONObject(body []byte, required ...string) (map[string]json.RawMessage, error) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, errors.New("invalid JSON object")
+	}
+	allowed := make(map[string]bool, len(required))
+	for _, field := range required {
+		allowed[field] = true
+	}
+	fields := make(map[string]json.RawMessage, len(required))
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		field, ok := token.(string)
+		if !ok || !allowed[field] || fields[field] != nil {
+			return nil, errors.New("invalid JSON field")
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		fields[field] = value
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+		return nil, errors.New("invalid JSON object")
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, errors.New("invalid trailing JSON")
+	}
+	for _, field := range required {
+		if fields[field] == nil {
+			return nil, errors.New("missing JSON field")
+		}
+	}
+	return fields, nil
+}
+
+func parseExactJSONString(raw json.RawMessage) (string, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '"' {
+		return "", errors.New("invalid JSON string")
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", err
+	}
+	return value, nil
 }
 
 func handleRefundInputError(response http.ResponseWriter, request *http.Request, err error) {

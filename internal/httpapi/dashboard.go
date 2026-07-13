@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/magicvr/allinme.core-api/internal/auth"
@@ -138,8 +137,13 @@ func parseDashboardTrendQuery(request *http.Request) (int, error) {
 	if !ok || len(entries) != 1 || entries[0] == "" {
 		return 0, dashboardQueryError{field: "days", message: "must be 7 or 30"}
 	}
-	days, err := strconv.Atoi(entries[0])
-	if err != nil || (days != 7 && days != 30) || (len(entries[0]) > 1 && entries[0][0] == '0') {
+	var days int
+	switch entries[0] {
+	case "7":
+		days = 7
+	case "30":
+		days = 30
+	default:
 		return 0, dashboardQueryError{field: "days", message: "must be 7 or 30"}
 	}
 	return days, nil

@@ -62,6 +62,8 @@ func TestDashboardRoutesResponsesQueriesAndRoles(t *testing.T) {
 		{"/api/v1/dashboard/trend?days=7&days=30", "days"},
 		{"/api/v1/dashboard/trend?days=07", "days"},
 		{"/api/v1/dashboard/trend?days=+7", "days"},
+		{"/api/v1/dashboard/trend?days=%2B7", "days"},
+		{"/api/v1/dashboard/trend?days=%2D7", "days"},
 		{"/api/v1/dashboard/trend?days=8", "days"},
 		{"/api/v1/dashboard/trend?days=7&first=1&second=2", "first"},
 	} {

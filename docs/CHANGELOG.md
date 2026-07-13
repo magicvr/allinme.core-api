@@ -17,10 +17,8 @@
 - 增加订单查询 DTO/capability、稳定排序与分页边界、查询次数 observer、损坏数据/扫描失败和基础 app 回退测试。
 - 实现阶段二认证授权：bcrypt 本地账号、严格 HS256 JWT、SQLite 可撤销 session、四角色策略和 login/me/logout API。
 - 增加 development 四角色 auth seed、production 空库 `bootstrap-admin`、固定窗口登录限流和 migration v2。
-
 - 实现阶段一运行基础：配置与应用装配、纯 Go SQLite、嵌入式 migration、runtime seed，以及 development-only reset。
 - 增加 `GET /readyz`、统一运行错误 envelope、request ID、结构化访问日志和 panic recovery。
-
 - 建立后端文档总纲、架构、Schema-UI 接入、HTTP API、验证、场景、ADR 与审计规则。
 - 明确 Schema-UI 文档仓是前后端对接的核心契约，本仓文档不重新定义协议。
 - 初始化订单运营 demo 的目标领域、状态机、角色权限、HTTP API、完整业务场景和分阶段实施路线。
@@ -31,6 +29,10 @@
 - 收敛目标 API 的 baseline/draft 层级、场景错误语义和 endpoint 实现迁移流程。
 - 建立阶段一 1A 运行基础开发计划与可执行 checklist，明确 migration/seed/reset、readiness 和错误框架的实施证据。
 - 建立阶段二认证授权开发计划与可执行 checklist，冻结 auth migration/seed、JWT/session、角色策略、登录限流、安全验证和文档收敛边界。
+
+### Fixed
+
+- 加固阶段四退款与看板 transport 契约：退款 JSON 字段名严格区分大小写并拒绝重复/缺失字段，看板 trend 拒绝 URL 编码后的正负号；同步根 README 的阶段四能力状态，并更正归档审计对趋势索引 runtime 使用情况的过强表述。
 
 ### Changed
 
