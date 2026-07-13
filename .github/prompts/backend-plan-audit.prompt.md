@@ -1,7 +1,7 @@
 ---
 name: backend-plan-audit
 description: "审计所有活跃实施计划，或审计通过 TARGET 参数明确指定的一个或多个 PLN 计划"
-argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [AUDITOR=codex] [FOCUS=...] [MODE=audit-only|remediate]"
+argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [AUDITOR=codex] [FOCUS=...]"
 agent: agent
 ---
 
@@ -18,7 +18,6 @@ agent: agent
 - 不存在、重复 ID、plan/checklist 缺失、文件名与 frontmatter 不一致时，将其记录为审计 finding，不得静默跳过。
 - `AUDITOR` 缺省为当前 AI/工具的稳定 slug。
 - `FOCUS` 只增加某主题的检查深度，不得跳过本提示词规定的其他计划审计项。
-- `MODE` 缺省为 `audit-only`；只有显式 `MODE=remediate` 且审计汇报完成后才允许修改计划或实现。
 
 未指定 `TARGET` 且没有活跃计划时，回复“当前没有可审计的活跃计划”并停止，不创建空审计记录。用户明确指定的对象无法解析时，报告错误并停止。
 
@@ -32,7 +31,7 @@ agent: agent
    - 单计划：`AUD-NNNN-YYYYMMDD-<auditor>-plan-<plan-id-subject>.md`；
    - 多计划或全部活跃计划：`AUD-NNNN-YYYYMMDD-<auditor>-plan-active-plans.md` 或 `...-plan-selected-plans.md`。
 4. `scope` 使用 `plan:PLN-NNNN` 或逗号分隔的计划 ID；`audit_type: targeted`；`related_plans` 列出全部对象。
-5. 固定不可变 baseline 和开始时间，立即以 `status: open` 保存。零 finding 也保留审计记录。
+5. 固定不可变 baseline 和开始时间，立即以 `status: open` 保存，并在同一次变更中加入 `docs/audits/README.md` 当前索引，初始状态为 `status=open`、`remediation=pending`。零 finding 也保留审计记录；未加入索引视为创建失败。
 
 ## 2. 为每个计划建立事实上下文
 
@@ -87,13 +86,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1
 4. 区分：计划缺陷、当前实现缺陷、待确认假设和非本计划范围风险。实现缺陷若不阻断计划设计，只链接事实，不擅自扩大整改范围。
 5. 零 finding 时明确写“本轮计划审计未发现新问题”，仍记录对象、baseline、验证、未执行项和剩余风险。
 
-## 6. 输出与可选整改
+## 6. 输出、关闭与整改交接
 
 先向用户汇报审计 ID、选中计划、严重度分布、跨计划冲突、验证结果和剩余风险。
 
-- `MODE=audit-only`：不得修改 plan/checklist 或产品实现来消除 finding；完成审计记录后停止。
-- `MODE=remediate`：汇报后才允许修改计划、checklist、事实源或必要实现。所有修改必须保持单一事实源并运行对应验证；不得直接改写已关闭审计。
+本提示词只执行计划审计，不修改 plan/checklist 或产品实现来消除 finding。需要整改时使用 `/backend-fix-audit-findings` 或 `$backend-fix-audit-findings`。
 
-审计完成后，为每个 finding 写明当前 disposition，填写 `completed_at` 和关闭结论，将记录设为 `closed`。未整改 finding 可保持 `open` disposition，后续整改复核使用新的 follow-up audit。
+审计完成后，为每个 finding 写明当前 disposition，填写 `completed_at` 和关闭结论，将记录设为 `closed`，并同步更新索引：存在 `open` 或 `partially-resolved` finding 时写 `remediation=required`；零 finding 时写 `remediation=none`；仅有批准风险时写 `remediation=accepted-risk`。后续整改创建 `REM`，复核使用新的 follow-up audit。
 
 全程使用中文，按计划和严重度组织发现，引用具体章节、文件、符号和命令证据。

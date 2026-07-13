@@ -54,6 +54,7 @@ ADR 记录“为何选择”，不替代上述现行或目标规范。CHANGELOG 
 | 决策 | [`decisions/`](./decisions/README.md) | 仅记录本仓实现选择，不替代协议 ADR |
 | 计划 | [`plans/`](./plans/README.md) | 实施计划、配套 checklist 与归档生命周期 |
 | 审计 | [`audits/`](./audits/README.md) | 不可覆盖的审计记录、发现与历史关系 |
+| 整改 | [`remediations/`](./remediations/README.md) | 审计 finding 的实施记录与待复审状态 |
 | 工具 | [`tools/`](./tools/README.md) | 文档结构、frontmatter 与链接验证脚本 |
 | 变更 | [`CHANGELOG.md`](./CHANGELOG.md) | 本仓 API 或集成行为变更 |
 

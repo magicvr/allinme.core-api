@@ -49,6 +49,7 @@ applies_to: allinme.core-api
 | [decisions/](./decisions/README.md) | 维护者 | 后端内部架构决策 |
 | [plans/](./plans/README.md) | 维护者 / AI | 实施计划、checklist 与归档索引 |
 | [audits/](./audits/README.md) | 维护者 / AI | 审计记录、发现历史与追溯关系 |
+| [remediations/](./remediations/README.md) | 维护者 / AI | 审计整改记录及复审队列 |
 | [CHANGELOG.md](./CHANGELOG.md) | 所有人 | 本仓变更记录 |
 
 ## 3. 代码地图

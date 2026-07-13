@@ -20,7 +20,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.test
 |---|---|---|
 | `go test ./...` | HTTP 与协议算法测试、共享 fixtures 的当前行为 | 生产依赖可用或远端部署健康 |
 | `go vet ./...` | Go 静态分析未发现已知问题 | 并发安全和业务语义完整 |
-| `docs/tools/validate.ps1` | 文档 frontmatter、链接、计划/审计命名与配对、Copilot/Codex 审计入口规则 | 文档内容本身的业务正确性 |
+| `docs/tools/validate.ps1` | 文档 frontmatter、链接、计划/审计/整改命名与索引、Copilot/Codex 工作流入口规则 | 文档内容本身的业务正确性 |
 
 涉及共享状态、goroutine 或并发 handler 时增加：
 

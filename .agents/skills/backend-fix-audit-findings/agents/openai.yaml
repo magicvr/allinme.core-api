@@ -1,0 +1,6 @@
+interface:
+  display_name: "Fix Audit Findings"
+  short_description: "Remediate all active or selected audit findings"
+  default_prompt: "Use $backend-fix-audit-findings to remediate all active audit findings."
+policy:
+  allow_implicit_invocation: false

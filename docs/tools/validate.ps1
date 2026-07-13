@@ -21,6 +21,8 @@ $frontmatterExceptions = @(
     'plans/archived/README.md',
     'plans/templates/checklist.md',
     'plans/templates/plan.md',
+    'remediations/README.md',
+    'remediations/templates/remediation-record.md',
     'scenarios/README.md',
     'tools/README.md'
 )
@@ -41,17 +43,34 @@ function Get-FrontmatterValue([string]$Frontmatter, [string]$Field) {
     return $match.Groups['value'].Value
 }
 
+function Get-IndexLines([string]$Content, [string]$Target) {
+    $pattern = '(?m)^.*\]\(' + [regex]::Escape($Target) + '\).*$'
+    return [regex]::Matches($Content, $pattern)
+}
+
 $failures = New-Object System.Collections.Generic.List[string]
 $markdownFiles = Get-ChildItem $docsRoot -Recurse -File -Filter '*.md'
 $planIds = @{}
 $planStems = @{}
 $auditIds = @{}
+$auditRecords = @{}
+$remediationIds = @{}
+$remediationRecords = @{}
 
 $auditsRoot = Join-Path $docsRoot 'audits'
 if (Test-Path -LiteralPath $auditsRoot) {
     foreach ($auditFile in Get-ChildItem $auditsRoot -Recurse -File) {
         if ($auditFile.Extension -ne '.md') {
             $failures.Add("Non-Markdown file is not allowed under audits/: $(Get-RepoRelativePath $auditFile.FullName)")
+        }
+    }
+}
+
+$remediationsRoot = Join-Path $docsRoot 'remediations'
+if (Test-Path -LiteralPath $remediationsRoot) {
+    foreach ($remediationFile in Get-ChildItem $remediationsRoot -Recurse -File) {
+        if ($remediationFile.Extension -ne '.md') {
+            $failures.Add("Non-Markdown file is not allowed under remediations/: $(Get-RepoRelativePath $remediationFile.FullName)")
         }
     }
 }
@@ -76,6 +95,9 @@ foreach ($file in $markdownFiles) {
             }
             if ($docsRelativePath.StartsWith('audits/records/')) {
                 $requiredFields = @('status', 'audit_id', 'auditor', 'audit_type', 'scope', 'subject', 'baseline', 'started_at', 'last_updated')
+            }
+            if ($docsRelativePath.StartsWith('remediations/records/')) {
+                $requiredFields = @('status', 'remediation_id', 'implementer', 'scope', 'source_audits', 'source_findings', 'baseline', 'started_at', 'last_updated')
             }
             foreach ($field in $requiredFields) {
                 if ($frontmatter -notmatch "(?m)^${field}:\s*\S.*$") {
@@ -155,6 +177,46 @@ foreach ($file in $markdownFiles) {
             if ($scopeKind -ne 'follow-up' -and $declaredScope -notlike "${scopeKind}:*") {
                 $failures.Add("Audit scope does not match filename scope kind: $relativePath")
             }
+            $auditRecords[$file.Name] = $auditStatus
+        }
+    }
+
+    if ($docsRelativePath.StartsWith('remediations/records/')) {
+        if ($docsRelativePath -notmatch '^remediations/records/(?<remediationId>REM-\d{4})-(?<date>\d{8})-[a-z0-9]+(?:-[a-z0-9]+)*-(?<scopeKind>audit|repository|plan|feature)-[a-z0-9]+(?:-[a-z0-9]+)*\.md$') {
+            $failures.Add("Invalid remediation filename: $relativePath")
+        } elseif ($null -ne $frontmatter) {
+            $remediationId = $Matches['remediationId']
+            $remediationDate = $Matches['date']
+            $remediationScopeKind = $Matches['scopeKind']
+            $declaredRemediationId = Get-FrontmatterValue $frontmatter 'remediation_id'
+            if ($declaredRemediationId -ne $remediationId) {
+                $failures.Add("Remediation ID does not match filename: $relativePath ($declaredRemediationId != $remediationId)")
+            }
+            if ($remediationIds.ContainsKey($remediationId)) {
+                $failures.Add("Duplicate remediation ID: $remediationId")
+            } else {
+                $remediationIds[$remediationId] = $relativePath
+            }
+            $remediationStatus = Get-FrontmatterValue $frontmatter 'status'
+            if ($remediationStatus -notin @('in-progress', 'completed', 'partial', 'blocked')) {
+                $failures.Add("Invalid remediation status: $relativePath ($remediationStatus)")
+            }
+            if ($remediationStatus -ne 'in-progress') {
+                $completedAt = Get-FrontmatterValue $frontmatter 'completed_at'
+                if ([string]::IsNullOrWhiteSpace($completedAt) -or $completedAt -eq 'pending') {
+                    $failures.Add("Closed remediation must record completed_at: $relativePath")
+                }
+            }
+            $remediationStartedAt = Get-FrontmatterValue $frontmatter 'started_at'
+            $expectedRemediationDate = "$($remediationDate.Substring(0, 4))-$($remediationDate.Substring(4, 2))-$($remediationDate.Substring(6, 2))"
+            if ($remediationStartedAt -notlike "$expectedRemediationDate*") {
+                $failures.Add("Remediation filename date does not match started_at: $relativePath")
+            }
+            $declaredRemediationScope = Get-FrontmatterValue $frontmatter 'scope'
+            if ($declaredRemediationScope -notlike "${remediationScopeKind}:*") {
+                $failures.Add("Remediation scope does not match filename scope kind: $relativePath")
+            }
+            $remediationRecords[$file.Name] = $remediationStatus
         }
     }
 
@@ -184,15 +246,67 @@ foreach ($entry in $planIds.GetEnumerator()) {
     }
 }
 
+$auditIndexPath = Join-Path $docsRoot 'audits\README.md'
+if ($auditRecords.Count -gt 0) {
+    if (-not (Test-Path -LiteralPath $auditIndexPath)) {
+        $failures.Add('Audit records exist but audits/README.md is missing')
+    } else {
+        $auditIndexContent = Get-Content -Raw -Encoding UTF8 $auditIndexPath
+        foreach ($entry in $auditRecords.GetEnumerator()) {
+            $target = './records/' + $entry.Key
+            $indexLines = Get-IndexLines $auditIndexContent $target
+            if ($indexLines.Count -ne 1) {
+                $failures.Add("Audit record must be indexed exactly once: $($entry.Key)")
+                continue
+            }
+            $indexLine = $indexLines[0].Value
+            if ($indexLine -notmatch ('status=' + [regex]::Escape($entry.Value)) -or
+                $indexLine -notmatch 'remediation=(pending|required|none|accepted-risk|awaiting-verification:REM-\d{4}|verified-by:AUD-\d{4}|continued-by:AUD-\d{4})') {
+                $failures.Add("Audit index status is missing or inconsistent: $($entry.Key)")
+            }
+        }
+    }
+}
+
+$remediationIndexPath = Join-Path $docsRoot 'remediations\README.md'
+if ($remediationRecords.Count -gt 0) {
+    if (-not (Test-Path -LiteralPath $remediationIndexPath)) {
+        $failures.Add('Remediation records exist but remediations/README.md is missing')
+    } else {
+        $remediationIndexContent = Get-Content -Raw -Encoding UTF8 $remediationIndexPath
+        foreach ($entry in $remediationRecords.GetEnumerator()) {
+            $target = './records/' + $entry.Key
+            $indexLines = Get-IndexLines $remediationIndexContent $target
+            if ($indexLines.Count -ne 1) {
+                $failures.Add("Remediation record must be indexed exactly once: $($entry.Key)")
+                continue
+            }
+            $indexLine = $indexLines[0].Value
+            if ($indexLine -notmatch ('status=' + [regex]::Escape($entry.Value)) -or
+                $indexLine -notmatch 'verification=(not-ready|pending|verified-by:AUD-\d{4}|partial-by:AUD-\d{4}|failed-by:AUD-\d{4})') {
+                $failures.Add("Remediation index status is missing or inconsistent: $($entry.Key)")
+            }
+        }
+    }
+}
+
 $repositoryDocsRoot = (Join-Path $repoRoot 'docs')
 if ($docsRoot -eq $repositoryDocsRoot) {
     $requiredAuditEntrypoints = @(
         '.github/prompts/backend-full-audit.prompt.md',
         '.github/prompts/backend-plan-audit.prompt.md',
+        '.github/prompts/backend-fix-audit-findings.prompt.md',
+        '.github/prompts/backend-follow-up-audit.prompt.md',
         '.agents/skills/backend-full-audit/SKILL.md',
         '.agents/skills/backend-full-audit/agents/openai.yaml',
         '.agents/skills/backend-plan-audit/SKILL.md',
-        '.agents/skills/backend-plan-audit/agents/openai.yaml'
+        '.agents/skills/backend-plan-audit/agents/openai.yaml',
+        '.agents/skills/backend-fix-audit-findings/SKILL.md',
+        '.agents/skills/backend-fix-audit-findings/agents/openai.yaml',
+        '.agents/skills/backend-follow-up-audit/SKILL.md',
+        '.agents/skills/backend-follow-up-audit/agents/openai.yaml',
+        '.agents/skills/backend-audit-until-clean/SKILL.md',
+        '.agents/skills/backend-audit-until-clean/agents/openai.yaml'
     )
     foreach ($entrypoint in $requiredAuditEntrypoints) {
         if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $entrypoint))) {
@@ -225,7 +339,25 @@ if ($docsRoot -eq $repositoryDocsRoot) {
         }
     }
 
-    foreach ($skillName in @('backend-full-audit', 'backend-plan-audit')) {
+    $fixAuditPromptPath = Join-Path $repoRoot '.github/prompts/backend-fix-audit-findings.prompt.md'
+    if (Test-Path -LiteralPath $fixAuditPromptPath) {
+        $fixAuditPrompt = Get-Content -Raw -Encoding UTF8 $fixAuditPromptPath
+        if ($fixAuditPrompt -notmatch '(?m)^name:\s*backend-fix-audit-findings\s*$' -or
+            $fixAuditPrompt -notmatch 'remediation-contract:\s*default-target=required-audits;\s*creates-rem-record') {
+            $failures.Add('Audit remediation prompt must target required audits and create REM records')
+        }
+    }
+
+    $followUpPromptPath = Join-Path $repoRoot '.github/prompts/backend-follow-up-audit.prompt.md'
+    if (Test-Path -LiteralPath $followUpPromptPath) {
+        $followUpPrompt = Get-Content -Raw -Encoding UTF8 $followUpPromptPath
+        if ($followUpPrompt -notmatch '(?m)^name:\s*backend-follow-up-audit\s*$' -or
+            $followUpPrompt -notmatch 'follow-up-contract:\s*default-target=pending-remediations;\s*creates-new-audit') {
+            $failures.Add('Follow-up prompt must target pending REM records and create a new AUD')
+        }
+    }
+
+    foreach ($skillName in @('backend-full-audit', 'backend-plan-audit', 'backend-fix-audit-findings', 'backend-follow-up-audit')) {
         $skillRoot = Join-Path $repoRoot ".agents/skills/$skillName"
         $skillPath = Join-Path $skillRoot 'SKILL.md'
         $metadataPath = Join-Path $skillRoot 'agents/openai.yaml'
@@ -244,6 +376,28 @@ if ($docsRoot -eq $repositoryDocsRoot) {
         }
     }
 
+    $orchestratorSkillPath = Join-Path $repoRoot '.agents/skills/backend-audit-until-clean/SKILL.md'
+    $orchestratorMetadataPath = Join-Path $repoRoot '.agents/skills/backend-audit-until-clean/agents/openai.yaml'
+    if (Test-Path -LiteralPath $orchestratorSkillPath) {
+        $orchestratorContent = Get-Content -Raw -Encoding UTF8 $orchestratorSkillPath
+        foreach ($dependencySkill in @('backend-plan-audit', 'backend-full-audit', 'backend-fix-audit-findings', 'backend-follow-up-audit')) {
+            if ($orchestratorContent -notmatch ('\$' + [regex]::Escape($dependencySkill))) {
+                $failures.Add("Audit orchestrator must invoke existing skill: $dependencySkill")
+            }
+        }
+        if ($orchestratorContent -notmatch 'MAX_CYCLES' -or
+            $orchestratorContent -notmatch 'MAX_STAGNANT_CYCLES' -or
+            $orchestratorContent -notmatch 'persistent goal') {
+            $failures.Add('Audit orchestrator must establish a goal and enforce bounded loop circuit breakers')
+        }
+    }
+    if (Test-Path -LiteralPath $orchestratorMetadataPath) {
+        $orchestratorMetadata = Get-Content -Raw -Encoding UTF8 $orchestratorMetadataPath
+        if ($orchestratorMetadata -notmatch '(?m)^\s*allow_implicit_invocation:\s*false\s*$') {
+            $failures.Add('Audit orchestrator must require explicit invocation')
+        }
+    }
+
     $trackedAuditPaths = & git -C $repoRoot ls-tree -r --name-only HEAD -- docs/audits/records 2>$null
     foreach ($trackedAuditPath in $trackedAuditPaths) {
         $currentAuditPath = Join-Path $repoRoot $trackedAuditPath
@@ -256,6 +410,22 @@ if ($docsRoot -eq $repositoryDocsRoot) {
             & git -C $repoRoot diff --quiet HEAD -- $trackedAuditPath
             if ($LASTEXITCODE -ne 0) {
                 $failures.Add("Closed audit record is immutable; create a new related audit instead: $trackedAuditPath")
+            }
+        }
+    }
+
+    $trackedRemediationPaths = & git -C $repoRoot ls-tree -r --name-only HEAD -- docs/remediations/records 2>$null
+    foreach ($trackedRemediationPath in $trackedRemediationPaths) {
+        $currentRemediationPath = Join-Path $repoRoot $trackedRemediationPath
+        if (-not (Test-Path -LiteralPath $currentRemediationPath)) {
+            $failures.Add("Tracked remediation record must not be deleted or moved: $trackedRemediationPath")
+            continue
+        }
+        $headRemediationContent = (& git -C $repoRoot show "HEAD:$trackedRemediationPath" 2>$null | Out-String)
+        if ($headRemediationContent -match '(?m)^status:\s*(completed|partial|blocked)\s*$') {
+            & git -C $repoRoot diff --quiet HEAD -- $trackedRemediationPath
+            if ($LASTEXITCODE -ne 0) {
+                $failures.Add("Closed remediation record is immutable; create a new remediation instead: $trackedRemediationPath")
             }
         }
     }

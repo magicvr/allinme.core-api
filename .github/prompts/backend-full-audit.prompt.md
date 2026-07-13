@@ -1,7 +1,7 @@
 ---
 name: backend-full-audit
 description: "对 allinme.core-api 整个仓库执行不可缩减范围、可追溯的全量审计"
-argument-hint: "[AUDITOR=codex] [FOCUS=security|protocol|data|docs|...] [MODE=audit-only|remediate]"
+argument-hint: "[AUDITOR=codex] [FOCUS=security|protocol|data|docs|...]"
 agent: agent
 ---
 
@@ -13,7 +13,6 @@ agent: agent
 
 - `AUDITOR`：审计者稳定标识；缺省时使用当前 AI/工具名称的稳定 slug。
 - `FOCUS`：可选关注重点，只影响检查顺序和深度，不得缩小任何必审范围。
-- `MODE`：缺省为 `audit-only`。只有显式指定 `MODE=remediate`，并且全量审计、finding 记录和用户汇报已经完成后，才允许进入整改与复核。
 - 任何其他附加文本都只能作为补充上下文，不得把全量审计降级为计划、功能、目录、diff 或单个 PR 审计。若用户明确需要局部审计，应停止并建议使用计划审计或另建专项审计，而不是静默缩小范围。
 
 严格遵循 [`docs/audits/README.md`](../../docs/audits/README.md)。审计记录永久保留，不移动、不覆盖。整改规模较大时按 [`docs/plans/README.md`](../../docs/plans/README.md) 新建 plan/checklist。
@@ -25,7 +24,8 @@ agent: agent
 3. 扫描 `docs/audits/records/` 最大 `AUD-NNNN` 并加一；立即创建：
    `AUD-NNNN-YYYYMMDD-<auditor>-repository-full-backend.md`。
 4. 固定 `scope: repository:allinme.core-api`、`audit_type: full`、不可变 baseline、开始时间、相关审计和相关计划。工作树不干净时记录基线解释。
-5. 从创建起保持 `status: open`；即使最终零 finding，也必须保留本次记录。
+5. 在同一次文件变更中把新记录加入 `docs/audits/README.md` 的“当前索引”，初始写为 `status=open`、`remediation=pending`；没有索引的审计记录视为创建失败。
+6. 从创建起保持 `status: open`；即使最终零 finding，也必须保留本次记录。
 
 ## 2. 必审范围
 
@@ -82,13 +82,12 @@ go test -race ./... -count=1
 4. 不得仅因编号不同重复报告同一根因，也不得因为历史审计未发现就跳过当前验证。
 5. 零 finding 时明确写“本轮全仓全量审计未发现新问题”，并保存覆盖范围、命令、未执行项和剩余风险。
 
-## 6. 输出与可选整改
+## 6. 输出、关闭与整改交接
 
 完成全量审计后先向用户汇报：审计 ID、baseline、实际覆盖范围、严重度分布、验证结果、未执行项和剩余风险。
 
-- `MODE=audit-only`：不得修改产品代码或计划内容来整改 finding；完成审计记录并停止。
-- `MODE=remediate`：只有上述汇报完成后才按 finding 修复根因。重大整改新建 `PLN-NNNN`，逐项验证并记录关联；不得用修复过程替代审计覆盖。
+本提示词只执行审计，不直接整改 finding。需要整改时使用 `/backend-fix-audit-findings` 或 `$backend-fix-audit-findings`；不得在审计过程中用顺手修复替代完整覆盖和 finding 记录。
 
-审计工作完成时，确认每个 finding 具有当前明确 disposition，填写 `completed_at`、验证和关闭结论，将审计设为 `closed`。`open` finding 可以作为最终 disposition 保留，表示审计已完成但整改未完成。关闭后不得修改、删除或移动记录；后续复核创建新的 follow-up audit。
+审计工作完成时，确认每个 finding 具有当前明确 disposition，填写 `completed_at`、验证和关闭结论，将审计设为 `closed`，并同步更新索引：存在 `open` 或 `partially-resolved` finding 时写 `remediation=required`；零 finding 时写 `remediation=none`；仅保留已批准风险时写 `remediation=accepted-risk`。关闭后不得修改、删除或移动记录；后续整改创建 `REM` 记录，复核创建新的 follow-up audit。
 
 全程使用中文，发现优先，输出具体文件/符号/命令证据，不粘贴无关长日志。

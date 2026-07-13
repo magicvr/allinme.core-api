@@ -1,0 +1,6 @@
+interface:
+  display_name: "Follow-up Audit"
+  short_description: "Verify remediation records against source audits"
+  default_prompt: "Use $backend-follow-up-audit to verify all pending remediation records."
+policy:
+  allow_implicit_invocation: false

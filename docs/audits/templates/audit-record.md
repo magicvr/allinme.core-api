@@ -10,6 +10,7 @@ started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD
 related_audits: none
+related_remediations: none
 supersedes: none
 related_plans: none
 ---

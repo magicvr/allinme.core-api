@@ -63,12 +63,45 @@ completed_at: pending
 last_updated: 2026-07-14
 ---
 '@
-    Set-Content -LiteralPath (Join-Path $auditRecordsRoot 'AUD-0001-20260714-validator-feature-validator-fixture.md') -Value ($auditFrontmatter + "`n# Audit") -Encoding UTF8
+    $auditRecordName = 'AUD-0001-20260714-validator-feature-validator-fixture.md'
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $auditRecordName) -Value ($auditFrontmatter + "`n# Audit") -Encoding UTF8
+    $auditIndexPath = Join-Path $fixtureRoot 'audits\README.md'
+    $auditIndexContent = "# Audits`n`n- [AUD-0001](./records/$auditRecordName): ``status=open``; ``remediation=pending``; fixture."
+    Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8
+
+    $remediationRecordsRoot = Join-Path $fixtureRoot 'remediations\records'
+    New-Item -ItemType Directory -Path $remediationRecordsRoot -Force | Out-Null
+    $remediationFrontmatter = @'
+---
+status: completed
+remediation_id: REM-0001
+implementer: validator-test
+scope: audit:AUD-0001
+source_audits: AUD-0001
+source_findings: AUD-0001-F001
+baseline: git:0000000; worktree:clean
+started_at: 2026-07-14T01:00:00+08:00
+completed_at: 2026-07-14T02:00:00+08:00
+last_updated: 2026-07-14
+related_plans: none
+---
+'@
+    $remediationRecordName = 'REM-0001-20260714-validator-audit-validator-fixture.md'
+    Set-Content -LiteralPath (Join-Path $remediationRecordsRoot $remediationRecordName) -Value ($remediationFrontmatter + "`n# Remediation") -Encoding UTF8
+    $remediationIndexPath = Join-Path $fixtureRoot 'remediations\README.md'
+    Set-Content -LiteralPath $remediationIndexPath -Value ("# Remediations`n`n- [REM-0001](./records/$remediationRecordName): ``status=completed``; ``verification=pending``; fixture.") -Encoding UTF8
 
     $validResult = Invoke-Validator $fixtureRoot
     if ($validResult.ExitCode -ne 0) {
         throw "validator rejected valid fixture: $($validResult.Output)"
     }
+
+    Set-Content -LiteralPath $auditIndexPath -Value '# Audits' -Encoding UTF8
+    $missingAuditIndexResult = Invoke-Validator $fixtureRoot
+    if ($missingAuditIndexResult.ExitCode -eq 0 -or $missingAuditIndexResult.Output -notmatch 'Audit record must be indexed exactly once') {
+        throw "validator did not reject an unindexed audit: $($missingAuditIndexResult.Output)"
+    }
+    Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8
 
     Set-Content -LiteralPath (Join-Path $fixtureRoot 'invalid.md') -Value ($frontmatter + "`n[Missing](./does-not-exist.md#missing)") -Encoding UTF8
     $invalidResult = Invoke-Validator $fixtureRoot
@@ -90,16 +123,31 @@ last_updated: 2026-07-14
     Remove-Item -LiteralPath $orphanPath
 
     $closedAudit = $auditFrontmatter.Replace('status: open', 'status: closed')
-    Set-Content -LiteralPath (Join-Path $auditRecordsRoot 'AUD-0001-20260714-validator-feature-validator-fixture.md') -Value ($closedAudit + "`n# Audit") -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $auditRecordName) -Value ($closedAudit + "`n# Audit") -Encoding UTF8
     $closedResult = Invoke-Validator $fixtureRoot
     if ($closedResult.ExitCode -eq 0 -or $closedResult.Output -notmatch 'completed_at') {
         throw "validator did not reject a closed audit without completed_at: $($closedResult.Output)"
     }
 
     $global:LASTEXITCODE = 0
-    Write-Output 'Validator self-test passed: valid governance accepted; missing links, orphan plans, and incomplete closed audits rejected.'
+    Write-Output 'Validator self-test passed: valid governance accepted; unindexed audits, missing links, orphan plans, and incomplete closed audits rejected.'
 } finally {
     if (Test-Path -LiteralPath $fixtureRoot) {
-        Remove-Item -LiteralPath $fixtureRoot -Recurse -Force
+        $resolvedFixtureRoot = (Resolve-Path $fixtureRoot).Path
+        $allowedPrefix = (Resolve-Path $PSScriptRoot).Path + [System.IO.Path]::DirectorySeparatorChar + '.validate-fixture-'
+        if (-not $resolvedFixtureRoot.StartsWith($allowedPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove unexpected validator fixture path: $resolvedFixtureRoot"
+        }
+        for ($attempt = 1; $attempt -le 5; $attempt++) {
+            try {
+                Remove-Item -LiteralPath $resolvedFixtureRoot -Recurse -Force -ErrorAction Stop
+                break
+            } catch {
+                if ($attempt -eq 5) {
+                    throw
+                }
+                Start-Sleep -Milliseconds 200
+            }
+        }
     }
 }

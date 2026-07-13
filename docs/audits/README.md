@@ -33,14 +33,16 @@ related_plans: PLN-0005
 1. 每次正式审计一开始就创建记录，即使最终没有发现问题，也记录范围、基线、已执行验证、未执行项和剩余风险。
 2. 开始前检索相同范围和相关计划的过往审计；在“历史关系”中逐条说明继承、复现、已解决、无法复现或意见变化。
 3. finding 使用审计内稳定编号 `AUD-NNNN-F001`，不得使用跨所有审计共享、容易碰撞或失去上下文的裸 `V1`。
-4. finding 至少记录严重度、证据、影响、建议、owner 和 disposition。处置值使用 `open`、`resolved`、`accepted-risk`、`not-reproduced` 或 `superseded`。
+4. finding 至少记录严重度、证据、影响、建议、owner 和 disposition。处置值使用 `open`、`partially-resolved`、`resolved`、`accepted-risk`、`not-reproduced` 或 `superseded`。
 5. 新结论与旧审计矛盾时，不修改或删除旧记录；新记录通过 `related_audits` 引用旧记录，说明基线差异和证据，并仅在明确取代旧结论时填写 `supersedes`。
 6. `status: closed` 后记录视为不可变。拼写或链接纠错以同目录 addendum 审计记录完成；不得移动到归档目录，也不得把历史结论改写成当前规范。
 7. 审计关闭需要记录所有 finding 的最终处置、验证结果、未执行项和剩余风险。计划完成不等于审计关闭，必须由复核证据确认。
 
 ## 当前索引
 
-- [`AUD-0001`](./records/AUD-0001-20260714-codex-repository-docs-governance.md)：文档治理结构专项审计。
+- [`AUD-0003`](./records/AUD-0003-20260714-github-copilot-plan-pln-0005-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=required`；`scope=plan:PLN-0005`；阶段五计划审计，2 个 open findings。
+- [`AUD-0002`](./records/AUD-0002-20260714-codex-plan-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=required`；`scope=plan:PLN-0005`；阶段五计划审计，4 个 open findings。
+- [`AUD-0001`](./records/AUD-0001-20260714-codex-repository-docs-governance.md)：`status=closed`；`remediation=none`；`scope=repository:allinme.core-api/docs`；文档治理结构专项审计。
 
 新审计从 [`templates/audit-record.md`](./templates/audit-record.md) 创建，并运行 [`../tools/validate.ps1`](../tools/validate.ps1)。
 
@@ -48,21 +50,42 @@ related_plans: PLN-0005
 
 GitHub Copilot prompt 是审计流程的规范正文，Codex repo skill 完整读取对应 prompt 后执行，避免两套正文独立演化。
 
-| 审计类型 | GitHub Copilot | Codex | 默认对象 |
+| 工作类型 | GitHub Copilot | Codex | 默认对象 |
 |---|---|---|---|
 | 全仓全量审计 | [`/backend-full-audit`](../../.github/prompts/backend-full-audit.prompt.md) | [`$backend-full-audit`](../../.agents/skills/backend-full-audit/SKILL.md) | 整个 `allinme.core-api`，不可缩小范围 |
 | 计划审计 | [`/backend-plan-audit`](../../.github/prompts/backend-plan-audit.prompt.md) | [`$backend-plan-audit`](../../.agents/skills/backend-plan-audit/SKILL.md) | `docs/plans/` 下全部 `status: active` 的计划 |
+| 审计整改 | [`/backend-fix-audit-findings`](../../.github/prompts/backend-fix-audit-findings.prompt.md) | [`$backend-fix-audit-findings`](../../.agents/skills/backend-fix-audit-findings/SKILL.md) | 索引中全部 `remediation=required` 的审计 |
+| 整改复审 | [`/backend-follow-up-audit`](../../.github/prompts/backend-follow-up-audit.prompt.md) | [`$backend-follow-up-audit`](../../.agents/skills/backend-follow-up-audit/SKILL.md) | 整改索引中全部 `verification=pending` 的 REM |
+| 有界闭环 | 不提供 | [`$backend-audit-until-clean`](../../.agents/skills/backend-audit-until-clean/SKILL.md) | 全部活跃计划；可指定 PLN 或 `TARGET=repository` |
 
 调用示例：
 
 ```text
 /backend-full-audit FOCUS=security
 /backend-plan-audit TARGET=PLN-0005
-$backend-full-audit AUDITOR=codex MODE=audit-only
+$backend-fix-audit-findings
+$backend-follow-up-audit TARGET=REM-0001
+$backend-audit-until-clean MAX_CYCLES=3
+$backend-audit-until-clean TARGET=repository MAX_CYCLES=2
+$backend-full-audit AUDITOR=codex
 $backend-plan-audit TARGET="PLN-0005,PLN-0006" FOCUS=recovery
 ```
 
 - 全量审计的 `FOCUS` 只能增加检查深度，不能把范围缩小为 plan、feature、diff、目录或 PR。
 - 计划审计的 `TARGET` 缺省为 `active`，也可指定一个或多个 `PLN` ID；它只证明选中计划的质量，不代表全仓审计。
-- 两类审计的 `MODE` 缺省为 `audit-only`。只有显式 `MODE=remediate` 且审计结果已经记录和汇报后，才进入整改。
+- 审计提示词只生成审计记录，不直接整改。整改必须生成独立 [`REM`](../remediations/README.md)，复审再生成新的 follow-up `AUD`。
 - Codex 官方已弃用只存在于个人 `~/.codex/prompts` 的 custom prompts；仓库使用可版本化的 `.agents/skills`，通过 `$skill-name` 显式调用，并关闭隐式触发。
+
+## 索引状态
+
+每份审计记录必须在创建时立即加入本索引，并且只能出现一次。索引是当前整改队列的事实源，审计正文是不可变历史。
+
+- `remediation=pending`：审计仍在执行，尚未形成整改结论。
+- `remediation=required`：存在待整改 finding，是整改提示词的默认对象。
+- `remediation=awaiting-verification:REM-NNNN`：整改声称完成，等待独立复审。
+- `remediation=verified-by:AUD-NNNN`：follow-up audit 已确认修正完成。
+- `remediation=continued-by:AUD-NNNN`：部分或未修正，当前整改队列已转移到新的 follow-up audit。
+- `remediation=none`：无 finding 或无需整改。
+- `remediation=accepted-risk`：剩余问题已由明确责任人接受风险。
+
+创建审计时同时增加 `status=open; remediation=pending` 索引；关闭审计时同步更新 `status=closed` 和最终 remediation 状态。未更新索引视为审计流程未完成。

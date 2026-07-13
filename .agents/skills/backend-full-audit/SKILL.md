@@ -7,14 +7,15 @@ description: Execute the repository's formal, traceable full backend audit. Use 
 
 1. Resolve the repository root and read `.github/prompts/backend-full-audit.prompt.md` completely before taking any audit action.
 2. Treat that Copilot prompt as the canonical workflow and execute every mandatory full-repository scope and audit-record requirement in it.
-3. Interpret invocation text after `$backend-full-audit` as optional `AUDITOR`, `FOCUS`, and `MODE` input. Default to `MODE=audit-only`.
+3. Interpret invocation text after `$backend-full-audit` as optional `AUDITOR` and `FOCUS` input.
 4. Never use focus text to narrow the audit to a plan, feature, diff, directory, or PR. Suggest `$backend-plan-audit` when the user actually wants plan-scoped review.
-5. Stop and report the missing canonical prompt if the file cannot be read; do not reconstruct a reduced workflow from memory.
+5. Never remediate findings in this command. Direct remediation to `$backend-fix-audit-findings` after the indexed audit record is complete.
+6. Stop and report the missing canonical prompt if the file cannot be read; do not reconstruct a reduced workflow from memory.
 
 Example invocations:
 
 ```text
 $backend-full-audit
 $backend-full-audit FOCUS=security
-$backend-full-audit AUDITOR=codex MODE=remediate
+$backend-full-audit AUDITOR=codex FOCUS=protocol
 ```

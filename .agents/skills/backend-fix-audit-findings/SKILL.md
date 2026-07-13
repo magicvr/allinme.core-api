@@ -1,0 +1,21 @@
+---
+name: backend-fix-audit-findings
+description: Remediate findings from every audit currently marked remediation=required by default, or from audit reports selected by AUD ID, path, topic, or natural-language description. Create an indexed REM record and never modify closed audits.
+---
+
+# Fix Audit Findings
+
+1. Resolve the repository root and read `.github/prompts/backend-fix-audit-findings.prompt.md` completely before changing files.
+2. Treat that prompt as the canonical workflow, including default target selection, finding de-duplication, REM creation, index transitions, implementation, and validation.
+3. Interpret invocation text after `$backend-fix-audit-findings` as optional `TARGET`, `OWNER`, and `FOCUS`. Default to `TARGET=active`, meaning every audit index entry with `remediation=required`.
+4. Accept explicit audit IDs, paths, lists, topics, or natural-language descriptions. Never silently omit an invalid selected audit.
+5. Create and index a REM before implementation. Never edit a closed AUD or mark findings verified; hand completed work to `$backend-follow-up-audit`.
+6. Stop and report the missing canonical prompt if it cannot be read.
+
+Examples:
+
+```text
+$backend-fix-audit-findings
+$backend-fix-audit-findings TARGET=AUD-0002
+$backend-fix-audit-findings TARGET="AUD-0002,AUD-0003" FOCUS=plan-consistency
+```
