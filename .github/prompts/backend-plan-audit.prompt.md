@@ -5,7 +5,7 @@ argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [AUDITOR=codex] [FOCU
 agent: agent
 ---
 
-<!-- audit-contract: plan; default-target=active; explicit-targets=true -->
+<!-- audit-contract: plan; default-target=active; explicit-targets=true; checklist-matrix-required -->
 
 你是 `allinme.core-api` 的实施计划审计者。本提示词只审计计划的正确性、完整性、可执行性及其与事实源/当前代码的兼容性，不得把结果宣称为全仓质量审计。
 
@@ -26,11 +26,11 @@ agent: agent
 ## 1. 建立审计记录
 
 1. 检查当前分支、工作树、HEAD 完整 SHA、最近提交和用户已有改动。
-2. 完整读取所有选中 plan/checklist、计划索引、路线图，以及与这些计划/主题相关的历史 audits。
+2. 完整读取所有选中 plan/checklist、计划索引、路线图，以及与这些计划/主题相关的历史 audits。不得只读取 plan 后根据文件名或摘要推断 checklist 内容。
 3. 扫描最大 `AUD-NNNN` 并创建一份审计记录：
    - 单计划：`AUD-NNNN-YYYYMMDD-<auditor>-plan-<plan-id-subject>.md`；
    - 多计划或全部活跃计划：`AUD-NNNN-YYYYMMDD-<auditor>-plan-active-plans.md` 或 `...-plan-selected-plans.md`。
-4. `scope` 使用 `plan:PLN-NNNN` 或逗号分隔的计划 ID；`audit_type: targeted`；`related_plans` 列出全部对象。
+4. 使用 [`docs/audits/templates/plan-audit-record.md`](../../docs/audits/templates/plan-audit-record.md)；固定 `audit_schema: plan-audit/v2`。`scope` 使用 `plan:PLN-NNNN` 或逗号分隔的计划 ID；`audit_type: targeted`；`related_plans` 列出全部对象。
 5. 固定不可变 baseline 和开始时间，立即以 `status: open` 保存，并在同一次变更中加入 `docs/audits/README.md` 当前索引，初始状态为 `status=open`、`remediation=pending`。零 finding 也保留审计记录；未加入索引视为创建失败。
 
 ## 2. 为每个计划建立事实上下文
@@ -60,13 +60,45 @@ agent: agent
 9. **Checklist 覆盖**：plan 的每个强制义务是否有 checklist 条目；checklist 是否额外冻结了 plan 未定义的契约；已勾选项是否有实际 Evidence。
 10. **完成与归档**：完成报告、剩余风险、用户确认和归档条件是否明确；计划完成是否被错误等同于审计关闭。
 
+## 4. 强制 Checklist 审计矩阵
+
+对每个 `related_plans` 中的计划分别创建一个矩阵，不能合并多个计划，也不能只写总体结论。结构必须严格为：
+
+```markdown
+<!-- plan-checklist-audit: PLN-NNNN -->
+### PLN-NNNN Plan/Checklist 审计
+
+- Plan: [计划标题](../../plans/PLN-NNNN-subject.md)
+- Checklist: [清单标题](../../plans/PLN-NNNN-subject-checklist.md)
+
+| Control | Evidence | Verdict | Finding |
+|---|---|---|---|
+| PAIRING | ... | pass/fail | none 或 AUD-NNNN-Fxxx |
+| PLAN_TO_CHECKLIST | ... | pass/fail | ... |
+| CHECKLIST_TO_PLAN | ... | pass/fail | ... |
+| CHECKED_EVIDENCE | ... | pass/fail/not-applicable | ... |
+| GATE_COMPLETENESS | ... | pass/fail | ... |
+| ARCHIVE_CLOSURE | ... | pass/fail | ... |
+```
+
+六个 Control 含义：
+
+- `PAIRING`：同号、同主题、frontmatter、状态、双向链接和索引一致。
+- `PLAN_TO_CHECKLIST`：plan 的每个强制义务、风险、门禁、交付物和停止条件都有 checklist 可执行条目；Evidence 必须列出抽取方法、条目 ID 或未覆盖内容，不能只写“已检查”。
+- `CHECKLIST_TO_PLAN`：checklist 没有私自新增/改变外部契约、冻结值或范围；额外执行细节有 plan 或事实源依据。
+- `CHECKED_EVIDENCE`：每个已勾选项具有实际日期、revision、命令、结果和 Evidence；未勾选项未被描述为已完成。计划尚未执行且没有勾选项时使用 `not-applicable` 并记录实际统计。
+- `GATE_COMPLETENESS`：正反例、失败注入、安全、并发、migration/recovery、回退、CI、跨平台及发布 Evidence 与计划风险匹配。
+- `ARCHIVE_CLOSURE`：完成报告、未执行项、剩余风险、用户确认和 plan/checklist 同步归档条件一致。
+
+每个矩阵的 Evidence 必须引用对应 plan/checklist 的具体章节、条目 ID、行或统计结果。任一 Control 为 `fail` 时必须关联 finding；不能用零 finding 结论绕过矩阵。
+
 审计多个计划时还必须检查：
 
 - 计划之间的依赖顺序、schema/version、文件所有权、并行工作包和发布边界是否冲突；
 - 同一事实是否在多个活跃计划中以不同值冻结；
 - checklist 是否重复要求同一不可并行任务，或遗漏跨计划集成门禁。
 
-## 4. 验证方式
+## 5. 验证方式
 
 必须运行：
 
@@ -78,7 +110,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1
 
 未执行的验证记录原因和影响。外部系统、远端 CI、真实平台或 artifact 不可用时，不得把计划中的未来要求写成已经满足。
 
-## 5. Findings 与历史关系
+## 6. Findings 与历史关系
 
 1. finding 使用 `AUD-NNNN-F001`，每项标明受影响的 `PLN-NNNN`。
 2. 记录 Severity、Evidence、Impact、Recommendation、Owner 和 Disposition。
@@ -86,12 +118,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1
 4. 区分：计划缺陷、当前实现缺陷、待确认假设和非本计划范围风险。实现缺陷若不阻断计划设计，只链接事实，不擅自扩大整改范围。
 5. 零 finding 时明确写“本轮计划审计未发现新问题”，仍记录对象、baseline、验证、未执行项和剩余风险。
 
-## 6. 输出、关闭与整改交接
+## 7. 输出、关闭与整改交接
 
 先向用户汇报审计 ID、选中计划、严重度分布、跨计划冲突、验证结果和剩余风险。
 
 本提示词只执行计划审计，不修改 plan/checklist 或产品实现来消除 finding。需要整改时使用 `/backend-fix-audit-findings` 或 `$backend-fix-audit-findings`。
 
-审计完成后，为每个 finding 写明当前 disposition，填写 `completed_at` 和关闭结论，将记录设为 `closed`，并同步更新索引：存在 `open` 或 `partially-resolved` finding 时写 `remediation=required`；零 finding 时写 `remediation=none`；仅有批准风险时写 `remediation=accepted-risk`。后续整改创建 `REM`，复核使用新的 follow-up audit。
+只有每个相关计划的六项 Checklist 审计矩阵均存在、证据完整且所有 `fail` 都有 finding 时才能关闭审计。随后为每个 finding 写明当前 disposition，填写 `completed_at` 和关闭结论，将记录设为 `closed`，并同步更新索引：存在 `open` 或 `partially-resolved` finding 时写 `remediation=required`；零 finding 时写 `remediation=none`；仅有批准风险时写 `remediation=accepted-risk`。后续整改创建 `REM`，复核使用新的 follow-up audit。
 
 全程使用中文，按计划和严重度组织发现，引用具体章节、文件、符号和命令证据。

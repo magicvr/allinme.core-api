@@ -69,6 +69,48 @@ last_updated: 2026-07-14
     $auditIndexContent = "# Audits`n`n- [AUD-0001](./records/$auditRecordName): ``status=open``; ``remediation=pending``; fixture."
     Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8
 
+    $planAuditFrontmatter = @'
+---
+status: open
+audit_schema: plan-audit/v2
+audit_id: AUD-0004
+auditor: validator-test
+audit_type: targeted
+scope: plan:PLN-0001
+subject: validator plan fixture
+baseline: git:0000000; worktree:clean
+started_at: 2026-07-14T00:30:00+08:00
+completed_at: pending
+last_updated: 2026-07-14
+related_audits: none
+related_remediations: none
+supersedes: none
+related_plans: PLN-0001
+---
+'@
+    $planAuditRecordName = 'AUD-0004-20260714-validator-plan-validator-fixture.md'
+    $planAuditMatrix = @'
+# Plan Audit
+
+<!-- plan-checklist-audit: PLN-0001 -->
+### PLN-0001 Plan/Checklist 审计
+
+- Plan: [Plan](../../plans/PLN-0001-validator-fixture.md)
+- Checklist: [Checklist](../../plans/PLN-0001-validator-fixture-checklist.md)
+
+| Control | Evidence | Verdict | Finding |
+|---|---|---|---|
+| PAIRING | IDs, frontmatter, and links checked | pass | none |
+| PLAN_TO_CHECKLIST | mandatory obligations mapped to checklist items | pass | none |
+| CHECKLIST_TO_PLAN | no unsupported contract additions | pass | none |
+| CHECKED_EVIDENCE | no checked items in unstarted fixture | not-applicable | none |
+| GATE_COMPLETENESS | validation and release gates inspected | pass | none |
+| ARCHIVE_CLOSURE | completion and archive conditions inspected | pass | none |
+'@
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $planAuditRecordName) -Value ($planAuditFrontmatter + "`n" + $planAuditMatrix) -Encoding UTF8
+    $auditIndexContent += "`n- [AUD-0004](./records/$planAuditRecordName): ``status=open``; ``remediation=pending``; fixture."
+    Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8
+
     $remediationRecordsRoot = Join-Path $fixtureRoot 'remediations\records'
     New-Item -ItemType Directory -Path $remediationRecordsRoot -Force | Out-Null
     $remediationFrontmatter = @'
@@ -95,6 +137,14 @@ related_plans: none
     if ($validResult.ExitCode -ne 0) {
         throw "validator rejected valid fixture: $($validResult.Output)"
     }
+
+    $invalidPlanAudit = $planAuditMatrix.Replace('| CHECKLIST_TO_PLAN | no unsupported contract additions | pass | none |', '')
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $planAuditRecordName) -Value ($planAuditFrontmatter + "`n" + $invalidPlanAudit) -Encoding UTF8
+    $missingChecklistMatrixResult = Invoke-Validator $fixtureRoot
+    if ($missingChecklistMatrixResult.ExitCode -eq 0 -or $missingChecklistMatrixResult.Output -notmatch 'CHECKLIST_TO_PLAN') {
+        throw "validator did not reject a plan audit without the complete checklist matrix: $($missingChecklistMatrixResult.Output)"
+    }
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $planAuditRecordName) -Value ($planAuditFrontmatter + "`n" + $planAuditMatrix) -Encoding UTF8
 
     Set-Content -LiteralPath $auditIndexPath -Value '# Audits' -Encoding UTF8
     $missingAuditIndexResult = Invoke-Validator $fixtureRoot
@@ -130,7 +180,7 @@ related_plans: none
     }
 
     $global:LASTEXITCODE = 0
-    Write-Output 'Validator self-test passed: valid governance accepted; unindexed audits, missing links, orphan plans, and incomplete closed audits rejected.'
+    Write-Output 'Validator self-test passed: valid governance accepted; incomplete checklist matrices, unindexed audits, missing links, orphan plans, and incomplete closed audits rejected.'
 } finally {
     if (Test-Path -LiteralPath $fixtureRoot) {
         $resolvedFixtureRoot = (Resolve-Path $fixtureRoot).Path

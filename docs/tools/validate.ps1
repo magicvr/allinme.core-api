@@ -15,6 +15,7 @@ $frontmatterExceptions = @(
     'README.md',
     'audits/README.md',
     'audits/templates/audit-record.md',
+    'audits/templates/plan-audit-record.md',
     'decisions/README.md',
     'evidence/README.md',
     'plans/README.md',
@@ -46,6 +47,13 @@ function Get-FrontmatterValue([string]$Frontmatter, [string]$Field) {
 function Get-IndexLines([string]$Content, [string]$Target) {
     $pattern = '(?m)^.*\]\(' + [regex]::Escape($Target) + '\).*$'
     return [regex]::Matches($Content, $pattern)
+}
+
+function Get-ListValues([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -eq 'none') {
+        return @()
+    }
+    return @($Value.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
 $failures = New-Object System.Collections.Generic.List[string]
@@ -176,6 +184,74 @@ foreach ($file in $markdownFiles) {
             $declaredScope = Get-FrontmatterValue $frontmatter 'scope'
             if ($scopeKind -ne 'follow-up' -and $declaredScope -notlike "${scopeKind}:*") {
                 $failures.Add("Audit scope does not match filename scope kind: $relativePath")
+            }
+
+            if ($scopeKind -eq 'plan') {
+                $auditSchema = Get-FrontmatterValue $frontmatter 'audit_schema'
+                $legacyPlanAudit = $auditId -in @('AUD-0002', 'AUD-0003')
+                if ($legacyPlanAudit) {
+                    if ($auditSchema -eq 'plan-audit/v2') {
+                        $failures.Add("Legacy plan audit must not claim v2 checklist evidence: $relativePath")
+                    }
+                } else {
+                    if ($auditSchema -ne 'plan-audit/v2') {
+                        $failures.Add("Plan audit must use audit_schema plan-audit/v2: $relativePath")
+                    }
+                    $relatedPlans = Get-ListValues (Get-FrontmatterValue $frontmatter 'related_plans')
+                    if ($relatedPlans.Count -eq 0) {
+                        $failures.Add("Plan audit must list related_plans: $relativePath")
+                    }
+                    foreach ($relatedPlan in $relatedPlans) {
+                        if ($relatedPlan -notmatch '^PLN-\d{4}$') {
+                            $failures.Add("Invalid related plan ID in plan audit: $relativePath ($relatedPlan)")
+                            continue
+                        }
+                        $matrixMarker = "<!-- plan-checklist-audit: $relatedPlan -->"
+                        $matrixMatches = [regex]::Matches($content, [regex]::Escape($matrixMarker))
+                        if ($matrixMatches.Count -ne 1) {
+                            $failures.Add("Plan audit must contain exactly one checklist matrix for ${relatedPlan}: $relativePath")
+                            continue
+                        }
+                        $markerIndex = $matrixMatches[0].Index
+                        $nextMarker = $content.IndexOf('<!-- plan-checklist-audit:', $markerIndex + $matrixMarker.Length, [StringComparison]::Ordinal)
+                        $matrixEnd = if ($nextMarker -ge 0) { $nextMarker } else { $content.Length }
+                        $matrixContent = $content.Substring($markerIndex, $matrixEnd - $markerIndex)
+
+                        $planLinkPattern = '\]\((?:\.\./)+plans/(?:archived/)?' + [regex]::Escape($relatedPlan) + '-[a-z0-9]+(?:-[a-z0-9]+)*\.md\)'
+                        $checklistLinkPattern = '\]\((?:\.\./)+plans/(?:archived/)?' + [regex]::Escape($relatedPlan) + '-[a-z0-9]+(?:-[a-z0-9]+)*-checklist\.md\)'
+                        if ($matrixContent -notmatch $planLinkPattern) {
+                            $failures.Add("Checklist matrix must link the plan file for ${relatedPlan}: $relativePath")
+                        }
+                        if ($matrixContent -notmatch $checklistLinkPattern) {
+                            $failures.Add("Checklist matrix must link the checklist file for ${relatedPlan}: $relativePath")
+                        }
+
+                        foreach ($control in @('PAIRING', 'PLAN_TO_CHECKLIST', 'CHECKLIST_TO_PLAN', 'CHECKED_EVIDENCE', 'GATE_COMPLETENESS', 'ARCHIVE_CLOSURE')) {
+                            $controlRows = [regex]::Matches($matrixContent, "(?m)^\|\s*$control\s*\|(?<evidence>[^|]*)\|\s*(?<verdict>pass|fail|not-applicable)\s*\|(?<finding>[^|]*)\|\s*$")
+                            if ($controlRows.Count -ne 1) {
+                                $failures.Add("Checklist matrix must contain one valid $control row for ${relatedPlan}: $relativePath")
+                                continue
+                            }
+                            $evidence = $controlRows[0].Groups['evidence'].Value.Trim()
+                            $verdict = $controlRows[0].Groups['verdict'].Value
+                            $finding = $controlRows[0].Groups['finding'].Value.Trim()
+                            if ([string]::IsNullOrWhiteSpace($evidence) -or $evidence -match '^(\.\.\.|TODO|TBD)$') {
+                                $failures.Add("Checklist matrix evidence is empty for $control/${relatedPlan}: $relativePath")
+                            }
+                            if ($control -ne 'CHECKED_EVIDENCE' -and $verdict -eq 'not-applicable') {
+                                $failures.Add("Only CHECKED_EVIDENCE may be not-applicable: $control/${relatedPlan} in $relativePath")
+                            }
+                            if ($verdict -eq 'fail') {
+                                if ($finding -notmatch "^$([regex]::Escape($auditId))-F\d{3}$" -or
+                                    $content -notmatch "(?m)^###\s+$([regex]::Escape($finding))\s+-") {
+                                    $failures.Add("Failed checklist control must reference an existing finding: $control/${relatedPlan} in $relativePath")
+                                }
+                            } elseif ($finding -ne 'none') {
+                                $failures.Add("Passing checklist control must use finding=none: $control/${relatedPlan} in $relativePath")
+                            }
+                        }
+                    }
+                }
             }
             $auditRecords[$file.Name] = $auditStatus
         }
@@ -334,7 +410,8 @@ if ($docsRoot -eq $repositoryDocsRoot) {
         $planAuditPrompt = Get-Content -Raw -Encoding UTF8 $planAuditPromptPath
         if ($planAuditPrompt -notmatch '(?m)^name:\s*backend-plan-audit\s*$' -or
             $planAuditPrompt -notmatch 'TARGET' -or
-            $planAuditPrompt -notmatch 'audit-contract:\s*plan;\s*default-target=active;\s*explicit-targets=true') {
+            $planAuditPrompt -notmatch 'audit-contract:\s*plan;\s*default-target=active;\s*explicit-targets=true;\s*checklist-matrix-required' -or
+            $planAuditPrompt -notmatch 'audit_schema:\s*plan-audit/v2') {
             $failures.Add('Plan-audit prompt must default to active plans and support explicit targets')
         }
     }

@@ -27,6 +27,7 @@ related_plans: PLN-0005
 - `audit_type` 描述方法，如 `full`、`targeted`、`follow-up`、`governance`、`security`。
 - `scope` 写精确对象，例如 `repository:allinme.core-api`、`plan:PLN-0005`、`feature:attachment-lifecycle`。
 - 审计者身份以 frontmatter 为准，文件名只保存便于检索的 slug。
+- 新计划审计必须使用 `audit_schema: plan-audit/v2` 和 [`templates/plan-audit-record.md`](./templates/plan-audit-record.md)。每个相关计划必须有独立的 Checklist 审计矩阵、plan/checklist 双链接和六项固定 Control；缺失时不得关闭。
 
 ## 记录和追溯原则
 
@@ -43,6 +44,10 @@ related_plans: PLN-0005
 - [`AUD-0003`](./records/AUD-0003-20260714-github-copilot-plan-pln-0005-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=required`；`scope=plan:PLN-0005`；阶段五计划审计，2 个 open findings。
 - [`AUD-0002`](./records/AUD-0002-20260714-codex-plan-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=required`；`scope=plan:PLN-0005`；阶段五计划审计，4 个 open findings。
 - [`AUD-0001`](./records/AUD-0001-20260714-codex-repository-docs-governance.md)：`status=closed`；`remediation=none`；`scope=repository:allinme.core-api/docs`；文档治理结构专项审计。
+
+<!-- legacy-plan-audit-v1: AUD-0002,AUD-0003 -->
+
+`AUD-0002` 与 `AUD-0003` 创建于 `plan-audit/v2` 合同生效前，作为 legacy v1 原样保留；不得补写不存在的 checklist 审计证据。其 findings 仍按当前整改流程处理。
 
 新审计从 [`templates/audit-record.md`](./templates/audit-record.md) 创建，并运行 [`../tools/validate.ps1`](../tools/validate.ps1)。
 
