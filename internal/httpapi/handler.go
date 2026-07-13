@@ -32,6 +32,7 @@ type Dependencies struct {
 	Orders                 OrderService
 	OrderActions           bool
 	Refunds                RefundService
+	Dashboard              DashboardService
 	DisableRefundRoutes    bool
 	DisableDashboardRoutes bool
 	CORSAllowedOrigin      string
@@ -73,6 +74,7 @@ func NewHandler(dependencies Dependencies) http.Handler {
 	registerAuthRoutes(mux, dependencies.Auth, dependencies.LoginLimiter)
 	registerOrderRoutes(mux, dependencies.Auth, dependencies.Orders, dependencies.OrderActions)
 	registerRefundRoutes(mux, dependencies.Auth, dependencies.Refunds, dependencies.DisableRefundRoutes)
+	registerDashboardRoutes(mux, dependencies.Auth, dependencies.Dashboard, dependencies.DisableDashboardRoutes)
 	mux.HandleFunc("GET /healthz", func(response http.ResponseWriter, _ *http.Request) {
 		writeJSON(response, http.StatusOK, statusResponse{Status: "ok"})
 	})

@@ -46,6 +46,7 @@ type AuthDependencies struct {
 	DisableOrderActions    bool
 	RefundClock            order.Clock
 	NewRefundID            func() (string, error)
+	DashboardClock         order.Clock
 	DisableRefundRoutes    bool
 	DisableDashboardRoutes bool
 }
@@ -116,6 +117,13 @@ func newAPI(configuration config.Config, signingKey []byte, corsAllowedOrigin st
 		dependencies.Refunds = refundService
 		dependencies.DisableRefundRoutes = authDependencies.DisableRefundRoutes
 		dependencies.DisableDashboardRoutes = authDependencies.DisableDashboardRoutes
+		dashboardService, dashboardServiceErr := order.NewDashboardService(database, authDependencies.DashboardClock)
+		if dashboardServiceErr != nil {
+			database.Close()
+			lock.Close()
+			return nil, dashboardServiceErr
+		}
+		dependencies.Dashboard = dashboardService
 		dependencies.CORSAllowedOrigin = corsAllowedOrigin
 	}
 	return &API{

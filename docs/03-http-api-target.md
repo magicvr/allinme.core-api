@@ -3,7 +3,7 @@ status: target
 principles_stage: baseline
 endpoints_stage: draft
 owner: 后端团队
-last_updated: 2026-07-12
+last_updated: 2026-07-13
 applies_to: order operations demo HTTP API target
 ---
 
@@ -44,7 +44,7 @@ applies_to: order operations demo HTTP API target
 
 附件摘要随阶段五附件生命周期一起新增并冻结；阶段三订单 DTO 不预留 `attachments` 字段。
 
-## 5. 退款（draft target）
+## 5. 退款（已迁入当前 API）
 
 | Method | Path | 允许角色 | 行为 |
 |---|---|---|---|
@@ -53,7 +53,7 @@ applies_to: order operations demo HTTP API target
 | `POST` | `/api/v1/refunds/{refundId}/approve` | `approver`、`admin` | 审批并执行本地退款 |
 | `POST` | `/api/v1/refunds/{refundId}/reject` | `approver`、`admin` | 拒绝退款 |
 
-退款状态和审批规则以 [领域模型](./05-domain-model.md) 为唯一事实源。请求字段、响应 envelope 与错误码在阶段四实现时冻结。
+退款状态和审批规则以 [领域模型](./05-domain-model.md) 为唯一事实源。已实现的请求字段、响应 envelope、错误码和短路顺序见 [当前 HTTP API](./03-http-api.md)。
 
 ## 6. 附件（draft target）
 
@@ -65,7 +65,7 @@ applies_to: order operations demo HTTP API target
 
 首版目标允许 PDF、PNG 和 JPEG，单文件目标上限 10 MiB；允许类型和上限在阶段五威胁测试完成后冻结。服务端检测内容、生成文件名并计算摘要，不返回本地路径或公开静态 URL。
 
-## 7. 看板（draft target）
+## 7. 看板（已迁入当前 API）
 
 | Method | Path | 允许角色 | 行为 |
 |---|---|---|---|
@@ -73,7 +73,7 @@ applies_to: order operations demo HTTP API target
 | `GET` | `/api/v1/dashboard/order-status` | authenticated | 订单状态分布 |
 | `GET` | `/api/v1/dashboard/trend` | authenticated | 7/30 日订单、原始已支付金额、已完成退款金额与净额趋势 |
 
-统计业务口径只在 [领域模型](./05-domain-model.md) 维护。响应字段随阶段四页面 datasource 用例冻结。
+统计业务口径只在 [领域模型](./05-domain-model.md) 维护。已实现的 query、响应字段、UTC 窗口和错误语义见 [当前 HTTP API](./03-http-api.md)。
 
 ## 8. Schema-UI 映射
 

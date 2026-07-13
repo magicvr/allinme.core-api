@@ -555,7 +555,8 @@ func TestAuthenticatedAPIRefundFlowWithSQLite(t *testing.T) {
 	refundIndex := 0
 	dependencies := app.AuthDependencies{
 		Clock: func() time.Time { return now }, LimiterClock: func() time.Time { return now }, RefundClock: func() time.Time { return now },
-		NewID: func() (string, error) { authSequence++; return "refund-flow-id-" + strconv.Itoa(authSequence), nil },
+		DashboardClock: func() time.Time { return time.Date(2026, 1, 7, 12, 0, 0, 0, time.UTC) },
+		NewID:          func() (string, error) { authSequence++; return "refund-flow-id-" + strconv.Itoa(authSequence), nil },
 		NewRefundID: func() (string, error) {
 			if refundIndex >= len(refundIDs) {
 				return "", errors.New("refund ID sequence exhausted")
@@ -598,6 +599,20 @@ func TestAuthenticatedAPIRefundFlowWithSQLite(t *testing.T) {
 		response := httptest.NewRecorder()
 		application.Handler().ServeHTTP(response, value)
 		return response
+	}
+	for _, role := range []string{"viewer", "operator", "approver", "admin"} {
+		summary := request(tokens[role], http.MethodGet, "/api/v1/dashboard/summary", "", "")
+		if summary.Code != http.StatusOK || summary.Body.String() != "{\"orderCount\":10,\"grossAmount\":460000,\"completedRefundAmount\":120000,\"netAmount\":340000,\"currency\":\"CNY\"}\n" {
+			t.Fatalf("%s dashboard summary = %d %s", role, summary.Code, summary.Body.String())
+		}
+	}
+	statusSnapshot := request(tokens["viewer"], http.MethodGet, "/api/v1/dashboard/order-status", "", "")
+	if statusSnapshot.Code != http.StatusOK || statusSnapshot.Body.String() != "{\"items\":[{\"status\":\"DRAFT\",\"count\":1},{\"status\":\"CONFIRMED\",\"count\":1},{\"status\":\"FULFILLING\",\"count\":2},{\"status\":\"SHIPPED\",\"count\":2},{\"status\":\"COMPLETED\",\"count\":2},{\"status\":\"CANCELLED\",\"count\":2}]}\n" {
+		t.Fatalf("dashboard status snapshot = %d %s", statusSnapshot.Code, statusSnapshot.Body.String())
+	}
+	trendSnapshot := request(tokens["viewer"], http.MethodGet, "/api/v1/dashboard/trend?days=7", "", "")
+	if trendSnapshot.Code != http.StatusOK || !bytes.Contains(trendSnapshot.Body.Bytes(), []byte(`"startDate":"2026-01-01"`)) || !bytes.Contains(trendSnapshot.Body.Bytes(), []byte(`{"date":"2026-01-01","orderCount":10,"grossAmount":460000,"completedRefundAmount":0,"netAmount":460000}`)) || !bytes.Contains(trendSnapshot.Body.Bytes(), []byte(`{"date":"2026-01-02","orderCount":0,"grossAmount":0,"completedRefundAmount":120000,"netAmount":-120000}`)) {
+		t.Fatalf("dashboard trend snapshot = %d %s", trendSnapshot.Code, trendSnapshot.Body.String())
 	}
 	orderID := "ord_00000000000000000000000000000007"
 	createBody := `{"amount":10000,"reason":" customer request ","orderVersion":1}`
@@ -659,6 +674,15 @@ func TestAuthenticatedAPIRefundFlowWithSQLite(t *testing.T) {
 	if rejectWithCorruptOrder.Code != http.StatusOK || !bytes.Contains(rejectWithCorruptOrder.Body.Bytes(), []byte(`"status":"REJECTED"`)) {
 		t.Fatalf("reject with corrupt order = %d %s", rejectWithCorruptOrder.Code, rejectWithCorruptOrder.Body.String())
 	}
+	mutator, err = store.Open(ctx, base.DatabasePath, store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mutator.SQL().Exec(`UPDATE orders SET payment_status = 'PAID' WHERE id = 'ord_00000000000000000000000000000008'`); err != nil {
+		mutator.Close()
+		t.Fatal(err)
+	}
+	mutator.Close()
 	invalidApprove := request(tokens["approver"], http.MethodPost, "/api/v1/refunds/"+refundIDs[0]+"/approve", string([]byte{'{', '"', 'v', 'e', 'r', 's', 'i', 'o', 'n', '"', ':', '"', 0xff, '"', '}'}), "")
 	if invalidApprove.Code != http.StatusBadRequest {
 		t.Fatalf("invalid UTF-8 approve = %d %s", invalidApprove.Code, invalidApprove.Body.String())
@@ -670,6 +694,10 @@ func TestAuthenticatedAPIRefundFlowWithSQLite(t *testing.T) {
 	replayAfterApprove := request(tokens["operator"], http.MethodPost, "/api/v1/orders/"+orderID+"/refunds", createBody, "refund-flow-1")
 	if replayAfterApprove.Code != http.StatusCreated || replayAfterApprove.Body.String() != created.Body.String() {
 		t.Fatalf("replay after approve = %d %s", replayAfterApprove.Code, replayAfterApprove.Body.String())
+	}
+	summaryAfterFirstApproval := request(tokens["viewer"], http.MethodGet, "/api/v1/dashboard/summary", "", "")
+	if summaryAfterFirstApproval.Code != http.StatusOK || summaryAfterFirstApproval.Body.String() != "{\"orderCount\":10,\"grossAmount\":460000,\"completedRefundAmount\":130000,\"netAmount\":330000,\"currency\":\"CNY\"}\n" {
+		t.Fatalf("summary after first approval = %d %s", summaryAfterFirstApproval.Code, summaryAfterFirstApproval.Body.String())
 	}
 	second := request(tokens["admin"], http.MethodPost, "/api/v1/orders/"+orderID+"/refunds", `{"amount":5000,"reason":"second refund","orderVersion":2}`, "refund-flow-2")
 	if second.Code != http.StatusCreated || !bytes.Contains(second.Body.Bytes(), []byte(`"id":"`+refundIDs[1]+`"`)) {
@@ -699,6 +727,10 @@ func TestAuthenticatedAPIRefundFlowWithSQLite(t *testing.T) {
 	if list.Code != http.StatusOK || !bytes.Contains(list.Body.Bytes(), []byte(`"total":8`)) || !bytes.Contains(list.Body.Bytes(), []byte(`"canApprove":true`)) {
 		t.Fatalf("refund list = %d %s", list.Code, list.Body.String())
 	}
+	updatedSummary := request(tokens["viewer"], http.MethodGet, "/api/v1/dashboard/summary", "", "")
+	if updatedSummary.Code != http.StatusOK || updatedSummary.Body.String() != "{\"orderCount\":10,\"grossAmount\":460000,\"completedRefundAmount\":135000,\"netAmount\":325000,\"currency\":\"CNY\"}\n" {
+		t.Fatalf("updated dashboard summary = %d %s", updatedSummary.Code, updatedSummary.Body.String())
+	}
 
 	application.Close()
 	reopened, err := app.NewAuthenticatedAPIWithDependencies(configuration, dependencies, slog.New(slog.NewJSONHandler(io.Discard, nil)))
@@ -726,6 +758,9 @@ func TestAuthenticatedAPIRefundFlowWithSQLite(t *testing.T) {
 	if response := request(tokens["approver"], http.MethodGet, "/api/v1/refunds", "", ""); response.Code != http.StatusNotFound {
 		t.Fatalf("disabled refund list = %d %s", response.Code, response.Body.String())
 	}
+	if response := request(tokens["viewer"], http.MethodGet, "/api/v1/dashboard/summary", "", ""); response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"netAmount":325000`)) {
+		t.Fatalf("dashboard with refund routes disabled = %d %s", response.Code, response.Body.String())
+	}
 	for _, path := range []string{
 		"/api/v1/orders/" + orderID + "/refunds",
 		"/api/v1/refunds/" + refundIDs[0] + "/approve",
@@ -733,6 +768,23 @@ func TestAuthenticatedAPIRefundFlowWithSQLite(t *testing.T) {
 	} {
 		if response := request(tokens["admin"], http.MethodPost, path, `{"version":1}`, "disabled-key"); response.Code != http.StatusNotFound {
 			t.Fatalf("disabled refund route %s = %d %s", path, response.Code, response.Body.String())
+		}
+	}
+	disabled.Close()
+	dashboardDisabledDependencies := dependencies
+	dashboardDisabledDependencies.DisableDashboardRoutes = true
+	dashboardDisabled, err := app.NewAuthenticatedAPIWithDependencies(configuration, dashboardDisabledDependencies, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dashboardDisabled.Close()
+	application = dashboardDisabled
+	if response := request(tokens["approver"], http.MethodGet, "/api/v1/refunds", "", ""); response.Code != http.StatusOK {
+		t.Fatalf("refund list with dashboard disabled = %d %s", response.Code, response.Body.String())
+	}
+	for _, path := range []string{"/api/v1/dashboard/summary", "/api/v1/dashboard/order-status", "/api/v1/dashboard/trend?days=7"} {
+		if response := request(tokens["viewer"], http.MethodGet, path, "", ""); response.Code != http.StatusNotFound {
+			t.Fatalf("disabled dashboard route %s = %d %s", path, response.Code, response.Body.String())
 		}
 	}
 }

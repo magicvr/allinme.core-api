@@ -126,8 +126,13 @@ func TestListRefundsRejectsMissingActorAsInternal(t *testing.T) {
 
 func openRefundCapabilityDatabase(t *testing.T) *DB {
 	t.Helper()
+	return openRefundCapabilityDatabaseAt(t, filepath.Join(t.TempDir(), "refund-capabilities.db"))
+}
+
+func openRefundCapabilityDatabaseAt(t *testing.T, path string) *DB {
+	t.Helper()
 	ctx := context.Background()
-	database, err := Open(ctx, filepath.Join(t.TempDir(), "refund-capabilities.db"), OpenCreate)
+	database, err := Open(ctx, path, OpenCreate)
 	if err != nil {
 		t.Fatal(err)
 	}

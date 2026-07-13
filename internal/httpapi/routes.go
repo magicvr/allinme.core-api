@@ -31,6 +31,9 @@ func activeRouteMetadata(dependencies Dependencies) []routeMetadata {
 	if dependencies.Auth != nil && dependencies.Refunds != nil && !dependencies.DisableRefundRoutes {
 		routes = append(routes, refundCollectionMetadata(), refundCreateMetadata(), refundDecisionMetadata("approve"), refundDecisionMetadata("reject"))
 	}
+	if dependencies.Auth != nil && dependencies.Dashboard != nil && !dependencies.DisableDashboardRoutes {
+		routes = append(routes, dashboardSummaryMetadata(), dashboardOrderStatusMetadata(), dashboardTrendMetadata())
+	}
 	return routes
 }
 
@@ -60,6 +63,18 @@ func refundCreateMetadata() routeMetadata {
 
 func refundDecisionMetadata(action string) routeMetadata {
 	return newRouteMetadata("/api/v1/refunds/{refundId}/"+action, "POST")
+}
+
+func dashboardSummaryMetadata() routeMetadata {
+	return newRouteMetadata("/api/v1/dashboard/summary", "GET")
+}
+
+func dashboardOrderStatusMetadata() routeMetadata {
+	return newRouteMetadata("/api/v1/dashboard/order-status", "GET")
+}
+
+func dashboardTrendMetadata() routeMetadata {
+	return newRouteMetadata("/api/v1/dashboard/trend", "GET")
 }
 
 func methodSet(methods ...string) map[string]bool {
