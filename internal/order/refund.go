@@ -103,6 +103,10 @@ func RefundCapabilitiesFor(principal auth.Principal, value Refund) RefundCapabil
 	return RefundCapabilities{CanApprove: canDecide, CanReject: canDecide}
 }
 
+func CanRequestRefund(principal auth.Principal, paymentStatus PaymentStatus, available int64) bool {
+	return auth.RoleAllowed(principal.Role, auth.RoleOperator, auth.RoleAdmin) && (paymentStatus == PaymentStatusPaid || paymentStatus == PaymentStatusPartiallyRefunded) && available > 0
+}
+
 func NewPendingRefund(id, orderID, currency string, command RefundRequestCommand, requestedBy RefundActor, now time.Time) (Refund, error) {
 	normalized, err := NormalizeRefundRequest(command)
 	if err != nil {

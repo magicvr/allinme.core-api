@@ -128,11 +128,56 @@ func TestValidateRefundCreatePersistenceRejectsMismatchedInternalFacts(t *testin
 	}
 }
 
+func TestRefundDecisionServiceAuthorizationValidationAndClock(t *testing.T) {
+	created := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	decided := time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)
+	approverActor := order.RefundActor{ID: "user-approver", Username: "approver"}
+	completed := order.Refund{
+		ID: "rfd_00000000000000000000000000000001", OrderID: "ord_00000000000000000000000000000001",
+		Amount: 100, Currency: "CNY", Reason: "request", Status: order.RefundStatusCompleted, Version: 2,
+		RequestedBy: order.RefundActor{ID: "user-operator", Username: "operator"}, DecidedBy: &approverActor,
+		CreatedAt: created, UpdatedAt: decided, DecidedAt: &decided,
+	}
+	repository := &refundRepositoryStub{decisionResult: completed}
+	service, err := order.NewRefundServiceWithDependencies(repository, func() time.Time { return time.Date(2026, 1, 3, 8, 0, 0, 0, time.FixedZone("CST", 8*60*60)) }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal := auth.Principal{UserID: "user-approver", Username: "approver", Role: auth.RoleApprover}
+	result, err := service.Approve(context.Background(), principal, completed.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Refund.Status != order.RefundStatusCompleted || result.Capabilities.CanApprove || result.Capabilities.CanReject || repository.approved.Actor != approverActor || repository.approved.DecidedAt != "2026-01-03T00:00:00Z" {
+		t.Fatalf("approve result = %+v persistence = %+v", result, repository.approved)
+	}
+	repository.decisionResult.Status = order.RefundStatusRejected
+	if _, err := service.Reject(context.Background(), principal, completed.ID, 1); err != nil || repository.rejected.RefundID != completed.ID {
+		t.Fatalf("reject error = %v persistence = %+v", err, repository.rejected)
+	}
+	for _, role := range []auth.Role{auth.RoleViewer, auth.RoleOperator} {
+		if _, err := service.Approve(context.Background(), auth.Principal{Role: role}, completed.ID, 1); !errors.Is(err, order.ErrForbidden) {
+			t.Errorf("role %s approve error = %v", role, err)
+		}
+	}
+	if _, err := service.Approve(context.Background(), principal, "bad", 1); !errors.Is(err, order.ErrNotFound) {
+		t.Fatalf("invalid refund ID error = %v", err)
+	}
+	if _, err := service.Approve(context.Background(), principal, completed.ID, 0); err == nil {
+		t.Fatal("zero version error = nil")
+	} else if details, ok := order.ValidationDetails(err); !ok || len(details) != 1 || details[0].Field != "version" {
+		t.Fatalf("version details = %+v, %v", details, ok)
+	}
+}
+
 type refundRepositoryStub struct {
-	existing    *order.RefundIdempotencyRecord
-	created     order.RefundCreatePersistence
-	createCalls int
-	err         error
+	existing       *order.RefundIdempotencyRecord
+	created        order.RefundCreatePersistence
+	createCalls    int
+	err            error
+	decisionResult order.Refund
+	approved       order.RefundDecisionPersistence
+	rejected       order.RefundDecisionPersistence
 }
 
 func (repository *refundRepositoryStub) GetRefundIdempotency(context.Context, order.RefundIdempotencyScope) (order.RefundIdempotencyRecord, bool, error) {
@@ -146,4 +191,14 @@ func (repository *refundRepositoryStub) CreateRefundIdempotent(_ context.Context
 	repository.createCalls++
 	repository.created = persistence
 	return persistence.Record, true, repository.err
+}
+
+func (repository *refundRepositoryStub) ApproveRefund(_ context.Context, persistence order.RefundDecisionPersistence) (order.Refund, error) {
+	repository.approved = persistence
+	return repository.decisionResult, repository.err
+}
+
+func (repository *refundRepositoryStub) RejectRefund(_ context.Context, persistence order.RefundDecisionPersistence) (order.Refund, error) {
+	repository.rejected = persistence
+	return repository.decisionResult, repository.err
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/magicvr/allinme.core-api/internal/order"
@@ -120,10 +121,241 @@ func (database *DB) CreateRefundIdempotent(ctx context.Context, persistence orde
 	return persistence.Record, true, nil
 }
 
+func (database *DB) ApproveRefund(ctx context.Context, persistence order.RefundDecisionPersistence) (result order.Refund, resultErr error) {
+	defer func() { resultErr = classifyOrderError(resultErr) }()
+	transaction, err := database.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return order.Refund{}, fmt.Errorf("begin approve refund transaction: %w", err)
+	}
+	defer func() {
+		if resultErr != nil {
+			_ = transaction.Rollback()
+		}
+	}()
+	current, found, err := getRefundTx(ctx, transaction, persistence.RefundID)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	if !found {
+		return order.Refund{}, order.ErrNotFound
+	}
+	if current.Version != persistence.Version {
+		return order.Refund{}, order.ErrVersionConflict
+	}
+	if current.Status != order.RefundStatusPending {
+		return order.Refund{}, order.ErrStateConflict
+	}
+	if current.RequestedBy.ID == persistence.Actor.ID {
+		return order.Refund{}, order.ErrForbidden
+	}
+	orderVersion, found, err := getRawOrderVersion(ctx, transaction, current.OrderID)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	if !found {
+		return order.Refund{}, errors.New("approved refund order is missing")
+	}
+	fence, err := transaction.ExecContext(ctx, `UPDATE orders SET version = version WHERE id = ? AND version = ?`, current.OrderID, orderVersion)
+	if err != nil {
+		return order.Refund{}, fmt.Errorf("acquire approve order writer fence: %w", err)
+	}
+	affected, err := fence.RowsAffected()
+	if err != nil {
+		return order.Refund{}, fmt.Errorf("read approve order writer fence rows: %w", err)
+	}
+	if affected != 1 {
+		if _, stillFound, readErr := getRawOrderVersion(ctx, transaction, current.OrderID); readErr != nil {
+			return order.Refund{}, readErr
+		} else if !stillFound {
+			return order.Refund{}, errors.New("approved refund order disappeared")
+		}
+		return order.Refund{}, order.Unavailable(errors.New("approve order writer fence lost adjacent write"))
+	}
+	value, found, err := getOrderTx(ctx, transaction, current.OrderID)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	if !found {
+		return order.Refund{}, errors.New("fenced approve order is missing")
+	}
+	aggregate, err := loadRefundAggregateTx(ctx, transaction, current.OrderID)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	if err := validatePaymentStatusForRefundAggregate(value, aggregate); err != nil {
+		return order.Refund{}, err
+	}
+	target, found := aggregate.refundByID(persistence.RefundID)
+	if !found {
+		return order.Refund{}, errors.New("approved refund disappeared from aggregate")
+	}
+	if target.Version != persistence.Version {
+		return order.Refund{}, order.ErrVersionConflict
+	}
+	if target.Status != order.RefundStatusPending {
+		return order.Refund{}, order.ErrStateConflict
+	}
+	if target.RequestedBy.ID == persistence.Actor.ID {
+		return order.Refund{}, order.ErrForbidden
+	}
+	decidedAt, err := parseCanonicalRefundTime(persistence.DecidedAt)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	decided, err := order.DecideRefund(target, order.RefundStatusCompleted, persistence.Actor, decidedAt)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	completedAfter, err := checkedRefundSum(aggregate.completed, target.Amount)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	paymentStatus, err := paymentStatusForCompleted(value.TotalAmount, completedAfter)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	if value.Version == math.MaxInt64 {
+		return order.Refund{}, errors.New("order version exhausted")
+	}
+	refundUpdate, err := transaction.ExecContext(ctx, `
+		UPDATE refunds
+		SET status = 'COMPLETED', version = version + 1, decided_by = ?, updated_at = ?, decided_at = ?
+		WHERE id = ? AND version = ? AND status = 'PENDING'
+	`, persistence.Actor.ID, persistence.DecidedAt, persistence.DecidedAt, persistence.RefundID, persistence.Version)
+	if err != nil {
+		return order.Refund{}, fmt.Errorf("complete refund: %w", err)
+	}
+	refundAffected, err := refundUpdate.RowsAffected()
+	if err != nil {
+		return order.Refund{}, fmt.Errorf("read completed refund rows: %w", err)
+	}
+	if refundAffected != 1 {
+		return order.Refund{}, classifyRefundDecisionMiss(ctx, transaction, persistence)
+	}
+	orderUpdate, err := transaction.ExecContext(ctx, `
+		UPDATE orders SET payment_status = ?, version = version + 1, updated_at = ?
+		WHERE id = ? AND version = ?
+	`, paymentStatus, persistence.DecidedAt, value.ID, value.Version)
+	if err != nil {
+		return order.Refund{}, fmt.Errorf("update approved refund order: %w", err)
+	}
+	orderAffected, err := orderUpdate.RowsAffected()
+	if err != nil {
+		return order.Refund{}, fmt.Errorf("read approved refund order rows: %w", err)
+	}
+	if orderAffected != 1 {
+		return order.Refund{}, order.Unavailable(errors.New("approve order CAS lost adjacent write"))
+	}
+	result, found, err = getRefundTx(ctx, transaction, persistence.RefundID)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	if !found || !sameRefund(result, decided) {
+		return order.Refund{}, errors.New("completed refund differs from decision")
+	}
+	if err := transaction.Commit(); err != nil {
+		return order.Refund{}, fmt.Errorf("commit approve refund transaction: %w", err)
+	}
+	return result, nil
+}
+
+func (database *DB) RejectRefund(ctx context.Context, persistence order.RefundDecisionPersistence) (result order.Refund, resultErr error) {
+	defer func() { resultErr = classifyOrderError(resultErr) }()
+	transaction, err := database.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return order.Refund{}, fmt.Errorf("begin reject refund transaction: %w", err)
+	}
+	defer func() {
+		if resultErr != nil {
+			_ = transaction.Rollback()
+		}
+	}()
+	current, found, err := getRefundTx(ctx, transaction, persistence.RefundID)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	if !found {
+		return order.Refund{}, order.ErrNotFound
+	}
+	if current.Version != persistence.Version {
+		return order.Refund{}, order.ErrVersionConflict
+	}
+	if current.Status != order.RefundStatusPending {
+		return order.Refund{}, order.ErrStateConflict
+	}
+	if current.RequestedBy.ID == persistence.Actor.ID {
+		return order.Refund{}, order.ErrForbidden
+	}
+	decidedAt, err := parseCanonicalRefundTime(persistence.DecidedAt)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	decided, err := order.DecideRefund(current, order.RefundStatusRejected, persistence.Actor, decidedAt)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	update, err := transaction.ExecContext(ctx, `
+		UPDATE refunds
+		SET status = 'REJECTED', version = version + 1, decided_by = ?, updated_at = ?, decided_at = ?
+		WHERE id = ? AND version = ? AND status = 'PENDING'
+	`, persistence.Actor.ID, persistence.DecidedAt, persistence.DecidedAt, persistence.RefundID, persistence.Version)
+	if err != nil {
+		return order.Refund{}, fmt.Errorf("reject refund: %w", err)
+	}
+	affected, err := update.RowsAffected()
+	if err != nil {
+		return order.Refund{}, fmt.Errorf("read rejected refund rows: %w", err)
+	}
+	if affected != 1 {
+		return order.Refund{}, classifyRefundDecisionMiss(ctx, transaction, persistence)
+	}
+	result, found, err = getRefundTx(ctx, transaction, persistence.RefundID)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	if !found || !sameRefund(result, decided) {
+		return order.Refund{}, errors.New("rejected refund differs from decision")
+	}
+	if err := transaction.Commit(); err != nil {
+		return order.Refund{}, fmt.Errorf("commit reject refund transaction: %w", err)
+	}
+	return result, nil
+}
+
+func classifyRefundDecisionMiss(ctx context.Context, transaction *sql.Tx, persistence order.RefundDecisionPersistence) error {
+	current, found, err := getRefundTx(ctx, transaction, persistence.RefundID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return order.ErrNotFound
+	}
+	if current.Version != persistence.Version {
+		return order.ErrVersionConflict
+	}
+	if current.Status != order.RefundStatusPending {
+		return order.ErrStateConflict
+	}
+	if current.RequestedBy.ID == persistence.Actor.ID {
+		return order.ErrForbidden
+	}
+	return errors.New("refund decision CAS missed current refund")
+}
+
 type refundAggregate struct {
 	rows      int
 	pending   int64
 	completed int64
+	refunds   []order.Refund
+}
+
+func (aggregate refundAggregate) refundByID(id string) (order.Refund, bool) {
+	for _, value := range aggregate.refunds {
+		if value.ID == id {
+			return value, true
+		}
+	}
+	return order.Refund{}, false
 }
 
 func loadRefundAggregateTx(ctx context.Context, transaction *sql.Tx, orderID string) (refundAggregate, error) {
@@ -143,42 +375,18 @@ func loadRefundAggregateTx(ctx context.Context, transaction *sql.Tx, orderID str
 	defer rows.Close()
 	var aggregate refundAggregate
 	for rows.Next() {
-		var value order.Refund
-		var status, createdAt, updatedAt string
-		var requestedID, requestedUsername, decidedID, decidedUsername, decidedAt sql.NullString
-		if err := rows.Scan(&value.ID, &value.OrderID, &value.Amount, &value.Reason, &status, &value.Version, &requestedID, &requestedUsername, &decidedID, &decidedUsername, &createdAt, &updatedAt, &decidedAt); err != nil {
+		value, err := scanRefund(rows)
+		if err != nil {
 			return refundAggregate{}, fmt.Errorf("scan order refund: %w", err)
 		}
-		if !requestedID.Valid || !requestedUsername.Valid || value.OrderID != orderID {
-			return refundAggregate{}, errors.New("invalid refund actor or order relation")
-		}
-		value.Currency = "CNY"
-		value.Status = order.RefundStatus(status)
-		value.RequestedBy = order.RefundActor{ID: requestedID.String, Username: requestedUsername.String}
-		value.CreatedAt, err = parseCanonicalRefundTime(createdAt)
-		if err != nil {
-			return refundAggregate{}, err
-		}
-		value.UpdatedAt, err = parseCanonicalRefundTime(updatedAt)
-		if err != nil {
-			return refundAggregate{}, err
-		}
-		if decidedID.Valid || decidedUsername.Valid || decidedAt.Valid {
-			if !decidedID.Valid || !decidedUsername.Valid || !decidedAt.Valid {
-				return refundAggregate{}, errors.New("incomplete refund decision fields")
-			}
-			actor := order.RefundActor{ID: decidedID.String, Username: decidedUsername.String}
-			value.DecidedBy = &actor
-			parsed, err := parseCanonicalRefundTime(decidedAt.String)
-			if err != nil {
-				return refundAggregate{}, err
-			}
-			value.DecidedAt = &parsed
+		if value.OrderID != orderID {
+			return refundAggregate{}, errors.New("invalid refund order relation")
 		}
 		if err := order.ValidateRefund(value); err != nil {
 			return refundAggregate{}, err
 		}
 		aggregate.rows++
+		aggregate.refunds = append(aggregate.refunds, value)
 		switch value.Status {
 		case order.RefundStatusPending:
 			aggregate.pending, err = checkedRefundSum(aggregate.pending, value.Amount)
@@ -201,6 +409,146 @@ func loadRefundAggregateTx(ctx context.Context, transaction *sql.Tx, orderID str
 	return aggregate, nil
 }
 
+func applyOrderRefundCapabilitiesTx(ctx context.Context, transaction *sql.Tx, values []order.Order) error {
+	if len(values) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(values))
+	arguments := make([]any, len(values))
+	for index, value := range values {
+		placeholders[index] = "?"
+		arguments[index] = value.ID
+	}
+	rows, err := transaction.QueryContext(ctx, `
+		SELECT refunds.id, refunds.order_id, refunds.amount, refunds.reason, refunds.status, refunds.version,
+			requester.id, requester.username, decider.id, decider.username,
+			refunds.created_at, refunds.updated_at, refunds.decided_at
+		FROM refunds
+		LEFT JOIN users requester ON requester.id = refunds.requested_by
+		LEFT JOIN users decider ON decider.id = refunds.decided_by
+		WHERE refunds.order_id IN (`+strings.Join(placeholders, ",")+") ORDER BY refunds.order_id, refunds.created_at, refunds.id", arguments...)
+	if err != nil {
+		return fmt.Errorf("query listed order refunds: %w", err)
+	}
+	defer rows.Close()
+	aggregates := make(map[string]refundAggregate, len(values))
+	for _, value := range values {
+		aggregates[value.ID] = refundAggregate{}
+	}
+	for rows.Next() {
+		value, err := scanRefund(rows)
+		if err != nil {
+			return fmt.Errorf("scan listed order refund: %w", err)
+		}
+		aggregate, ok := aggregates[value.OrderID]
+		if !ok {
+			return errors.New("refund references unexpected listed order")
+		}
+		if err := order.ValidateRefund(value); err != nil {
+			return err
+		}
+		aggregate.rows++
+		aggregate.refunds = append(aggregate.refunds, value)
+		switch value.Status {
+		case order.RefundStatusPending:
+			aggregate.pending, err = checkedRefundSum(aggregate.pending, value.Amount)
+		case order.RefundStatusCompleted:
+			aggregate.completed, err = checkedRefundSum(aggregate.completed, value.Amount)
+		}
+		if err != nil {
+			return err
+		}
+		aggregates[value.OrderID] = aggregate
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate listed order refunds: %w", err)
+	}
+	for index := range values {
+		aggregate := aggregates[values[index].ID]
+		if err := validatePaymentStatusForRefundAggregate(values[index], aggregate); err != nil {
+			return err
+		}
+		if values[index].PaymentStatus == order.PaymentStatusPaid || values[index].PaymentStatus == order.PaymentStatusPartiallyRefunded {
+			values[index].AvailableRefundAmount = values[index].TotalAmount - aggregate.pending - aggregate.completed
+		} else {
+			values[index].AvailableRefundAmount = 0
+		}
+	}
+	return nil
+}
+
+func getRefundTx(ctx context.Context, transaction *sql.Tx, refundID string) (order.Refund, bool, error) {
+	value, err := scanRefund(transaction.QueryRowContext(ctx, `
+		SELECT refunds.id, refunds.order_id, refunds.amount, refunds.reason, refunds.status, refunds.version,
+			requester.id, requester.username, decider.id, decider.username,
+			refunds.created_at, refunds.updated_at, refunds.decided_at
+		FROM refunds
+		LEFT JOIN users requester ON requester.id = refunds.requested_by
+		LEFT JOIN users decider ON decider.id = refunds.decided_by
+		WHERE refunds.id = ?
+	`, refundID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return order.Refund{}, false, nil
+	}
+	if err != nil {
+		return order.Refund{}, false, err
+	}
+	if err := order.ValidateRefund(value); err != nil {
+		return order.Refund{}, false, err
+	}
+	return value, true, nil
+}
+
+func scanRefund(row rowScanner) (order.Refund, error) {
+	var value order.Refund
+	var status, createdAt, updatedAt string
+	var requestedID, requestedUsername, decidedID, decidedUsername, decidedAt sql.NullString
+	if err := row.Scan(&value.ID, &value.OrderID, &value.Amount, &value.Reason, &status, &value.Version, &requestedID, &requestedUsername, &decidedID, &decidedUsername, &createdAt, &updatedAt, &decidedAt); err != nil {
+		return order.Refund{}, err
+	}
+	if !requestedID.Valid || !requestedUsername.Valid {
+		return order.Refund{}, errors.New("invalid refund requester")
+	}
+	value.Currency = "CNY"
+	value.Status = order.RefundStatus(status)
+	value.RequestedBy = order.RefundActor{ID: requestedID.String, Username: requestedUsername.String}
+	var err error
+	value.CreatedAt, err = parseCanonicalRefundTime(createdAt)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	value.UpdatedAt, err = parseCanonicalRefundTime(updatedAt)
+	if err != nil {
+		return order.Refund{}, err
+	}
+	if decidedID.Valid || decidedUsername.Valid || decidedAt.Valid {
+		if !decidedID.Valid || !decidedUsername.Valid || !decidedAt.Valid {
+			return order.Refund{}, errors.New("incomplete refund decision fields")
+		}
+		actor := order.RefundActor{ID: decidedID.String, Username: decidedUsername.String}
+		value.DecidedBy = &actor
+		parsed, err := parseCanonicalRefundTime(decidedAt.String)
+		if err != nil {
+			return order.Refund{}, err
+		}
+		value.DecidedAt = &parsed
+	}
+	return value, nil
+}
+
+func sameRefund(left, right order.Refund) bool {
+	if left.ID != right.ID || left.OrderID != right.OrderID || left.Amount != right.Amount || left.Currency != right.Currency || left.Reason != right.Reason || left.Status != right.Status || left.Version != right.Version || left.RequestedBy != right.RequestedBy || !left.CreatedAt.Equal(right.CreatedAt) || !left.UpdatedAt.Equal(right.UpdatedAt) {
+		return false
+	}
+	if (left.DecidedBy == nil) != (right.DecidedBy == nil) || (left.DecidedAt == nil) != (right.DecidedAt == nil) {
+		return false
+	}
+	if left.DecidedBy != nil && *left.DecidedBy != *right.DecidedBy {
+		return false
+	}
+	return left.DecidedAt == nil || left.DecidedAt.Equal(*right.DecidedAt)
+}
+
 func checkedRefundSum(current, amount int64) (int64, error) {
 	if amount < 0 || current > math.MaxInt64-amount {
 		return 0, errors.New("refund amount overflow")
@@ -209,7 +557,10 @@ func checkedRefundSum(current, amount int64) (int64, error) {
 }
 
 func validatePaymentStatusForRefundAggregate(value order.Order, aggregate refundAggregate) error {
-	occupied := aggregate.pending + aggregate.completed
+	occupied, err := checkedRefundSum(aggregate.pending, aggregate.completed)
+	if err != nil {
+		return err
+	}
 	if occupied > value.TotalAmount {
 		return errors.New("occupied refund amount exceeds order total")
 	}
@@ -230,6 +581,19 @@ func validatePaymentStatusForRefundAggregate(value order.Order, aggregate refund
 		return errors.New("order payment status differs from refund aggregate")
 	}
 	return nil
+}
+
+func paymentStatusForCompleted(totalAmount, completedAmount int64) (order.PaymentStatus, error) {
+	switch {
+	case completedAmount == 0:
+		return order.PaymentStatusPaid, nil
+	case completedAmount > 0 && completedAmount < totalAmount:
+		return order.PaymentStatusPartiallyRefunded, nil
+	case completedAmount == totalAmount:
+		return order.PaymentStatusRefunded, nil
+	default:
+		return "", errors.New("completed refund amount is outside order total")
+	}
 }
 
 func getRawOrderVersion(ctx context.Context, transaction *sql.Tx, orderID string) (int64, bool, error) {

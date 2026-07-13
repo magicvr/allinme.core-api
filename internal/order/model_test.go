@@ -81,6 +81,31 @@ func TestReadPermissionAndCapabilities(t *testing.T) {
 	}
 }
 
+func TestOrderRefundCapabilityUsesRolePaymentStatusAndAvailableAmount(t *testing.T) {
+	paid := order.Order{PaymentStatus: order.PaymentStatusPaid, AvailableRefundAmount: 100}
+	partial := order.Order{PaymentStatus: order.PaymentStatusPartiallyRefunded, AvailableRefundAmount: 1}
+	for _, role := range []auth.Role{auth.RoleOperator, auth.RoleAdmin} {
+		if !order.CapabilitiesForOrder(auth.Principal{Role: role}, paid).CanRequestRefund || !order.CapabilitiesForOrder(auth.Principal{Role: role}, partial).CanRequestRefund {
+			t.Errorf("role %s cannot request refund for available paid amount", role)
+		}
+	}
+	for _, value := range []order.Order{
+		{PaymentStatus: order.PaymentStatusUnpaid, AvailableRefundAmount: 100},
+		{PaymentStatus: order.PaymentStatusRefunded, AvailableRefundAmount: 100},
+		{PaymentStatus: order.PaymentStatusPaid, AvailableRefundAmount: 0},
+	} {
+		if order.CapabilitiesForOrder(auth.Principal{Role: auth.RoleOperator}, value).CanRequestRefund {
+			t.Errorf("invalid capability enabled for %+v", value)
+		}
+	}
+	if order.CapabilitiesForOrder(auth.Principal{Role: auth.RoleViewer}, paid).CanRequestRefund || order.CapabilitiesForOrder(auth.Principal{Role: auth.RoleApprover}, paid).CanRequestRefund {
+		t.Fatal("non-requesting role can request refund")
+	}
+	if order.CapabilitiesForOrder(auth.Principal{Role: auth.RoleAdmin}, paid).CanApproveRefund {
+		t.Fatal("Order DTO exposes approve capability")
+	}
+}
+
 func TestIdentifiersUseFixedSecureFormat(t *testing.T) {
 	input := bytes.Repeat([]byte{0xab}, 16)
 	orderID, err := order.NewOrderIDFrom(bytes.NewReader(input))

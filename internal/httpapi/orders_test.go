@@ -39,16 +39,18 @@ func TestOrderRoutesQueryDetailAndErrors(t *testing.T) {
 	if _, ok := item["items"]; ok {
 		t.Fatal("list item exposes items")
 	}
-	if item["canEdit"] != false || item["canRequestRefund"] != false {
+	if item["canEdit"] != false || item["canRequestRefund"] != false || item["availableRefundAmount"] != float64(0) {
 		t.Fatalf("viewer capabilities = %+v", item)
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/api/v1/orders/ord_00000000000000000000000000000001", nil)
 	authService.authenticatedRole = auth.RoleOperator
+	service.result.PaymentStatus = order.PaymentStatusPaid
+	service.result.AvailableRefundAmount = 100
 	request.Header.Set("Authorization", "Bearer access-token")
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !contains(response.Body.String(), `"canEdit":true`) || !contains(response.Body.String(), `"items":[`) {
+	if response.Code != http.StatusOK || !contains(response.Body.String(), `"availableRefundAmount":100`) || !contains(response.Body.String(), `"canEdit":true`) || !contains(response.Body.String(), `"canRequestRefund":true`) || !contains(response.Body.String(), `"canApproveRefund":false`) || !contains(response.Body.String(), `"items":[`) {
 		t.Fatalf("detail = %d %s", response.Code, response.Body.String())
 	}
 

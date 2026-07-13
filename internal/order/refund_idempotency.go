@@ -53,6 +53,19 @@ type RefundRepository interface {
 	CreateRefundIdempotent(context.Context, RefundCreatePersistence) (RefundIdempotencyRecord, bool, error)
 }
 
+type RefundDecisionPersistence struct {
+	RefundID  string
+	Version   int64
+	Actor     RefundActor
+	DecidedAt string
+}
+
+type RefundDecisionRepository interface {
+	RefundRepository
+	ApproveRefund(context.Context, RefundDecisionPersistence) (Refund, error)
+	RejectRefund(context.Context, RefundDecisionPersistence) (Refund, error)
+}
+
 type RefundService struct {
 	repository  RefundRepository
 	clock       Clock
@@ -155,6 +168,45 @@ func (service *RefundService) Create(ctx context.Context, principal auth.Princip
 		return RefundResult{}, fmt.Errorf("create refund: %w", err)
 	}
 	return decodeRefundSnapshot(record, scope)
+}
+
+func (service *RefundService) Approve(ctx context.Context, principal auth.Principal, refundID string, version int64) (RefundResult, error) {
+	return service.decide(ctx, principal, refundID, version, RefundStatusCompleted)
+}
+
+func (service *RefundService) Reject(ctx context.Context, principal auth.Principal, refundID string, version int64) (RefundResult, error) {
+	return service.decide(ctx, principal, refundID, version, RefundStatusRejected)
+}
+
+func (service *RefundService) decide(ctx context.Context, principal auth.Principal, refundID string, version int64, target RefundStatus) (RefundResult, error) {
+	if !auth.RoleAllowed(principal.Role, auth.RoleApprover, auth.RoleAdmin) {
+		return RefundResult{}, ErrForbidden
+	}
+	if !ValidRefundID(refundID) {
+		return RefundResult{}, ErrNotFound
+	}
+	if version <= 0 {
+		return RefundResult{}, &ValidationError{Details: []FieldError{{Field: "version", Message: "must be greater than 0"}}}
+	}
+	repository, ok := service.repository.(RefundDecisionRepository)
+	if !ok {
+		return RefundResult{}, ErrInternal
+	}
+	persistence := RefundDecisionPersistence{RefundID: refundID, Version: version, Actor: RefundActor{ID: principal.UserID, Username: principal.Username}, DecidedAt: FormatTime(UTCNow(service.clock))}
+	var value Refund
+	var err error
+	if target == RefundStatusCompleted {
+		value, err = repository.ApproveRefund(ctx, persistence)
+	} else {
+		value, err = repository.RejectRefund(ctx, persistence)
+	}
+	if err != nil {
+		return RefundResult{}, fmt.Errorf("%s refund: %w", target, err)
+	}
+	if err := ValidateRefund(value); err != nil || value.Status != target {
+		return RefundResult{}, ErrInternal
+	}
+	return RefundResult{Refund: value, Capabilities: RefundCapabilitiesFor(principal, value)}, nil
 }
 
 func normalizedRefundDigest(orderID string, command RefundRequestCommand) ([sha256.Size]byte, error) {

@@ -31,7 +31,7 @@ func TestOrderRepositoryListUsesBoundedQueriesAndStableFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if queries != 3 || page.Total != 1 || len(page.Items) != 1 || page.Items[0].Items != nil {
+	if queries != 4 || page.Total != 1 || len(page.Items) != 1 || page.Items[0].Items != nil {
 		t.Fatalf("page = %+v queries=%d", page, queries)
 	}
 	for index := 0; index < 300; index++ {
@@ -48,7 +48,7 @@ func TestOrderRepositoryListUsesBoundedQueriesAndStableFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if queries != 3 || page.Total != 306 || len(page.Items) != 100 {
+	if queries != 4 || page.Total != 306 || len(page.Items) != 100 {
 		t.Fatalf("bulk page total=%d items=%d queries=%d", page.Total, len(page.Items), queries)
 	}
 }
@@ -140,7 +140,7 @@ func TestOrderRepositoryListCountAndPageShareSnapshot(t *testing.T) {
 		if listed.err != nil {
 			t.Fatal(listed.err)
 		}
-		if queries != 3 || listed.page.Total != 6 || len(listed.page.Items) != 6 {
+		if queries != 4 || listed.page.Total != 6 || len(listed.page.Items) != 6 {
 			t.Fatalf("snapshot page total=%d items=%d queries=%d", listed.page.Total, len(listed.page.Items), queries)
 		}
 	case <-time.After(time.Second):
