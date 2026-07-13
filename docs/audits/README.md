@@ -41,8 +41,9 @@ related_plans: PLN-0005
 
 ## 当前索引
 
-- [`AUD-0003`](./records/AUD-0003-20260714-github-copilot-plan-pln-0005-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=awaiting-verification:REM-0001`；`scope=plan:PLN-0005`；阶段五计划审计，2 个 open findings，整改待独立复审。
-- [`AUD-0002`](./records/AUD-0002-20260714-codex-plan-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=awaiting-verification:REM-0001`；`scope=plan:PLN-0005`；阶段五计划审计，4 个 open findings，整改待独立复审。
+- [`AUD-0004`](./records/AUD-0004-20260714-codex-follow-up-rem-0001-active-audits.md)：`status=closed`；`remediation=required`；`scope=follow-up:REM-0001`；复审 4 项 resolved、2 项 partially-resolved，需继续整改。
+- [`AUD-0003`](./records/AUD-0003-20260714-github-copilot-plan-pln-0005-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=continued-by:AUD-0004`；`scope=plan:PLN-0005`；整改队列已转移到 follow-up audit。
+- [`AUD-0002`](./records/AUD-0002-20260714-codex-plan-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=continued-by:AUD-0004`；`scope=plan:PLN-0005`；整改队列已转移到 follow-up audit。
 - [`AUD-0001`](./records/AUD-0001-20260714-codex-repository-docs-governance.md)：`status=closed`；`remediation=none`；`scope=repository:allinme.core-api/docs`；文档治理结构专项审计。
 
 <!-- legacy-plan-audit-v1: AUD-0002,AUD-0003 -->

@@ -48,7 +48,7 @@ related_plans: PLN-0005
 
 ## 当前索引
 
-- [`REM-0001`](./records/REM-0001-20260714-codex-audit-active-audits.md)：`status=completed`；`verification=pending`；整改 `AUD-0002`、`AUD-0003` 的 6 个 open findings。
+- [`REM-0001`](./records/REM-0001-20260714-codex-audit-active-audits.md)：`status=completed`；`verification=partial-by:AUD-0004`；6 个 source findings 中 4 个已复审确认，2 个转入 `AUD-0004` 继续整改。
 
 每份 REM 必须在创建时立即加入本索引，并且只能出现一次。索引格式必须记录 `status` 与 `verification`：
 
