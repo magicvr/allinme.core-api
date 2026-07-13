@@ -48,6 +48,20 @@ type RefundResult struct {
 	Capabilities RefundCapabilities
 }
 
+type RefundListQuery struct {
+	Status   RefundStatus
+	OrderID  string
+	Page     int64
+	PageSize int64
+}
+
+type RefundPage struct {
+	Items    []Refund
+	Total    int64
+	Page     int64
+	PageSize int64
+}
+
 type RefundRepository interface {
 	GetRefundIdempotency(context.Context, RefundIdempotencyScope) (RefundIdempotencyRecord, bool, error)
 	CreateRefundIdempotent(context.Context, RefundCreatePersistence) (RefundIdempotencyRecord, bool, error)
@@ -64,6 +78,10 @@ type RefundDecisionRepository interface {
 	RefundRepository
 	ApproveRefund(context.Context, RefundDecisionPersistence) (Refund, error)
 	RejectRefund(context.Context, RefundDecisionPersistence) (Refund, error)
+}
+
+type RefundListRepository interface {
+	ListRefunds(context.Context, RefundListQuery) (RefundPage, error)
 }
 
 type RefundService struct {
@@ -168,6 +186,26 @@ func (service *RefundService) Create(ctx context.Context, principal auth.Princip
 		return RefundResult{}, fmt.Errorf("create refund: %w", err)
 	}
 	return decodeRefundSnapshot(record, scope)
+}
+
+func (service *RefundService) List(ctx context.Context, principal auth.Principal, query RefundListQuery) (RefundPage, error) {
+	if !auth.RoleAllowed(principal.Role, auth.RoleApprover, auth.RoleAdmin) {
+		return RefundPage{}, ErrForbidden
+	}
+	repository, ok := service.repository.(RefundListRepository)
+	if !ok {
+		return RefundPage{}, ErrInternal
+	}
+	page, err := repository.ListRefunds(ctx, query)
+	if err != nil {
+		return RefundPage{}, fmt.Errorf("list refunds: %w", err)
+	}
+	for _, value := range page.Items {
+		if err := ValidateRefund(value); err != nil {
+			return RefundPage{}, ErrInternal
+		}
+	}
+	return page, nil
 }
 
 func (service *RefundService) Approve(ctx context.Context, principal auth.Principal, refundID string, version int64) (RefundResult, error) {

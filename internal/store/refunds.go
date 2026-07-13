@@ -12,6 +12,156 @@ import (
 	"github.com/magicvr/allinme.core-api/internal/order"
 )
 
+func (database *DB) ListRefunds(ctx context.Context, query order.RefundListQuery) (page order.RefundPage, resultErr error) {
+	defer func() { resultErr = classifyOrderError(resultErr) }()
+	transaction, err := database.sql.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return order.RefundPage{}, fmt.Errorf("begin refund list transaction: %w", err)
+	}
+	defer func() {
+		if resultErr != nil {
+			_ = transaction.Rollback()
+		}
+	}()
+	where, arguments := refundListWhere(query)
+	if err := transaction.QueryRowContext(ctx, `SELECT COUNT(*) FROM refunds `+where, arguments...).Scan(&page.Total); err != nil {
+		return order.RefundPage{}, fmt.Errorf("count refunds: %w", err)
+	}
+	database.observeQuery()
+	offset := (query.Page - 1) * query.PageSize
+	pageArguments := append(append([]any{}, arguments...), query.PageSize, offset)
+	rows, err := transaction.QueryContext(ctx, `
+		SELECT id, order_id, amount, reason, status, version, requested_by, decided_by, created_at, updated_at, decided_at
+		FROM refunds `+where+` ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
+	`, pageArguments...)
+	if err != nil {
+		return order.RefundPage{}, fmt.Errorf("query refunds: %w", err)
+	}
+	database.observeQuery()
+	defer rows.Close()
+	stored := make([]storedRefundListRow, 0)
+	actorIDs := make(map[string]bool)
+	for rows.Next() {
+		var value storedRefundListRow
+		var status string
+		if err := rows.Scan(&value.refund.ID, &value.refund.OrderID, &value.refund.Amount, &value.refund.Reason, &status, &value.refund.Version, &value.requestedByID, &value.decidedByID, &value.createdAt, &value.updatedAt, &value.decidedAt); err != nil {
+			return order.RefundPage{}, fmt.Errorf("scan refund list row: %w", err)
+		}
+		value.refund.Currency = "CNY"
+		value.refund.Status = order.RefundStatus(status)
+		stored = append(stored, value)
+		actorIDs[value.requestedByID] = true
+		if value.decidedByID.Valid {
+			actorIDs[value.decidedByID.String] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return order.RefundPage{}, fmt.Errorf("iterate refunds: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return order.RefundPage{}, fmt.Errorf("close refund rows: %w", err)
+	}
+	actors, err := loadRefundActorsTx(ctx, transaction, actorIDs)
+	if err != nil {
+		return order.RefundPage{}, err
+	}
+	if len(actorIDs) > 0 {
+		database.observeQuery()
+	}
+	page.Items = make([]order.Refund, 0, len(stored))
+	for _, value := range stored {
+		requestedBy, ok := actors[value.requestedByID]
+		if !ok {
+			return order.RefundPage{}, errors.New("refund requester is missing")
+		}
+		value.refund.RequestedBy = requestedBy
+		value.refund.CreatedAt, err = parseCanonicalRefundTime(value.createdAt)
+		if err != nil {
+			return order.RefundPage{}, err
+		}
+		value.refund.UpdatedAt, err = parseCanonicalRefundTime(value.updatedAt)
+		if err != nil {
+			return order.RefundPage{}, err
+		}
+		if value.decidedByID.Valid || value.decidedAt.Valid {
+			if !value.decidedByID.Valid || !value.decidedAt.Valid {
+				return order.RefundPage{}, errors.New("incomplete refund decision fields")
+			}
+			decidedBy, ok := actors[value.decidedByID.String]
+			if !ok {
+				return order.RefundPage{}, errors.New("refund decider is missing")
+			}
+			value.refund.DecidedBy = &decidedBy
+			decidedAt, parseErr := parseCanonicalRefundTime(value.decidedAt.String)
+			if parseErr != nil {
+				return order.RefundPage{}, parseErr
+			}
+			value.refund.DecidedAt = &decidedAt
+		}
+		if err := order.ValidateRefund(value.refund); err != nil {
+			return order.RefundPage{}, err
+		}
+		page.Items = append(page.Items, value.refund)
+	}
+	if err := transaction.Commit(); err != nil {
+		return order.RefundPage{}, fmt.Errorf("commit refund list transaction: %w", err)
+	}
+	page.Page, page.PageSize = query.Page, query.PageSize
+	return page, nil
+}
+
+type storedRefundListRow struct {
+	refund        order.Refund
+	requestedByID string
+	decidedByID   sql.NullString
+	createdAt     string
+	updatedAt     string
+	decidedAt     sql.NullString
+}
+
+func refundListWhere(query order.RefundListQuery) (string, []any) {
+	conditions := []string{"1 = 1"}
+	arguments := make([]any, 0, 2)
+	if query.Status != "" {
+		conditions = append(conditions, "status = ?")
+		arguments = append(arguments, query.Status)
+	}
+	if query.OrderID != "" {
+		conditions = append(conditions, "order_id = ?")
+		arguments = append(arguments, query.OrderID)
+	}
+	return "WHERE " + strings.Join(conditions, " AND "), arguments
+}
+
+func loadRefundActorsTx(ctx context.Context, transaction *sql.Tx, ids map[string]bool) (map[string]order.RefundActor, error) {
+	actors := make(map[string]order.RefundActor, len(ids))
+	if len(ids) == 0 {
+		return actors, nil
+	}
+	placeholders := make([]string, 0, len(ids))
+	arguments := make([]any, 0, len(ids))
+	for id := range ids {
+		placeholders = append(placeholders, "?")
+		arguments = append(arguments, id)
+	}
+	rows, err := transaction.QueryContext(ctx, `SELECT id, username FROM users WHERE id IN (`+strings.Join(placeholders, ",")+`)`, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("query refund actors: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var actor order.RefundActor
+		if err := rows.Scan(&actor.ID, &actor.Username); err != nil {
+			return nil, fmt.Errorf("scan refund actor: %w", err)
+		}
+		actors[actor.ID] = actor
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate refund actors: %w", err)
+	}
+	return actors, nil
+}
+
 func (database *DB) GetRefundIdempotency(ctx context.Context, scope order.RefundIdempotencyScope) (order.RefundIdempotencyRecord, bool, error) {
 	record, found, err := getRefundIdempotencyRecord(database.sql.QueryRowContext(ctx, `
 		SELECT principal_user_id, method, operation, order_id, idempotency_key, request_digest,

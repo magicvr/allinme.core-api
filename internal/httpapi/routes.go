@@ -9,7 +9,7 @@ type routeMetadata struct {
 }
 
 func activeRouteMetadata(dependencies Dependencies) []routeMetadata {
-	routes := make([]routeMetadata, 0, 5)
+	routes := make([]routeMetadata, 0, 10)
 	if dependencies.Auth != nil {
 		routes = append(routes,
 			newRouteMetadata("/api/v1/auth/login", "POST"),
@@ -28,6 +28,9 @@ func activeRouteMetadata(dependencies Dependencies) []routeMetadata {
 			}
 		}
 	}
+	if dependencies.Auth != nil && dependencies.Refunds != nil && !dependencies.DisableRefundRoutes {
+		routes = append(routes, refundCollectionMetadata(), refundCreateMetadata(), refundDecisionMetadata("approve"), refundDecisionMetadata("reject"))
+	}
 	return routes
 }
 
@@ -45,6 +48,18 @@ func orderDetailMetadata() routeMetadata {
 
 func orderActionMetadata(action string) routeMetadata {
 	return newRouteMetadata("/api/v1/orders/{orderId}/"+action, "POST")
+}
+
+func refundCollectionMetadata() routeMetadata {
+	return newRouteMetadata("/api/v1/refunds", "GET")
+}
+
+func refundCreateMetadata() routeMetadata {
+	return newRouteMetadata("/api/v1/orders/{orderId}/refunds", "POST")
+}
+
+func refundDecisionMetadata(action string) routeMetadata {
+	return newRouteMetadata("/api/v1/refunds/{refundId}/"+action, "POST")
 }
 
 func methodSet(methods ...string) map[string]bool {

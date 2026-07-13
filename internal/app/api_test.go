@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -504,6 +505,236 @@ func loginResponse(handler http.Handler, username, password, requestID string) *
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
+}
+
+func TestAuthenticatedAPIRefundFlowWithSQLite(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 7, 13, 8, 0, 0, 0, time.UTC)
+	base, err := config.LoadBase(mapLookup(map[string]string{"DATA_DIR": t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.Open(ctx, base.DatabasePath, store.OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Migrate(ctx); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	if _, err := database.Seed(ctx); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	passwords, err := auth.NewPasswords()
+	if err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	if _, err := database.SeedAuthDemo(ctx, passwords, "123456789012", now, auth.RandomID); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	if _, err := database.SeedOrderDemo(ctx, now); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	if _, err := database.SeedRefundDemo(ctx, now); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	database.Close()
+
+	configuration := config.APIConfig{Config: base, JWTSigningKey: []byte("12345678901234567890123456789012"), CORSAllowedOrigin: "https://ui.example.com"}
+	authSequence := 0
+	refundIDs := []string{
+		"rfd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"rfd_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		"rfd_cccccccccccccccccccccccccccccccc",
+	}
+	refundIndex := 0
+	dependencies := app.AuthDependencies{
+		Clock: func() time.Time { return now }, LimiterClock: func() time.Time { return now }, RefundClock: func() time.Time { return now },
+		NewID: func() (string, error) { authSequence++; return "refund-flow-id-" + strconv.Itoa(authSequence), nil },
+		NewRefundID: func() (string, error) {
+			if refundIndex >= len(refundIDs) {
+				return "", errors.New("refund ID sequence exhausted")
+			}
+			value := refundIDs[refundIndex]
+			refundIndex++
+			return value, nil
+		},
+	}
+	application, err := app.NewAuthenticatedAPIWithDependencies(configuration, dependencies, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := func(username string) string {
+		response := loginResponse(application.Handler(), username, "123456789012", "login-"+username)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s login = %d %s", username, response.Code, response.Body.String())
+		}
+		var body struct {
+			AccessToken string `json:"accessToken"`
+		}
+		if err := json.NewDecoder(response.Body).Decode(&body); err != nil || body.AccessToken == "" {
+			t.Fatalf("decode %s login: %v", username, err)
+		}
+		return body.AccessToken
+	}
+	tokens := map[string]string{}
+	for _, role := range []string{"viewer", "operator", "approver", "admin"} {
+		tokens[role] = login(role)
+	}
+	request := func(token, method, path, body, key string) *httptest.ResponseRecorder {
+		value := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+		value.Header.Set("Authorization", "Bearer "+token)
+		if body != "" {
+			value.Header.Set("Content-Type", "application/json")
+		}
+		if key != "" {
+			value.Header.Set("Idempotency-Key", key)
+		}
+		response := httptest.NewRecorder()
+		application.Handler().ServeHTTP(response, value)
+		return response
+	}
+	orderID := "ord_00000000000000000000000000000007"
+	createBody := `{"amount":10000,"reason":" customer request ","orderVersion":1}`
+	invalidUTF8 := string(append([]byte(`{"amount":10000,"reason":"`), append([]byte{0xff}, []byte(`","orderVersion":1}`)...)...))
+	invalidCreate := request(tokens["operator"], http.MethodPost, "/api/v1/orders/"+orderID+"/refunds", invalidUTF8, "invalid-utf8-create")
+	if invalidCreate.Code != http.StatusBadRequest {
+		t.Fatalf("invalid UTF-8 create = %d %s", invalidCreate.Code, invalidCreate.Body.String())
+	}
+	created := request(tokens["operator"], http.MethodPost, "/api/v1/orders/"+orderID+"/refunds", createBody, "refund-flow-1")
+	if created.Code != http.StatusCreated || !bytes.Contains(created.Body.Bytes(), []byte(`"id":"`+refundIDs[0]+`"`)) || !bytes.Contains(created.Body.Bytes(), []byte(`"status":"PENDING"`)) || !bytes.Contains(created.Body.Bytes(), []byte(`"canApprove":false`)) {
+		t.Fatalf("create refund = %d %s", created.Code, created.Body.String())
+	}
+	replay := request(tokens["operator"], http.MethodPost, "/api/v1/orders/"+orderID+"/refunds", `{"orderVersion":1,"reason":"customer request","amount":10000}`, "refund-flow-1")
+	if replay.Code != http.StatusCreated || replay.Body.String() != created.Body.String() {
+		t.Fatalf("refund replay = %d %s", replay.Code, replay.Body.String())
+	}
+	conflict := request(tokens["operator"], http.MethodPost, "/api/v1/orders/"+orderID+"/refunds", `{"amount":9999,"reason":"customer request","orderVersion":1}`, "refund-flow-1")
+	if conflict.Code != http.StatusConflict || !bytes.Contains(conflict.Body.Bytes(), []byte(`"code":"IDEMPOTENCY_CONFLICT"`)) {
+		t.Fatalf("refund conflict = %d %s", conflict.Code, conflict.Body.String())
+	}
+	pendingDetail := request(tokens["operator"], http.MethodGet, "/api/v1/orders/"+orderID, "", "")
+	if pendingDetail.Code != http.StatusOK || !bytes.Contains(pendingDetail.Body.Bytes(), []byte(`"availableRefundAmount":60000`)) || !bytes.Contains(pendingDetail.Body.Bytes(), []byte(`"canRequestRefund":true`)) || !bytes.Contains(pendingDetail.Body.Bytes(), []byte(`"version":1`)) {
+		t.Fatalf("pending refund order detail = %d %s", pendingDetail.Code, pendingDetail.Body.String())
+	}
+	for _, role := range []string{"viewer", "approver"} {
+		denied := request(tokens[role], http.MethodPost, "/api/v1/orders/"+orderID+"/refunds", createBody, "denied-"+role)
+		if denied.Code != http.StatusForbidden {
+			t.Fatalf("%s create refund = %d %s", role, denied.Code, denied.Body.String())
+		}
+	}
+	for _, role := range []string{"viewer", "operator"} {
+		denied := request(tokens[role], http.MethodPost, "/api/v1/refunds/"+refundIDs[0]+"/approve", `{"version":1}`, "")
+		if denied.Code != http.StatusForbidden {
+			t.Fatalf("%s approve refund = %d %s", role, denied.Code, denied.Body.String())
+		}
+	}
+	selfApprove := request(tokens["admin"], http.MethodPost, "/api/v1/refunds/rfd_00000000000000000000000000000002/approve", `{"version":1}`, "")
+	if selfApprove.Code != http.StatusForbidden {
+		t.Fatalf("admin self approve = %d %s", selfApprove.Code, selfApprove.Body.String())
+	}
+	versionBeforeState := request(tokens["approver"], http.MethodPost, "/api/v1/refunds/rfd_00000000000000000000000000000003/approve", `{"version":1}`, "")
+	if versionBeforeState.Code != http.StatusConflict || !bytes.Contains(versionBeforeState.Body.Bytes(), []byte(`"code":"VERSION_CONFLICT"`)) {
+		t.Fatalf("version before state = %d %s", versionBeforeState.Code, versionBeforeState.Body.String())
+	}
+	stateBeforeSelf := request(tokens["admin"], http.MethodPost, "/api/v1/refunds/rfd_00000000000000000000000000000005/approve", `{"version":2}`, "")
+	if stateBeforeSelf.Code != http.StatusConflict || !bytes.Contains(stateBeforeSelf.Body.Bytes(), []byte(`"code":"STATE_CONFLICT"`)) {
+		t.Fatalf("state before self approval = %d %s", stateBeforeSelf.Code, stateBeforeSelf.Body.String())
+	}
+	mutator, err := store.Open(ctx, base.DatabasePath, store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mutator.SQL().Exec(`UPDATE orders SET payment_status = 'REFUNDED' WHERE id = 'ord_00000000000000000000000000000008'`); err != nil {
+		mutator.Close()
+		t.Fatal(err)
+	}
+	mutator.Close()
+	rejectWithCorruptOrder := request(tokens["approver"], http.MethodPost, "/api/v1/refunds/rfd_00000000000000000000000000000001/reject", `{"version":1}`, "")
+	if rejectWithCorruptOrder.Code != http.StatusOK || !bytes.Contains(rejectWithCorruptOrder.Body.Bytes(), []byte(`"status":"REJECTED"`)) {
+		t.Fatalf("reject with corrupt order = %d %s", rejectWithCorruptOrder.Code, rejectWithCorruptOrder.Body.String())
+	}
+	invalidApprove := request(tokens["approver"], http.MethodPost, "/api/v1/refunds/"+refundIDs[0]+"/approve", string([]byte{'{', '"', 'v', 'e', 'r', 's', 'i', 'o', 'n', '"', ':', '"', 0xff, '"', '}'}), "")
+	if invalidApprove.Code != http.StatusBadRequest {
+		t.Fatalf("invalid UTF-8 approve = %d %s", invalidApprove.Code, invalidApprove.Body.String())
+	}
+	approved := request(tokens["approver"], http.MethodPost, "/api/v1/refunds/"+refundIDs[0]+"/approve", `{"version":1}`, "")
+	if approved.Code != http.StatusOK || !bytes.Contains(approved.Body.Bytes(), []byte(`"status":"COMPLETED"`)) || !bytes.Contains(approved.Body.Bytes(), []byte(`"version":2`)) {
+		t.Fatalf("approve refund = %d %s", approved.Code, approved.Body.String())
+	}
+	replayAfterApprove := request(tokens["operator"], http.MethodPost, "/api/v1/orders/"+orderID+"/refunds", createBody, "refund-flow-1")
+	if replayAfterApprove.Code != http.StatusCreated || replayAfterApprove.Body.String() != created.Body.String() {
+		t.Fatalf("replay after approve = %d %s", replayAfterApprove.Code, replayAfterApprove.Body.String())
+	}
+	second := request(tokens["admin"], http.MethodPost, "/api/v1/orders/"+orderID+"/refunds", `{"amount":5000,"reason":"second refund","orderVersion":2}`, "refund-flow-2")
+	if second.Code != http.StatusCreated || !bytes.Contains(second.Body.Bytes(), []byte(`"id":"`+refundIDs[1]+`"`)) {
+		t.Fatalf("second refund = %d %s", second.Code, second.Body.String())
+	}
+	secondApprove := request(tokens["approver"], http.MethodPost, "/api/v1/refunds/"+refundIDs[1]+"/approve", `{"version":1}`, "")
+	if secondApprove.Code != http.StatusOK {
+		t.Fatalf("second approve = %d %s", secondApprove.Code, secondApprove.Body.String())
+	}
+	third := request(tokens["operator"], http.MethodPost, "/api/v1/orders/"+orderID+"/refunds", `{"amount":1000,"reason":"reject this","orderVersion":3}`, "refund-flow-3")
+	if third.Code != http.StatusCreated || !bytes.Contains(third.Body.Bytes(), []byte(`"id":"`+refundIDs[2]+`"`)) {
+		t.Fatalf("third refund = %d %s", third.Code, third.Body.String())
+	}
+	invalidReject := request(tokens["approver"], http.MethodPost, "/api/v1/refunds/"+refundIDs[2]+"/reject", string([]byte{'{', '"', 'v', 'e', 'r', 's', 'i', 'o', 'n', '"', ':', '"', 0xff, '"', '}'}), "")
+	if invalidReject.Code != http.StatusBadRequest {
+		t.Fatalf("invalid UTF-8 reject = %d %s", invalidReject.Code, invalidReject.Body.String())
+	}
+	rejected := request(tokens["approver"], http.MethodPost, "/api/v1/refunds/"+refundIDs[2]+"/reject", `{"version":1}`, "")
+	if rejected.Code != http.StatusOK || !bytes.Contains(rejected.Body.Bytes(), []byte(`"status":"REJECTED"`)) {
+		t.Fatalf("reject refund = %d %s", rejected.Code, rejected.Body.String())
+	}
+	detail := request(tokens["operator"], http.MethodGet, "/api/v1/orders/"+orderID, "", "")
+	if detail.Code != http.StatusOK || !bytes.Contains(detail.Body.Bytes(), []byte(`"paymentStatus":"PARTIALLY_REFUNDED"`)) || !bytes.Contains(detail.Body.Bytes(), []byte(`"availableRefundAmount":55000`)) || !bytes.Contains(detail.Body.Bytes(), []byte(`"version":3`)) || !bytes.Contains(detail.Body.Bytes(), []byte(`"canRequestRefund":true`)) {
+		t.Fatalf("refund order detail = %d %s", detail.Code, detail.Body.String())
+	}
+	list := request(tokens["approver"], http.MethodGet, "/api/v1/refunds?pageSize=20", "", "")
+	if list.Code != http.StatusOK || !bytes.Contains(list.Body.Bytes(), []byte(`"total":8`)) || !bytes.Contains(list.Body.Bytes(), []byte(`"canApprove":true`)) {
+		t.Fatalf("refund list = %d %s", list.Code, list.Body.String())
+	}
+
+	application.Close()
+	reopened, err := app.NewAuthenticatedAPIWithDependencies(configuration, dependencies, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	application = reopened
+	detailAfterRestart := request(tokens["operator"], http.MethodGet, "/api/v1/orders/"+orderID, "", "")
+	if detailAfterRestart.Code != http.StatusOK || !bytes.Contains(detailAfterRestart.Body.Bytes(), []byte(`"availableRefundAmount":55000`)) || !bytes.Contains(detailAfterRestart.Body.Bytes(), []byte(`"version":3`)) {
+		t.Fatalf("refund detail after restart = %d %s", detailAfterRestart.Code, detailAfterRestart.Body.String())
+	}
+	application.Close()
+
+	disabledDependencies := dependencies
+	disabledDependencies.DisableRefundRoutes = true
+	disabled, err := app.NewAuthenticatedAPIWithDependencies(configuration, disabledDependencies, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer disabled.Close()
+	application = disabled
+	if response := request(tokens["operator"], http.MethodGet, "/api/v1/orders/"+orderID, "", ""); response.Code != http.StatusOK {
+		t.Fatalf("orders with refund routes disabled = %d %s", response.Code, response.Body.String())
+	}
+	if response := request(tokens["approver"], http.MethodGet, "/api/v1/refunds", "", ""); response.Code != http.StatusNotFound {
+		t.Fatalf("disabled refund list = %d %s", response.Code, response.Body.String())
+	}
+	for _, path := range []string{
+		"/api/v1/orders/" + orderID + "/refunds",
+		"/api/v1/refunds/" + refundIDs[0] + "/approve",
+		"/api/v1/refunds/" + refundIDs[2] + "/reject",
+	} {
+		if response := request(tokens["admin"], http.MethodPost, path, `{"version":1}`, "disabled-key"); response.Code != http.StatusNotFound {
+			t.Fatalf("disabled refund route %s = %d %s", path, response.Code, response.Body.String())
+		}
+	}
 }
 
 func TestAPINotReadyDatabaseStatesKeepHealthLive(t *testing.T) {

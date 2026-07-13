@@ -84,6 +84,46 @@ func TestOrderRefundCapabilitiesRejectCorruptRefundAggregates(t *testing.T) {
 	}
 }
 
+func TestListRefundsUsesSnapshotAndBatchedActorHydration(t *testing.T) {
+	database := openRefundCapabilityDatabase(t)
+	queries := 0
+	database.queryObserver = func() { queries++ }
+	page, err := database.ListRefunds(context.Background(), order.RefundListQuery{Page: 1, PageSize: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queries != 3 || page.Total != 5 || len(page.Items) != 2 || page.Page != 1 || page.PageSize != 2 {
+		t.Fatalf("page = %+v queries=%d", page, queries)
+	}
+	if page.Items[0].ID != "rfd_00000000000000000000000000000005" || page.Items[0].Status != order.RefundStatusCompleted || page.Items[0].DecidedBy == nil || page.Items[0].DecidedBy.Username != "approver" {
+		t.Fatalf("first refund = %+v", page.Items[0])
+	}
+	completed, err := database.ListRefunds(context.Background(), order.RefundListQuery{Status: order.RefundStatusCompleted, Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.Total != 2 || len(completed.Items) != 2 {
+		t.Fatalf("completed page = %+v", completed)
+	}
+	filtered, err := database.ListRefunds(context.Background(), order.RefundListQuery{OrderID: "ord_00000000000000000000000000000009", Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filtered.Total != 1 || len(filtered.Items) != 1 || filtered.Items[0].OrderID != "ord_00000000000000000000000000000009" {
+		t.Fatalf("filtered page = %+v", filtered)
+	}
+}
+
+func TestListRefundsRejectsMissingActorAsInternal(t *testing.T) {
+	database := openRefundCapabilityDatabase(t)
+	if _, err := database.SQL().Exec(`PRAGMA foreign_keys = OFF; DELETE FROM users WHERE id = 'user-operator'; PRAGMA foreign_keys = ON;`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.ListRefunds(context.Background(), order.RefundListQuery{Page: 1, PageSize: 20}); !errors.Is(err, order.ErrInternal) {
+		t.Fatalf("missing actor error = %v", err)
+	}
+}
+
 func openRefundCapabilityDatabase(t *testing.T) *DB {
 	t.Helper()
 	ctx := context.Background()
