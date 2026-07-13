@@ -322,6 +322,39 @@ foreach ($entry in $planIds.GetEnumerator()) {
     }
 }
 
+$phaseFivePlanPath = Join-Path $docsRoot 'plans\PLN-0005-phase-05-attachment-lifecycle.md'
+$phaseFiveChecklistPath = Join-Path $docsRoot 'plans\PLN-0005-phase-05-attachment-lifecycle-checklist.md'
+if ((Test-Path -LiteralPath $phaseFivePlanPath) -and (Test-Path -LiteralPath $phaseFiveChecklistPath)) {
+    $phaseFivePlan = Get-Content -Raw -Encoding UTF8 $phaseFivePlanPath
+    $phaseFiveChecklist = Get-Content -Raw -Encoding UTF8 $phaseFiveChecklistPath
+    $baselineEvidenceRow = [regex]::Match($phaseFivePlan, '(?m)^\|\s*WP-Baseline-Evidence\s*\|.*$')
+    if (-not $baselineEvidenceRow.Success -or $baselineEvidenceRow.Value -notmatch 'WP-Facts') {
+        $failures.Add('PLN-0005 dependency DAG must make WP-Baseline-Evidence depend on WP-Facts')
+    }
+    if ($phaseFivePlan -notmatch '(?m)^.*P0 dependency DAG.*WP-Facts.*Schema-Recovery.*HTTP-Order.*Lock.*Baseline-Evidence.*$') {
+        $failures.Add('PLN-0005 dependency prose must match the tracked WP-Baseline-Evidence edge')
+    }
+
+    $p021Line = [regex]::Match($phaseFiveChecklist, '(?m)^- \[ \] P0-21\..*$')
+    if (-not $p021Line.Success -or $p021Line.Value -notmatch 'WP-Baseline-Evidence.*WP-Facts') {
+        $failures.Add('PLN-0005 P0-21 must reject a missing WP-Baseline-Evidence to WP-Facts edge')
+    }
+    $p022Line = [regex]::Match($phaseFiveChecklist, '(?m)^- \[ \] P0-22\..*$')
+    if (-not $p022Line.Success -or
+        $p022Line.Value -notmatch 'artifactKind=contract-fixture' -or
+        $p022Line.Value -notmatch '5A-D-2' -or
+        $p022Line.Value -notmatch '5B-4') {
+        $failures.Add('PLN-0005 P0-22 must stop at a deployment contract fixture and defer live profile evidence')
+    }
+    $p023Line = [regex]::Match($phaseFiveChecklist, '(?m)^- \[ \] P0-23\..*$')
+    if (-not $p023Line.Success -or
+        $p023Line.Value -notmatch 'P0-22.*artifactKind=contract-fixture' -or
+        $p023Line.Value -notmatch '5A-D' -or
+        $p023Line.Value -notmatch '5B') {
+        $failures.Add('PLN-0005 P0-23 must keep P0-22 evidence as a contract fixture')
+    }
+}
+
 $auditIndexPath = Join-Path $docsRoot 'audits\README.md'
 if ($auditRecords.Count -gt 0) {
     if (-not (Test-Path -LiteralPath $auditIndexPath)) {

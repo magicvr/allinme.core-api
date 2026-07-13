@@ -47,6 +47,28 @@ applies_to: validator fixture
     Set-Content -LiteralPath (Join-Path $plansRoot 'PLN-0001-validator-fixture.md') -Value ($planFrontmatter + "`n# Plan") -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $plansRoot 'PLN-0001-validator-fixture-checklist.md') -Value ($planFrontmatter + "`n# Checklist") -Encoding UTF8
 
+    $phaseFiveFrontmatter = $planFrontmatter.Replace('PLN-0001', 'PLN-0005')
+    $phaseFivePlanPath = Join-Path $plansRoot 'PLN-0005-phase-05-attachment-lifecycle.md'
+    $phaseFiveChecklistPath = Join-Path $plansRoot 'PLN-0005-phase-05-attachment-lifecycle-checklist.md'
+    $phaseFivePlan = @'
+# Phase Five
+
+| Work package | P0 items | owner / reviewer | Inputs | Timebox | Evidence |
+|---|---|---|---|---:|---|
+| WP-Baseline-Evidence | P0-14, P0-23, P0-24, P0-25 | owner / reviewer | WP-Facts; plan revision | 3 days | validator |
+
+P0 dependency DAG: WP-Facts precedes Schema-Recovery, HTTP-Order, Lock, and Baseline-Evidence.
+'@
+    $phaseFiveChecklist = @'
+# Phase Five Checklist
+
+- [ ] P0-21. Reject WP-Baseline-Evidence without WP-Facts.
+- [ ] P0-22. Produce `artifactKind=contract-fixture`; live validation belongs to 5A-D-2 or 5B-4.
+- [ ] P0-23. P0-22 uses `artifactKind=contract-fixture`; live evidence belongs to 5A-D and 5B.
+'@
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFiveChecklist) -Encoding UTF8
+
     $auditRecordsRoot = Join-Path $fixtureRoot 'audits\records'
     New-Item -ItemType Directory -Path $auditRecordsRoot -Force | Out-Null
     $auditFrontmatter = @'
@@ -108,6 +130,22 @@ related_plans: PLN-0001
 | ARCHIVE_CLOSURE | completion and archive conditions inspected | pass | none |
 '@
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $planAuditRecordName) -Value ($planAuditFrontmatter + "`n" + $planAuditMatrix) -Encoding UTF8
+
+    $missingDagEdgePlan = $phaseFivePlan.Replace('WP-Facts; plan revision', 'plan revision')
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $missingDagEdgePlan) -Encoding UTF8
+    $missingDagEdgeResult = Invoke-Validator $fixtureRoot
+    if ($missingDagEdgeResult.ExitCode -eq 0 -or $missingDagEdgeResult.Output -notmatch 'WP-Baseline-Evidence depend on WP-Facts') {
+        throw "validator did not reject a missing phase-five DAG edge: $($missingDagEdgeResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
+
+    $liveProfileChecklist = $phaseFiveChecklist.Replace('Produce `artifactKind=contract-fixture`; live validation belongs to 5A-D-2 or 5B-4.', 'Select and live-test one deployment profile during P0.')
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $liveProfileChecklist) -Encoding UTF8
+    $liveProfileResult = Invoke-Validator $fixtureRoot
+    if ($liveProfileResult.ExitCode -eq 0 -or $liveProfileResult.Output -notmatch 'stop at a deployment contract fixture') {
+        throw "validator did not reject a live phase-five P0 profile gate: $($liveProfileResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFiveChecklist) -Encoding UTF8
     $auditIndexContent += "`n- [AUD-0004](./records/$planAuditRecordName): ``status=open``; ``remediation=pending``; fixture."
     Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8
 
@@ -180,7 +218,7 @@ related_plans: none
     }
 
     $global:LASTEXITCODE = 0
-    Write-Output 'Validator self-test passed: valid governance accepted; incomplete checklist matrices, unindexed audits, missing links, orphan plans, and incomplete closed audits rejected.'
+    Write-Output 'Validator self-test passed: valid governance accepted; phase-five DAG/profile regressions, incomplete checklist matrices, unindexed audits, missing links, orphan plans, and incomplete closed audits rejected.'
 } finally {
     if (Test-Path -LiteralPath $fixtureRoot) {
         $resolvedFixtureRoot = (Resolve-Path $fixtureRoot).Path
