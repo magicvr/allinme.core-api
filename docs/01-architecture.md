@@ -55,7 +55,7 @@ HTTP handler 只负责 transport；用例层拥有业务事务语义和状态转
 - 本地账号使用适合密码存储的自适应哈希；登录响应签发短期 JWT Bearer。
 - JWT 至少包含 subject、role、expiry、issued-at 和唯一 token ID；服务端同时检查 SQLite session 是否未撤销，以支持登出和禁用账号立即失效。
 - JWT 签名密钥来自环境或受控 secret，不进入源码、页面配置、seed 或日志；生产模式缺失密钥时拒绝启动。
-- SQLite 启用 foreign keys、busy timeout 和 WAL；跨订单、退款、附件元数据的修改在单一事务中完成。
+- SQLite 启用 foreign keys、busy timeout 和 WAL；每个 SQLite 原子阶段内涉及订单、退款和附件元数据的修改必须在单一事务中完成。SQLite 与文件系统不能组成共同事务：需要文件隔离的附件 edit/remove 或内部订单清理使用“准备事务 → 文件隔离 → 最终 SQLite 事务 → purge”，准备态可被并发请求观察并按领域状态稳定分类，最终事务重新验证 version、退款历史和 operation token；进程退出后的 restore/finalize/purge 由持久 journal、独占启动恢复和受限 cleanup 负责。
 - 写操作使用资源 `version` 做乐观并发控制；幂等操作在数据库中保存幂等键与结果。
 - 上传文件位于配置的数据目录，临时文件与最终文件不得由 HTTP 静态目录直接暴露。
 

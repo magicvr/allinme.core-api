@@ -66,7 +66,7 @@ go test ./...
 | 订单履约 Action | yes | `go test ./internal/order ./internal/store ./internal/httpapi ./internal/app -count=1` | 覆盖乐观锁、全部合法状态转换、非法转换、版本冲突、真实 token 和关闭 Action 路由回退；不等待 CORS 门禁 |
 | CORS | yes | `go test ./internal/config ./internal/httpapi ./internal/app -count=1` | 配置失败、actual/preflight、Vary、Expose-Headers、Max-Age、route metadata、短路优先级和自动化跨源 smoke |
 | 退款 | yes | `go test ./internal/order ./internal/store ./internal/httpapi ./internal/app -count=1` | 覆盖可退金额、申请/审批分离、幂等 snapshot、审批事务、真实 JWT、非法 UTF-8、并发竞争和订单支付状态一致性 |
-| 附件 | no | 阶段五新增文件集成测试时 | 临时目录覆盖超限、类型伪造、危险文件名、摘要、绑定权限、鉴权下载、失败清理和过期清理 |
+| 附件 | no | 阶段五新增文件集成测试时 | 临时目录覆盖超限、类型伪造、危险文件名、摘要、绑定权限、鉴权下载、失败清理和过期清理；内部 ORDER_DELETE 覆盖 DRAFT/expected-version/退款历史门禁、文件隔离恢复，以及删除后同 create key 只重放冻结 snapshot 且不创建第二个订单 |
 | 看板 | yes | `go test ./internal/order ./internal/store ./internal/httpapi ./internal/app -count=1` | 固定 seed 下 summary/status/trend 快照与订单/退款查询交叉一致，覆盖 UTC 7/30 日窗口、负 trend bucket、退款后变化和双路由禁用装配 |
 | 页面 | no | 阶段六创建 `internal/pages/yaml/*.yaml` 时 | 全部 YAML 通过固定 Schema-UI 版本 L0-L4 校验，页面引用的 endpoint 与 Action 均存在集成测试 |
 

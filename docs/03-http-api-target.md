@@ -58,6 +58,8 @@ applies_to: order operations demo HTTP API target
 
 首版目标允许 PDF、PNG 和 JPEG，单文件目标上限 10 MiB；允许类型和上限在阶段五威胁测试完成后冻结。服务端检测内容、生成文件名并计算摘要，不返回本地路径或公开静态 URL。
 
+阶段五不新增订单删除 endpoint。内部 `ORDER_DELETE` cleanup 原语只供受信任 admin maintenance 编排直接调用，其 DRAFT/version/退款历史和订单创建幂等 snapshot 规则由[领域模型](./05-domain-model.md)持有，不能通过附件或订单 HTTP surface 触发。
+
 ## 7. 看板（已迁入当前 API）
 
 看板 endpoint、角色、query、响应字段、UTC 窗口和错误语义已全部迁入 [当前 HTTP API](./03-http-api.md)，本目标文档不再重复维护。统计业务口径只在 [领域模型](./05-domain-model.md) 维护。

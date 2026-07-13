@@ -92,7 +92,8 @@ DRAFT -> CONFIRMED -> FULFILLING -> SHIPPED -> COMPLETED
 - 上传接口先写入临时受控目录，校验文件大小、允许类型和摘要后创建未绑定附件记录；不得信任客户端文件名或 `Content-Type`。
 - 创建或编辑订单时提交附件 ID，服务端在事务中校验附件所有者、有效期和绑定状态。
 - 附件内容位于应用数据目录，SQLite 只保存元数据；文件路径不得由请求直接指定或返回。
-- 下载使用附件 ID 并重新执行订单查看权限；删除订单时按明确策略清理或保留附件，首版采用同步清理。
+- 下载使用附件 ID 并重新执行订单查看权限。阶段五不提供订单删除 HTTP，只提供受信任 admin maintenance 编排可调用的内部 `ORDER_DELETE` cleanup 原语：仅允许当前仍为 `DRAFT`、expected version 匹配且不存在任何退款或退款幂等历史的订单；按“资源存在性 → version → 状态 → 退款历史”分类失败，并在取得附件 ownership 前拒绝。
+- `ORDER_DELETE` 成功后永久保留历史 order-create v1/v2 idempotency snapshot，不以外键关联当前订单。相同主体/method/route/key 的重试继续返回首次冻结响应，即使响应中的订单已被内部清理；不得删除该记录后以同 key 创建第二个订单。该历史响应不表示订单仍存在，后续订单读取仍返回 not found。
 - 未绑定上传应有过期清理机制，目标默认保留 24 小时。
 
 ## 7. 看板口径
