@@ -136,11 +136,16 @@ func seedDemo(ctx context.Context, configuration config.DemoSeedConfig, output i
 	if err != nil {
 		return fmt.Errorf("order demo seed failed after runtime and auth demo seeds committed: %w", err)
 	}
+	refundResult, err := database.SeedRefundDemo(ctx, time.Now())
+	if err != nil {
+		return fmt.Errorf("refund demo seed failed after runtime, auth demo, and order demo seeds committed: %w", err)
+	}
 	return writeSummary(output, "seed", struct {
-		Runtime store.SeedResult      `json:"runtime"`
-		Auth    store.AuthSeedResult  `json:"auth"`
-		Order   store.OrderSeedResult `json:"order"`
-	}{Runtime: runtimeResult, Auth: authResult, Order: orderResult})
+		Runtime store.SeedResult       `json:"runtime"`
+		Auth    store.AuthSeedResult   `json:"auth"`
+		Order   store.OrderSeedResult  `json:"order"`
+		Refund  store.RefundSeedResult `json:"refund"`
+	}{Runtime: runtimeResult, Auth: authResult, Order: orderResult, Refund: refundResult})
 }
 
 func reset(ctx context.Context, configuration config.Config, output io.Writer, logger *slog.Logger) error {
@@ -227,12 +232,17 @@ func resetDemo(ctx context.Context, configuration config.DemoSeedConfig, output 
 	if err != nil {
 		return fmt.Errorf("order demo seed failed after runtime and auth demo seeds committed: %w", err)
 	}
+	refundResult, err := database.SeedRefundDemo(ctx, time.Now())
+	if err != nil {
+		return fmt.Errorf("refund demo seed failed after runtime, auth demo, and order demo seeds committed: %w", err)
+	}
 	return writeSummary(output, "reset", struct {
-		Migration store.MigrationResult `json:"migration"`
-		Runtime   store.SeedResult      `json:"runtime"`
-		Auth      store.AuthSeedResult  `json:"auth"`
-		Order     store.OrderSeedResult `json:"order"`
-	}{Migration: migration, Runtime: runtimeResult, Auth: authResult, Order: orderResult})
+		Migration store.MigrationResult  `json:"migration"`
+		Runtime   store.SeedResult       `json:"runtime"`
+		Auth      store.AuthSeedResult   `json:"auth"`
+		Order     store.OrderSeedResult  `json:"order"`
+		Refund    store.RefundSeedResult `json:"refund"`
+	}{Migration: migration, Runtime: runtimeResult, Auth: authResult, Order: orderResult, Refund: refundResult})
 }
 
 func bootstrapAdmin(ctx context.Context, configuration config.BootstrapAdminConfig, output io.Writer) error {

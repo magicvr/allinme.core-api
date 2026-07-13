@@ -59,9 +59,12 @@ func TestMigrateSeedAndReset(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	var orders int
-	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&orders); err != nil || orders != 6 {
+	var orders, refunds int
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&orders); err != nil || orders != 10 {
 		t.Fatalf("reset demo orders = %d, error = %v", orders, err)
+	}
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM refunds`).Scan(&refunds); err != nil || refunds != 5 {
+		t.Fatalf("reset demo refunds = %d, error = %v", refunds, err)
 	}
 }
 
@@ -150,9 +153,12 @@ func TestExecuteDevelopmentSeedAndResetRequirePasswordBeforeDatabaseAccess(t *te
 	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM users`).Scan(&users); err != nil || users != 4 {
 		t.Fatalf("users = %d, error = %v", users, err)
 	}
-	var orders int
-	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&orders); err != nil || orders != 6 {
+	var orders, refunds int
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&orders); err != nil || orders != 10 {
 		t.Fatalf("orders = %d, error = %v", orders, err)
+	}
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM refunds`).Scan(&refunds); err != nil || refunds != 5 {
+		t.Fatalf("refunds = %d, error = %v", refunds, err)
 	}
 }
 
@@ -229,6 +235,10 @@ func TestExecuteProductionBootstrapAdmin(t *testing.T) {
 	var orders int
 	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&orders); err != nil || orders != 0 {
 		t.Fatalf("production seed orders = %d, error = %v", orders, err)
+	}
+	var refunds int
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM refunds`).Scan(&refunds); err != nil || refunds != 0 {
+		t.Fatalf("production seed refunds = %d, error = %v", refunds, err)
 	}
 }
 
