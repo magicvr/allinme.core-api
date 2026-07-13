@@ -48,7 +48,7 @@ related_plans: PLN-0005
 
 ## 当前索引
 
-- [`REM-0002`](./records/REM-0002-20260714-codex-audit-aud-0004-rem-0001-follow-up.md)：`status=completed`；`verification=pending`；整改 `AUD-0004` 的 P0 部署 Evidence 循环与 dependency DAG 漂移。
+- [`REM-0002`](./records/REM-0002-20260714-codex-audit-aud-0004-rem-0001-follow-up.md)：`status=completed`；`verification=partial-by:AUD-0005`；当前计划文本已修正，但两项防语义漂移 validator 仍可被附加矛盾条款绕过。
 - [`REM-0001`](./records/REM-0001-20260714-codex-audit-active-audits.md)：`status=completed`；`verification=partial-by:AUD-0004`；6 个 source findings 中 4 个已复审确认，2 个转入 `AUD-0004` 继续整改。
 
 每份 REM 必须在创建时立即加入本索引，并且只能出现一次。索引格式必须记录 `status` 与 `verification`：
