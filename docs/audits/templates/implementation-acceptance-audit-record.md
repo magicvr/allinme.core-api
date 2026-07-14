@@ -9,6 +9,7 @@ source_context_ids: legacy-unavailable
 audit_type: acceptance
 acceptance_type: implementation-completion
 acceptance_verdict: pending
+acceptance_next_action: pending
 plan_status_at_acceptance: active
 independence_basis: separate-context
 scope: plan:PLN-NNNN
@@ -16,14 +17,16 @@ subject: implementation completion acceptance
 baseline: git:full-commit-sha; worktree:clean
 evidence_revision: git:full-commit-sha; worktree:clean
 evidence_run_id: 00000000-0000-4000-8000-000000000000
-effective_result_revision: git:full-commit-sha
+effective_result_revision: none
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD
 related_audits: none
 related_remediations: none
-related_implementations: IMP-NNNN
+related_implementations: none
 supersedes: none
+superseded_by: none
+supersession_reason: none
 related_plans: PLN-NNNN
 ---
 
@@ -31,7 +34,7 @@ related_plans: PLN-NNNN
 
 <!-- implementation-acceptance-audit: PLN-NNNN -->
 
-- Implementation: `../../implementations/records/IMP-NNNN-YYYYMMDD-implementer-plan-pln-nnnn-subject.md`
+- Implementation: `none`（存在 IMP 时替换为稳定路径）
 - Plan: `../../plans/PLN-NNNN-subject.md`
 - Checklist: `../../plans/PLN-NNNN-subject-checklist.md`
 

@@ -462,6 +462,7 @@ execution_context_id: 33333333-3333-4333-8333-333333333333
 scope: plan:PLN-0001
 related_plans: PLN-0001
 plan_acceptance_audits: AUD-0005
+trigger_audits: none
 plan_evidence_revision: git:0000000000000000000000000000000000000000
 baseline: git:0000000000000000000000000000000000000000; worktree:clean
 result_revision: git:1111111111111111111111111111111111111111
@@ -477,18 +478,22 @@ $implementationAuditFrontmatter = @'
 ---
 status: closed
 governance_contract: audit-loop/v3
-audit_schema: implementation-audit/v1
+audit_schema: implementation-audit/v2
 audit_id: AUD-0006
 auditor: validator-test
 execution_context_id: 66666666-6666-4666-8666-666666666666
+source_context_ids: 33333333-3333-4333-8333-333333333333, 55555555-5555-4555-8555-555555555555
 audit_type: implementation
+independence_basis: separate-context
 scope: implementation:IMP-0001
 subject: validator implementation
 baseline: git:1111111111111111111111111111111111111111; worktree:clean
+evidence_revision: git:1111111111111111111111111111111111111111; worktree:clean
+evidence_run_id: 66666666-6666-4666-9666-666666666666
 started_at: 2026-07-14T04:30:00+08:00
 completed_at: 2026-07-14T04:45:00+08:00
 last_updated: 2026-07-14
-related_audits: none
+related_audits: AUD-0005
 related_remediations: none
 related_implementations: IMP-0001
 supersedes: none
@@ -529,6 +534,7 @@ source_context_ids: 55555555-5555-4555-8555-555555555555, 66666666-6666-4666-866
 audit_type: acceptance
 acceptance_type: implementation-completion
 acceptance_verdict: complete
+acceptance_next_action: none
 plan_status_at_acceptance: active
 independence_basis: separate-context
 scope: plan:PLN-0001
@@ -707,8 +713,8 @@ related_plans: PLN-0001
     $implementationIndexWithLaterAttempt = (Get-Content -Raw -Encoding UTF8 (Join-Path $fixtureRoot 'implementations\README.md')) + "`n- [IMP-0002](./records/$laterImplementationName): ``status=partial``; ``audit=not-ready``; ``acceptance=not-ready``; fixture."
     Set-Content -LiteralPath (Join-Path $fixtureRoot 'implementations\README.md') -Value $implementationIndexWithLaterAttempt -Encoding UTF8
     $staleImplementationAcceptanceResult = Invoke-Validator $fixtureRoot
-    if ($staleImplementationAcceptanceResult.ExitCode -eq 0 -or $staleImplementationAcceptanceResult.Output -notmatch 'latest IMP') {
-        throw "validator accepted completion of a stale IMP: $($staleImplementationAcceptanceResult.Output)"
+    if ($staleImplementationAcceptanceResult.ExitCode -ne 0) {
+        throw "validator retroactively invalidated a historical acceptance after a later IMP started: $($staleImplementationAcceptanceResult.Output)"
     }
     Remove-Item -LiteralPath (Join-Path $implementationRecordsRoot $laterImplementationName)
     Set-Content -LiteralPath (Join-Path $fixtureRoot 'implementations\README.md') -Value "# Implementations`n`n- [IMP-0001](./records/IMP-0001-20260714-validator-plan-pln-0001-fixture.md): ``status=completed``; ``audit=audited-by:AUD-0006``; ``acceptance=accepted-by:AUD-0007``; fixture." -Encoding UTF8
@@ -745,6 +751,9 @@ related_plans: PLN-0001
     $remediationImplementationAuditFrontmatter = $implementationAuditFrontmatter.Replace('audit_id: AUD-0006', 'audit_id: AUD-0008').Replace(
         'execution_context_id: 66666666-6666-4666-8666-666666666666',
         'execution_context_id: 88888888-8888-4888-8888-888888888888'
+    ).Replace(
+        'evidence_run_id: 66666666-6666-4666-9666-666666666666',
+        'evidence_run_id: 88888888-8888-4888-9888-888888888888'
     ).Replace(
         'baseline: git:1111111; worktree:clean',
         'baseline: git:1111111111111111111111111111111111111111; worktree:clean'
@@ -811,6 +820,7 @@ evidence_run_id: 99999999-aaaa-4aaa-8aaa-999999999999
 scope: follow-up:REM-0002
 subject: implementation remediation follow-up
 baseline: git:2222222222222222222222222222222222222222; worktree:clean
+evidence_revision: git:2222222222222222222222222222222222222222; worktree:clean
 started_at: 2026-07-14T06:50:00+08:00
 completed_at: 2026-07-14T07:00:00+08:00
 last_updated: 2026-07-14
@@ -951,16 +961,22 @@ related_plans: PLN-0001
     }
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($acceptancePlanAuditFrontmatter + "`n" + $acceptancePlanMatrix) -Encoding UTF8
 
-    $mismatchedEvidenceRevision = $acceptancePlanAuditFrontmatter.Replace(
+    $splitEvidenceRevision = $acceptancePlanAuditFrontmatter.Replace(
         'evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean',
         'evidence_revision: git:3333333333333333333333333333333333333333; worktree:clean'
     )
-    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($mismatchedEvidenceRevision + "`n" + $acceptancePlanMatrix) -Encoding UTF8
-    $mismatchedEvidenceRevisionResult = Invoke-Validator $fixtureRoot
-    if ($mismatchedEvidenceRevisionResult.ExitCode -eq 0 -or $mismatchedEvidenceRevisionResult.Output -notmatch 'evidence_revision must match baseline') {
-        throw "validator accepted acceptance evidence from a different revision: $($mismatchedEvidenceRevisionResult.Output)"
+    $splitImplementationRevision = $implementationFrontmatter.Replace(
+        'plan_evidence_revision: git:0000000000000000000000000000000000000000',
+        'plan_evidence_revision: git:3333333333333333333333333333333333333333'
+    )
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($splitEvidenceRevision + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $implementationRecordsRoot $implementationRecordName) -Value ($splitImplementationRevision + "`n# Implementation") -Encoding UTF8
+    $splitEvidenceRevisionResult = Invoke-Validator $fixtureRoot
+    if ($splitEvidenceRevisionResult.ExitCode -ne 0) {
+        throw "validator rejected a distinct governance baseline and subject evidence revision: $($splitEvidenceRevisionResult.Output)"
     }
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($acceptancePlanAuditFrontmatter + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $implementationRecordsRoot $implementationRecordName) -Value ($implementationFrontmatter + "`n# Implementation") -Encoding UTF8
 
     $dirtyOmittedAuditFrontmatter = $planAuditFrontmatter.Replace('AUD-0004', 'AUD-0003').Replace('2026-07-14T00:30:00+08:00', '2026-07-14T00:20:00+08:00').Replace('2026-07-14T00:45:00+08:00', '2026-07-14T00:25:00+08:00')
     $dirtyOmittedAuditName = 'AUD-0003-20260714-validator-plan-omitted-dirty-fixture.md'
@@ -1041,6 +1057,257 @@ related_plans: PLN-0001
     }
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAcceptanceName) -Value ($implementationAcceptanceFrontmatter + "`n" + $implementationAcceptanceMatrix) -Encoding UTF8
 
+    $mismatchedImplementationAuditEvidence = $implementationAuditFrontmatter.Replace(
+        'evidence_revision: git:1111111111111111111111111111111111111111; worktree:clean',
+        'evidence_revision: git:2222222222222222222222222222222222222222; worktree:clean'
+    )
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAuditName) -Value ($mismatchedImplementationAuditEvidence + "`n" + $implementationAuditMatrix) -Encoding UTF8
+    $mismatchedImplementationAuditEvidenceResult = Invoke-Validator $fixtureRoot
+    if ($mismatchedImplementationAuditEvidenceResult.ExitCode -eq 0 -or $mismatchedImplementationAuditEvidenceResult.Output -notmatch 'evidence_revision must match IMP result_revision') {
+        throw "validator accepted implementation audit evidence from the wrong result revision: $($mismatchedImplementationAuditEvidenceResult.Output)"
+    }
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAuditName) -Value ($implementationAuditFrontmatter + "`n" + $implementationAuditMatrix) -Encoding UTF8
+
+    $selfImplementationAudit = $implementationAuditFrontmatter.Replace(
+        'execution_context_id: 66666666-6666-4666-8666-666666666666',
+        'execution_context_id: 33333333-3333-4333-8333-333333333333'
+    )
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAuditName) -Value ($selfImplementationAudit + "`n" + $implementationAuditMatrix) -Encoding UTF8
+    $selfImplementationAuditResult = Invoke-Validator $fixtureRoot
+    if ($selfImplementationAuditResult.ExitCode -eq 0 -or $selfImplementationAuditResult.Output -notmatch 'Implementation audit execution context must differ') {
+        throw "validator accepted implementation self-audit context: $($selfImplementationAuditResult.Output)"
+    }
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAuditName) -Value ($implementationAuditFrontmatter + "`n" + $implementationAuditMatrix) -Encoding UTF8
+
+    $negativePlanPath = Join-Path $plansRoot 'PLN-0002-negative-acceptance.md'
+    $negativeChecklistPath = Join-Path $plansRoot 'PLN-0002-negative-acceptance-checklist.md'
+    $negativePlanFrontmatter = $planFrontmatter.Replace('PLN-0001', 'PLN-0002')
+    Set-Content -LiteralPath $negativePlanPath -Value ($negativePlanFrontmatter + "`n# Negative acceptance plan") -Encoding UTF8
+    Set-Content -LiteralPath $negativeChecklistPath -Value ($negativePlanFrontmatter + "`n# Negative acceptance checklist") -Encoding UTF8
+
+    $negativePlanAuditFrontmatter = $planAuditFrontmatter.Replace('scope: plan:PLN-0001,PLN-0005', 'scope: plan:PLN-0001,PLN-0002,PLN-0005').Replace('related_plans: PLN-0001,PLN-0005', 'related_plans: PLN-0001,PLN-0002,PLN-0005')
+    $negativePlanAuditMatrix = @'
+
+<!-- plan-checklist-audit: PLN-0002 -->
+### PLN-0002 Plan/Checklist 审计
+
+- Plan: [Plan](../../plans/PLN-0002-negative-acceptance.md)
+- Checklist: [Checklist](../../plans/PLN-0002-negative-acceptance-checklist.md)
+
+| Control | Evidence | Verdict | Finding |
+|---|---|---|---|
+| PAIRING | IDs, frontmatter, and links checked | pass | none |
+| PLAN_TO_CHECKLIST | mandatory obligations mapped | pass | none |
+| CHECKLIST_TO_PLAN | no unsupported additions | pass | none |
+| CHECKED_EVIDENCE | no checked items | not-applicable | none |
+| GATE_COMPLETENESS | gates inspected | pass | none |
+| ARCHIVE_CLOSURE | closure inspected | pass | none |
+'@
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $planAuditRecordName) -Value ($negativePlanAuditFrontmatter + "`n" + $planAuditMatrix + $negativePlanAuditMatrix) -Encoding UTF8
+
+    $negativePlanAcceptanceName = 'AUD-0012-20260714-validator-plan-pln-0002-readiness.md'
+    $negativePlanAcceptanceFrontmatter = $acceptancePlanAuditFrontmatter.Replace('audit_id: AUD-0005', 'audit_id: AUD-0012').Replace('execution_context_id: 55555555-5555-4555-8555-555555555555', 'execution_context_id: cccccccc-cccc-4ccc-8ccc-cccccccccccc').Replace('scope: plan:PLN-0001', 'scope: plan:PLN-0002').Replace('evidence_run_id: 11111111-1111-4111-8111-111111111111', 'evidence_run_id: cccccccc-cccc-4ccc-9ccc-cccccccccccc').Replace('started_at: 2026-07-14T03:00:00+08:00', 'started_at: 2026-07-14T08:00:00+08:00').Replace('completed_at: 2026-07-14T03:15:00+08:00', 'completed_at: 2026-07-14T08:10:00+08:00').Replace('related_plans: PLN-0001', 'related_plans: PLN-0002')
+    $negativePlanAcceptanceMatrix = $acceptancePlanMatrix.Replace('PLN-0001', 'PLN-0002')
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $negativePlanAcceptanceName) -Value ($negativePlanAcceptanceFrontmatter + "`n" + $negativePlanAcceptanceMatrix) -Encoding UTF8
+
+    $negativeImplementationAcceptanceName = 'AUD-0013-20260714-validator-plan-pln-0002-negative-completion.md'
+    $negativeImplementationAcceptanceFrontmatter = @'
+---
+status: closed
+governance_contract: audit-loop/v3
+audit_schema: implementation-acceptance/v2
+audit_id: AUD-0013
+auditor: validator-test
+execution_context_id: dddddddd-dddd-4ddd-8ddd-dddddddddddd
+source_context_ids: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+audit_type: acceptance
+acceptance_type: implementation-completion
+acceptance_verdict: incomplete
+acceptance_next_action: implement
+plan_status_at_acceptance: active
+independence_basis: separate-context
+scope: plan:PLN-0002
+subject: negative implementation completion
+baseline: git:0000000000000000000000000000000000000000; worktree:clean
+evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean
+evidence_run_id: dddddddd-dddd-4ddd-9ddd-dddddddddddd
+effective_result_revision: none
+started_at: 2026-07-14T08:20:00+08:00
+completed_at: 2026-07-14T08:30:00+08:00
+last_updated: 2026-07-14
+related_audits: AUD-0012
+related_remediations: none
+related_implementations: none
+supersedes: none
+related_plans: PLN-0002
+---
+'@
+    $negativeImplementationAcceptanceMatrix = @'
+# Negative implementation completion
+
+<!-- implementation-acceptance-audit: PLN-0002 -->
+
+| Control | Evidence | Verdict | Finding |
+|---|---|---|---|
+| IMP_PRESENT | no IMP exists for PLN-0002 | fail | AUD-0013-F001 |
+| SCOPE_COMPLETE | cannot establish completion | fail | AUD-0013-F001 |
+| CHECKLIST_COMPLETE | no implementation evidence | fail | AUD-0013-F001 |
+| VALIDATION_GATES | no implementation gates | fail | AUD-0013-F001 |
+| AUDIT_CHAIN_CLEAN | readiness chain is clean | pass | none |
+| RESIDUAL_RISK | missing implementation is explicit | pass | none |
+| ARCHIVE_READY | plan is not archive-ready | fail | AUD-0013-F001 |
+
+### AUD-0013-F001 - Missing implementation attempt
+
+- Severity: high
+- Evidence: no IMP is indexed for PLN-0002
+- Impact: completion cannot be established
+- Recommendation: implement the ready plan
+- Owner: validator
+- Disposition: open
+
+## 验证结果
+
+- command: `fixture negative completion`; result: 失败 as expected
+'@
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $negativeImplementationAcceptanceName) -Value ($negativeImplementationAcceptanceFrontmatter + "`n" + $negativeImplementationAcceptanceMatrix) -Encoding UTF8
+    $negativeAuditIndex = $auditIndexContent + "`n- [AUD-0012](./records/$negativePlanAcceptanceName): ``status=closed``; ``remediation=none``; fixture.`n- [AUD-0013](./records/$negativeImplementationAcceptanceName): ``status=closed``; ``remediation=implementation-required``; fixture."
+    Set-Content -LiteralPath $auditIndexPath -Value $negativeAuditIndex -Encoding UTF8
+    $negativeImplementationAcceptanceResult = Invoke-Validator $fixtureRoot
+    if ($negativeImplementationAcceptanceResult.ExitCode -ne 0) {
+        throw "validator rejected a structurally valid negative completion acceptance without an IMP: $($negativeImplementationAcceptanceResult.Output)"
+    }
+    $misroutedNegativeAcceptance = $negativeImplementationAcceptanceFrontmatter.Replace('acceptance_next_action: implement', 'acceptance_next_action: remediate')
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $negativeImplementationAcceptanceName) -Value ($misroutedNegativeAcceptance + "`n" + $negativeImplementationAcceptanceMatrix) -Encoding UTF8
+    $misroutedNegativeAcceptanceResult = Invoke-Validator $fixtureRoot
+    if ($misroutedNegativeAcceptanceResult.ExitCode -eq 0 -or $misroutedNegativeAcceptanceResult.Output -notmatch 'acceptance_next_action=implement|index remediation does not match verdict') {
+        throw "validator accepted a negative completion acceptance routed to the wrong queue: $($misroutedNegativeAcceptanceResult.Output)"
+    }
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $negativeImplementationAcceptanceName) -Value ($negativeImplementationAcceptanceFrontmatter + "`n" + $negativeImplementationAcceptanceMatrix) -Encoding UTF8
+    $triggeredImplementationName = 'IMP-0002-20260714-validator-plan-pln-0002-negative-acceptance.md'
+    $triggeredImplementationFrontmatter = @'
+---
+status: in-progress
+governance_contract: audit-loop/v3
+implementation_schema: implementation/v2
+implementation_id: IMP-0002
+implementer: validator
+execution_context_id: 12121212-1212-4212-8212-121212121212
+scope: plan:PLN-0002
+related_plans: PLN-0002
+plan_acceptance_audits: AUD-0012
+trigger_audits: AUD-0013
+plan_evidence_revision: git:0000000000000000000000000000000000000000
+baseline: git:0000000000000000000000000000000000000000; worktree:clean
+result_revision: pending
+started_at: 2026-07-14T08:40:00+08:00
+completed_at: pending
+last_updated: 2026-07-14
+---
+'@
+    Set-Content -LiteralPath (Join-Path $implementationRecordsRoot $triggeredImplementationName) -Value ($triggeredImplementationFrontmatter + "`n# Triggered implementation") -Encoding UTF8
+    $implementedNegativeAuditIndex = $negativeAuditIndex.Replace('remediation=implementation-required', 'remediation=implemented-by:IMP-0002')
+    Set-Content -LiteralPath $auditIndexPath -Value $implementedNegativeAuditIndex -Encoding UTF8
+    $implementationIndexWithTrigger = (Get-Content -Raw -Encoding UTF8 (Join-Path $fixtureRoot 'implementations\README.md')) + "`n- [IMP-0002](./records/$triggeredImplementationName): ``status=in-progress``; ``audit=not-ready``; ``acceptance=not-ready``; fixture."
+    Set-Content -LiteralPath (Join-Path $fixtureRoot 'implementations\README.md') -Value $implementationIndexWithTrigger -Encoding UTF8
+    $implementedByTransitionResult = Invoke-Validator $fixtureRoot
+    if ($implementedByTransitionResult.ExitCode -ne 0) {
+        throw "validator rejected a valid implementation-required to implemented-by transition: $($implementedByTransitionResult.Output)"
+    }
+    Remove-Item -LiteralPath (Join-Path $implementationRecordsRoot $triggeredImplementationName)
+    Set-Content -LiteralPath (Join-Path $fixtureRoot 'implementations\README.md') -Value "# Implementations`n`n- [IMP-0001](./records/IMP-0001-20260714-validator-plan-pln-0001-fixture.md): ``status=completed``; ``audit=audited-by:AUD-0006``; ``acceptance=accepted-by:AUD-0007``; fixture." -Encoding UTF8
+    Remove-Item -LiteralPath $negativePlanPath, $negativeChecklistPath, (Join-Path $auditRecordsRoot $negativePlanAcceptanceName), (Join-Path $auditRecordsRoot $negativeImplementationAcceptanceName)
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $planAuditRecordName) -Value ($planAuditFrontmatter + "`n" + $planAuditMatrix) -Encoding UTF8
+    Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8
+
+    $auditRequiredAcceptanceName = 'AUD-0016-20260714-validator-plan-pln-0001-audit-required.md'
+    $auditRequiredAcceptanceFrontmatter = $implementationAcceptanceFrontmatter.Replace('audit_id: AUD-0007', 'audit_id: AUD-0016').Replace('execution_context_id: 77777777-7777-4777-8777-777777777777', 'execution_context_id: 16161616-1616-4616-8616-161616161616').Replace('source_context_ids: 55555555-5555-4555-8555-555555555555, 66666666-6666-4666-8666-666666666666, 33333333-3333-4333-8333-333333333333', 'source_context_ids: 55555555-5555-4555-8555-555555555555, 33333333-3333-4333-8333-333333333333').Replace('acceptance_verdict: complete', 'acceptance_verdict: incomplete').Replace('acceptance_next_action: none', 'acceptance_next_action: implementation-audit').Replace('evidence_run_id: 22222222-2222-4222-8222-222222222222', 'evidence_run_id: 16161616-1616-4616-9616-161616161616').Replace('started_at: 2026-07-14T05:00:00+08:00', 'started_at: 2026-07-14T04:20:00+08:00').Replace('completed_at: 2026-07-14T05:15:00+08:00', 'completed_at: 2026-07-14T04:25:00+08:00').Replace('related_audits: AUD-0005, AUD-0006', 'related_audits: AUD-0005')
+    $auditRequiredAcceptanceMatrix = $implementationAcceptanceMatrix.Replace('| AUDIT_CHAIN_CLEAN | fixture plan and implementation audit chains | pass | none |', '| AUDIT_CHAIN_CLEAN | implementation audit missing at snapshot | fail | AUD-0016-F001 |') + @'
+
+### AUD-0016-F001 - Implementation audit missing
+
+- Severity: high
+- Evidence: no implementation audit had completed at the acceptance snapshot
+- Impact: completion cannot be accepted
+- Recommendation: run an independent implementation audit
+- Owner: validator
+- Disposition: open
+'@
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $auditRequiredAcceptanceName) -Value ($auditRequiredAcceptanceFrontmatter + "`n" + $auditRequiredAcceptanceMatrix) -Encoding UTF8
+
+    $triggeredImplementationAuditName = 'AUD-0017-20260714-validator-implementation-imp-0001-triggered.md'
+    $triggeredImplementationAuditFrontmatter = $implementationAuditFrontmatter.Replace('audit_id: AUD-0006', 'audit_id: AUD-0017').Replace('execution_context_id: 66666666-6666-4666-8666-666666666666', 'execution_context_id: 17171717-1717-4717-8717-171717171717').Replace('source_context_ids: 33333333-3333-4333-8333-333333333333, 55555555-5555-4555-8555-555555555555', 'source_context_ids: 33333333-3333-4333-8333-333333333333, 55555555-5555-4555-8555-555555555555, 16161616-1616-4616-8616-161616161616').Replace('evidence_run_id: 66666666-6666-4666-9666-666666666666', 'evidence_run_id: 17171717-1717-4717-9717-171717171717').Replace('started_at: 2026-07-14T04:30:00+08:00', 'started_at: 2026-07-14T10:00:00+08:00').Replace('completed_at: 2026-07-14T04:45:00+08:00', 'completed_at: 2026-07-14T10:10:00+08:00').Replace('related_audits: AUD-0005', 'related_audits: AUD-0005, AUD-0016')
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $triggeredImplementationAuditName) -Value ($triggeredImplementationAuditFrontmatter + "`n" + $implementationAuditMatrix.Replace('AUD-0006', 'AUD-0017')) -Encoding UTF8
+
+    Remove-Item -LiteralPath (Join-Path $auditRecordsRoot $implementationAcceptanceName)
+    $auditedByIndex = ($auditIndexContent -split "`r?`n" | Where-Object { $_ -notmatch '\[AUD-0007\]' }) -join "`n"
+    $auditedByIndex += "`n- [AUD-0016](./records/$auditRequiredAcceptanceName): ``status=closed``; ``remediation=audited-by:AUD-0017``; fixture.`n- [AUD-0017](./records/$triggeredImplementationAuditName): ``status=closed``; ``remediation=none``; fixture."
+    Set-Content -LiteralPath $auditIndexPath -Value $auditedByIndex -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $fixtureRoot 'implementations\README.md') -Value "# Implementations`n`n- [IMP-0001](./records/IMP-0001-20260714-validator-plan-pln-0001-fixture.md): ``status=completed``; ``audit=audited-by:AUD-0017``; ``acceptance=pending``; fixture." -Encoding UTF8
+    $auditedByTransitionResult = Invoke-Validator $fixtureRoot
+    if ($auditedByTransitionResult.ExitCode -ne 0) {
+        throw "validator rejected a valid audit-required to audited-by transition: $($auditedByTransitionResult.Output)"
+    }
+    Remove-Item -LiteralPath (Join-Path $auditRecordsRoot $auditRequiredAcceptanceName), (Join-Path $auditRecordsRoot $triggeredImplementationAuditName)
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAcceptanceName) -Value ($implementationAcceptanceFrontmatter + "`n" + $implementationAcceptanceMatrix) -Encoding UTF8
+    Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $fixtureRoot 'implementations\README.md') -Value "# Implementations`n`n- [IMP-0001](./records/IMP-0001-20260714-validator-plan-pln-0001-fixture.md): ``status=completed``; ``audit=audited-by:AUD-0006``; ``acceptance=accepted-by:AUD-0007``; fixture." -Encoding UTF8
+
+    $supersededAuditName = 'AUD-0014-20260714-validator-feature-superseded-fixture.md'
+    $replacementAuditName = 'AUD-0015-20260714-validator-feature-superseded-fixture-replacement.md'
+    $supersededAudit = @'
+---
+status: superseded
+governance_contract: audit-loop/v3
+audit_id: AUD-0014
+auditor: validator-test
+execution_context_id: eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee
+audit_type: targeted
+scope: feature:superseded-fixture
+subject: superseded fixture
+baseline: git:1111111111111111111111111111111111111111; worktree:clean
+started_at: 2026-07-14T09:00:00+08:00
+completed_at: 2026-07-14T09:10:00+08:00
+last_updated: 2026-07-14
+related_audits: none
+related_remediations: none
+supersedes: none
+superseded_by: AUD-0015
+supersession_reason: baseline-drift
+related_plans: none
+---
+'@
+    $replacementAudit = @'
+---
+status: open
+governance_contract: audit-loop/v3
+audit_id: AUD-0015
+auditor: validator-test
+execution_context_id: ffffffff-ffff-4fff-8fff-ffffffffffff
+audit_type: targeted
+scope: feature:superseded-fixture
+subject: replacement fixture
+baseline: git:2222222222222222222222222222222222222222; worktree:clean
+started_at: 2026-07-14T09:10:00+08:00
+completed_at: pending
+last_updated: 2026-07-14
+related_audits: none
+related_remediations: none
+supersedes: AUD-0014
+related_plans: none
+---
+'@
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $supersededAuditName) -Value ($supersededAudit + "`n# Superseded") -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $replacementAuditName) -Value ($replacementAudit + "`n# Replacement") -Encoding UTF8
+    $supersededAuditIndex = $auditIndexContent + "`n- [AUD-0014](./records/$supersededAuditName): ``status=superseded``; ``remediation=none``; fixture.`n- [AUD-0015](./records/$replacementAuditName): ``status=open``; ``remediation=pending``; fixture."
+    Set-Content -LiteralPath $auditIndexPath -Value $supersededAuditIndex -Encoding UTF8
+    $supersededAuditResult = Invoke-Validator $fixtureRoot
+    if ($supersededAuditResult.ExitCode -ne 0) {
+        throw "validator rejected a valid stale-open supersession transition: $($supersededAuditResult.Output)"
+    }
+    Remove-Item -LiteralPath (Join-Path $auditRecordsRoot $supersededAuditName), (Join-Path $auditRecordsRoot $replacementAuditName)
+    Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8
+
     $invalidPlanAudit = $planAuditMatrix.Replace('| CHECKLIST_TO_PLAN | no unsupported contract additions | pass | none |', '')
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $planAuditRecordName) -Value ($planAuditFrontmatter + "`n" + $invalidPlanAudit) -Encoding UTF8
     $missingChecklistMatrixResult = Invoke-Validator $fixtureRoot
@@ -1083,7 +1350,7 @@ related_plans: PLN-0001
     }
 
     $global:LASTEXITCODE = 0
-    Write-Output 'Validator self-test passed: valid audit-loop/v3 context and linear IMP/REM chains accepted; self-review contexts, shared multi-plan AUDs, duplicate open work, placeholder evidence, blocked-state misrouting, disconnected revisions, forged transitions, dirty chains, and incomplete records rejected.'
+    Write-Output 'Validator self-test passed: split governance/subject revisions, negative completion acceptance, implemented-by/audited-by routing, superseded stale work, independent implementation audit, and linear IMP/REM chains accepted; self-review contexts, wrong evidence revisions, shared multi-plan AUDs, duplicate open work, placeholder evidence, blocked-state misrouting, disconnected revisions, forged transitions, dirty chains, and incomplete records rejected.'
 } finally {
     if (Test-Path -LiteralPath $allocatorRoot) {
         $resolvedAllocatorRoot = (Resolve-Path $allocatorRoot).Path

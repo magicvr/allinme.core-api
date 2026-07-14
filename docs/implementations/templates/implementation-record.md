@@ -8,6 +8,7 @@ execution_context_id: 00000000-0000-4000-8000-000000000000
 scope: plan:PLN-NNNN
 related_plans: PLN-NNNN
 plan_acceptance_audits: AUD-NNNN
+trigger_audits: none
 plan_evidence_revision: git:full-commit-sha
 baseline: git:full-commit-sha; worktree:clean
 result_revision: pending

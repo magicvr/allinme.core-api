@@ -22,7 +22,7 @@ description: Orchestrate plan audit, remediation, follow-up verification, and in
 ## 闭环
 
 1. `GOAL_MODE=standalone` 时建立或复用匹配的 persistent goal；`child` 时复用外层目标但不得创建、完成或阻塞它。目标是最新计划验收 `acceptance_verdict: ready`，且相关 AUD/REM 链无待整改、待复审或执行中的 open AUD。
-2. 将 `TARGET` 解析为不可变集合并识别阶段；优先恢复唯一 open AUD、待整改 AUD 或待复审 REM。若源 AUD 已有关联 `status=blocked; verification=not-ready` REM，停止并报告恢复条件，不得重复创建 REM。
+2. 将 `TARGET` 解析为不可变集合并识别阶段；优先恢复唯一且 revision 未漂移的 open AUD、待整改 AUD 或待复审 REM。stale open 必须按底层 prompt 终止为 superseded，不能永久占据队列。若源 AUD 已有关联 `status=blocked; verification=not-ready` REM，停止并报告恢复条件，不得重复创建 REM。
 3. 从索引派生该计划集合当前全部 `remediation=required` AUD，包括计划审计、follow-up 和先前失败的计划验收 AUD；调用 `$backend-fix-audit-findings TARGET=<AUD 列表>`。`remediation=decision-required` 不得进入自动整改。
 4. 仅当某计划在当前 revision 上不存在已关闭的当前合同计划审计，或上次审计后 plan/checklist/事实源发生漂移时，逐个调用 `$backend-plan-audit TARGET=<单一计划>`；新审计产生 finding 时返回步骤 3。禁止用共享 AUD 合并多个计划。
 5. 整改完成后，把每个待复审 REM 交给不同于整改上下文的新执行上下文调用 `$backend-follow-up-audit TARGET=<单一 REM>`。审计链干净后，再把每个计划交给另一个新的执行上下文调用 `$backend-plan-acceptance-audit TARGET=<单一计划>`。必须显式传递新的 `CONTEXT_ID`；无法创建独立上下文时停止并输出精确 handoff，不得在当前上下文自我复审或填写独立声明。

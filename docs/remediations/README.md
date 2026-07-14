@@ -47,13 +47,15 @@ related_plans: PLN-0005
 
 1. source audits/findings 与当前 baseline；
 2. finding 到 root cause、修改、测试和结果的逐项映射；
-3. 实际代码/文档/计划/CI 变更及完整 `result_revision`；
+3. 实际代码/文档/计划/CI 变更及完整 `result_revision`；该 revision 是纯 subject commit，最终 REM 状态与索引流转由后续治理提交固化；
 4. 命令、Evidence、未执行项、失败和剩余风险；
 5. 是否影响已有 IMP、关联哪些 implementation，以及是否已具备 follow-up audit 条件。
 
 `affects_implementation: true` 表示 REM 修改了产品代码、测试、migration、运行配置或发布 artifact。此时必须列出 `related_implementations`；REM 通过 follow-up 后，其 `result_revision` 进入对应 IMP 的 effective revision 链。历史 remediation/v1 记录保持不可变，不补写这些字段。
 
 新合同 REM 不得跨计划或跨 IMP 合并。实施 REM 的 `parent_result_revision` 必须等于创建时的 effective 链尾，关闭时 `result_revision` 必须为其 Git 后代；并行分叉必须先合并，才能进入复审。
+
+follow-up 的 `baseline` 必须是已经包含 completed/partial REM 和索引状态的干净治理快照，`evidence_revision` 才等于 REM `result_revision`。这样审计链快照与实际被测 subject revision 可分别复现。
 
 整改不能把源审计 finding 改写为 resolved。只有新的 follow-up audit 可以独立确认修复结果。
 

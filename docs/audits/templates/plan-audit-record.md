@@ -15,6 +15,8 @@ last_updated: YYYY-MM-DD
 related_audits: none
 related_remediations: none
 supersedes: none
+superseded_by: none
+supersession_reason: none
 related_plans: PLN-NNNN
 ---
 

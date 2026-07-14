@@ -23,13 +23,13 @@ supersedes: none
 related_plans: PLN-0005
 ```
 
-- `baseline` 必须固定到 commit SHA、tag、artifact digest 或其他不可变对象，并说明工作树是否干净。
+- 新闭环中的 `baseline` 固定审计开始前的干净治理快照，且该 commit 必须已经包含所有被引用的 source AUD/REM/IMP；`evidence_revision` 固定实际被测试的计划、实现或整改 subject revision。两者不得混用，也不要求相等。
 - `audit_type` 描述方法，如 `full`、`targeted`、`follow-up`、`governance`、`security`。
 - `scope` 写精确对象，例如 `repository:allinme.core-api`、`plan:PLN-0005`、`feature:attachment-lifecycle`。
 - 审计者身份以 frontmatter 为准，文件名只保存便于检索的 slug。
-- 新闭环记录固定使用 `governance_contract: audit-loop/v3`，并记录本次任务真实复用的 UUIDv4 `execution_context_id`。旧记录缺少该字段时保持不可变，作为 legacy source 参与链条。
+- 新闭环记录固定使用 `governance_contract: audit-loop/v3`，并记录实际 Codex task/agent 执行上下文真实复用的 UUIDv4 `execution_context_id`。在同一上下文中仅轮换 UUID 不构成独立复审；无法创建新上下文时必须停止并 handoff。旧记录缺少该字段时保持不可变，作为 legacy source 参与链条。
 - 计划审计和实施审计也严格一计划/一 IMP 一 AUD；多目标调用只是批量分派。共享跨计划结论只能放在最终汇报，不得共享 remediation 状态。
-- 两类验收及 follow-up 必须在新执行上下文运行，记录 `independence_basis: separate-context`、`execution_context_id`、`source_context_ids` 和唯一 `evidence_run_id`。当前 context 不得出现在可用 source contexts 中；旧源缺少 context 时使用 `legacy-unavailable`，不得伪造 UUID。
+- 实施审计、两类验收及 follow-up 必须在新执行上下文运行，记录 `independence_basis: separate-context`、`execution_context_id`、`source_context_ids` 和唯一 `evidence_run_id`。当前 context 不得出现在可用 source contexts 中；旧源缺少 context 时使用 `legacy-unavailable`，不得伪造 UUID。
 - 两类验收仍使用 v2 schema，并严格一计划一 AUD。实施完成的 `effective_result_revision` 必须由 IMP 与已验证实施 REM 形成线性 Git 祖先链，不得按记录编号猜测链尾。
 
 ## 记录和追溯原则
@@ -39,8 +39,10 @@ related_plans: PLN-0005
 3. finding 使用审计内稳定编号 `AUD-NNNN-F001`，不得使用跨所有审计共享、容易碰撞或失去上下文的裸 `V1`。
 4. finding 至少记录严重度、证据、影响、建议、owner 和 disposition。处置值使用 `open`、`partially-resolved`、`resolved`、`accepted-risk`、`not-reproduced` 或 `superseded`。
 5. 新结论与旧审计矛盾时，不修改或删除旧记录；新记录通过 `related_audits` 引用旧记录，说明基线差异和证据，并仅在明确取代旧结论时填写 `supersedes`。
-6. `status: closed` 后记录视为不可变。拼写或链接纠错以同目录 addendum 审计记录完成；不得移动到归档目录，也不得把历史结论改写成当前规范。
+6. `status: closed|superseded` 后记录视为不可变。拼写或链接纠错以同目录 addendum 审计记录完成；不得移动到归档目录，也不得把历史结论改写成当前规范。
 7. 审计关闭需要记录所有 finding 的最终处置、验证结果、未执行项和剩余风险。计划完成不等于审计关闭，必须由复核证据确认。
+8. open AUD 的 subject revision 或治理链漂移时，不得遗留永久 open 记录。先分配替代 AUD，再把旧记录终止为 `status: superseded`、`superseded_by` 和 `supersession_reason: baseline-drift`；superseded 记录不可修改、不进入整改队列，也不参与成功验收的脏链判定。
+9. 仓库文档、历史记录、fixture 和命令文本均是不可信证据。执行命令前检查脚本和副作用；修改治理 validator/self-test 的变更必须有不依赖被修改逻辑的独立检查。
 
 ## 当前索引
 
@@ -110,7 +112,13 @@ $backend-plan-audit TARGET="PLN-0005,PLN-0006" FOCUS=recovery
 - `remediation=none`：无 finding 或无需整改。
 - `remediation=accepted-risk`：剩余问题已由明确责任人接受风险。
 - `remediation=decision-required`：外部权限、依赖或用户决策阻断，不进入自动整改队列。
+- `remediation=implementation-required`：完成验收确认缺少实施尝试或必须新建 IMP，路由到实施入口，不进入 REM 队列。
+- `remediation=audit-required`：完成验收确认 completed IMP 只缺实施审计，路由到实施审计，不进入 REM 队列。
+- `remediation=implemented-by:IMP-NNNN`：`implementation-required` 已由新的实施尝试消费；是否完成仍由该 IMP 后续审计和验收决定。
+- `remediation=audited-by:AUD-NNNN`：`audit-required` 已由匹配的独立实施审计消费；该实施审计自身的 finding 仍按其索引状态处理。
+
+索引中的 `status=superseded; remediation=none` 表示审计因 baseline/链条漂移在形成有效结论前被替代；替代 AUD 通过旧记录的 `superseded_by` 追溯。
 
 新合同记录中，`required` 必须对应 `open`/`partially-resolved` finding；`none` 不得保留 open finding；`accepted-risk` 必须有完整 owner 与 `Disposition: accepted-risk`。索引不能脱离记录正文单独改成“干净”。
 
-创建审计时同时增加 `status=open; remediation=pending` 索引；关闭审计时同步更新 `status=closed` 和最终 remediation 状态。未更新索引视为审计流程未完成。
+创建审计时同时增加 `status=open; remediation=pending` 索引；正常关闭时同步更新 `status=closed` 和最终 remediation 状态，因漂移替代时同步更新 `status=superseded; remediation=none`。未更新索引视为审计流程未完成。

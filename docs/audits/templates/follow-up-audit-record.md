@@ -11,6 +11,7 @@ evidence_run_id: 00000000-0000-4000-8000-000000000000
 scope: follow-up:REM-NNNN
 subject: remediation follow-up
 baseline: git:full-commit-sha; worktree:clean
+evidence_revision: git:full-commit-sha; worktree:clean
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD
@@ -18,6 +19,8 @@ related_audits: AUD-NNNN
 related_remediations: REM-NNNN
 related_implementations: none
 supersedes: none
+superseded_by: none
+supersession_reason: none
 related_plans: PLN-NNNN
 ---
 
