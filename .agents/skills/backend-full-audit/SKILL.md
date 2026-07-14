@@ -11,6 +11,7 @@ description: Execute the repository's formal, traceable full backend audit. Use 
 4. Never use focus text to narrow the audit to a plan, feature, diff, directory, or PR. Suggest `$backend-plan-audit` when the user actually wants plan-scoped review.
 5. Never remediate findings in this command. Direct remediation to `$backend-fix-audit-findings` after the indexed audit record is complete.
 6. Stop and report the missing canonical prompt if the file cannot be read; do not reconstruct a reduced workflow from memory.
+7. 生成的审计记录和最终报告必须使用中文；代码、命令、路径、ID 及固定的 frontmatter/status 值保持原样。
 
 Example invocations:
 

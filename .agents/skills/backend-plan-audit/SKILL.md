@@ -13,6 +13,7 @@ description: Execute the repository's formal implementation-plan audit. Use when
 6. Do not claim repository-wide assurance. Recommend `$backend-full-audit` when evidence indicates a systemic issue outside the selected plans.
 7. Never remediate findings in this command. Direct remediation to `$backend-fix-audit-findings` after the indexed audit record is complete.
 8. Stop and report the missing canonical prompt if the file cannot be read; do not reconstruct a reduced workflow from memory.
+9. 生成的审计记录和最终报告必须使用中文；代码、命令、路径、ID 及固定的 frontmatter/status 值保持原样。
 
 Example invocations:
 

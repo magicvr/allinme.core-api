@@ -12,6 +12,8 @@ Use the existing skills as the only implementation of each phase. Do not restate
 - `$backend-fix-audit-findings`
 - `$backend-follow-up-audit`
 
+所有阶段生成的审计、整改、复审记录和最终汇报必须使用中文；代码、命令、路径、ID 以及固定 frontmatter/status 值保留原样。
+
 ## Inputs
 
 - `TARGET=active` by default: all active, unarchived plans.

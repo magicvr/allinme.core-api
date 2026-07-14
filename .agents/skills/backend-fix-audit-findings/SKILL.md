@@ -11,6 +11,7 @@ description: Remediate findings from every audit currently marked remediation=re
 4. Accept explicit audit IDs, paths, lists, topics, or natural-language descriptions. Never silently omit an invalid selected audit.
 5. Create and index a REM before implementation. Never edit a closed AUD or mark findings verified; hand completed work to `$backend-follow-up-audit`.
 6. Stop and report the missing canonical prompt if it cannot be read.
+7. 生成的整改记录和最终报告必须使用中文；代码、命令、路径、ID 及固定的 frontmatter/status 值保持原样。
 
 Examples:
 
