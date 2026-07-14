@@ -29,7 +29,7 @@ related_plans: PLN-0005
 - 审计者身份以 frontmatter 为准，文件名只保存便于检索的 slug。
 - 新计划审计必须使用 `audit_schema: plan-audit/v2` 和 [`templates/plan-audit-record.md`](./templates/plan-audit-record.md)。每个相关计划必须有独立的 Checklist 审计矩阵、plan/checklist 双链接和六项固定 Control；缺失时不得关闭。
 - 计划实施就绪验收使用 `audit_schema: plan-acceptance/v1`；实施审计使用 `audit_schema: implementation-audit/v1`；实施完成验收使用 `audit_schema: implementation-acceptance/v1`。三者都必须独立创建 AUD，不得把结论写回 IMP 或旧审计正文。
-- 两类验收 AUD 必须记录 `independence_basis` 和完整 SHA 的干净 `evidence_revision`。`ready`/`complete` 必须与全部矩阵 Control、AUD 索引 remediation 状态及 IMP acceptance 状态一致；计划就绪还必须通过 `PLAN_AUDIT_CHAIN_CLEAN`，实施完成必须同时清理计划和实施审计链。
+- 两类验收 AUD 必须记录 `independence_basis`、完整 SHA 的干净 `evidence_revision` 和全局唯一 UUIDv4 `evidence_run_id`；`baseline` 必须与 `evidence_revision` 相同。验收链必须从索引按 PLN/IMP 派生，`related_audits` 至少包含最新计划审计或实施审计、最新计划验收及终端 follow-up，不得通过漏列较新的脏记录制造干净链条。`ready`/`complete` 必须与全部矩阵 Control、AUD 索引 remediation 状态及 IMP acceptance 状态一致；计划就绪还必须通过 `PLAN_AUDIT_CHAIN_CLEAN`，实施完成必须同时清理计划和实施审计链。
 
 ## 记录和追溯原则
 

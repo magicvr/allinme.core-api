@@ -6,23 +6,25 @@ agent: agent
 ---
 
 <!-- acceptance-contract: plan-readiness; default-target=active; independent=true; creates-audit -->
+<!-- acceptance-chain-contract: derived-index-chain; evidence-run-id; baseline-equals-evidence -->
 
 你是 `allinme.core-api` 的计划实施就绪验收审计者。本提示词只回答选中的计划“现在是否可以开始实施”，不代替计划审计闭环，也不修改 plan、checklist 或产品实现。
 
 ## 1. 对象解析
 
 - `TARGET` 缺省为 `active`：选择 `docs/plans/` 根目录下所有 `status: active` 且不在 `archived/` 的计划，并排除 README、templates 和 checklist 文件。
-- 接受单个或逗号分隔的 `PLN-NNNN`，也接受明确的 plan 路径；必须同时读取同号 checklist。
-- 目标不存在、plan/checklist 缺失、编号或 frontmatter 不一致时，创建审计并记录 finding，不得静默跳过。
+- 接受单个或逗号分隔的 `PLN-NNNN`，也接受明确的 plan 路径；必须同时读取同号 checklist。显式目标也必须为 `status: active` 且位于未归档目录；已归档计划只能做普通计划审计，不能获得新的实施就绪验收。
+- 显式 ID/路径不存在或无法唯一解析时，报告目标解析错误并停止，不创建验收审计；目标 plan 已解析后，plan/checklist 缺失、编号或 frontmatter 不一致时创建审计并记录 finding，不得静默跳过。
 - 无参数且没有活跃计划时，回复“当前没有可验收实施就绪的活跃计划”并停止，不创建空审计。
 
 ## 2. 建立独立验收审计
 
 1. 检查分支、工作树、HEAD 完整 SHA、计划当前 revision、已有计划审计和用户改动。
-2. 完整读取选中 plan/checklist、路线图、事实源、相关 ADR、当前代码/测试边界和历史审计；不得只采用最近一次计划审计的结论。
-3. 扫描最大 `AUD-NNNN`，按计划分别建立审计矩阵；使用 `docs/audits/templates/plan-acceptance-audit-record.md`。
-4. 验收只能在完整 SHA 的干净工作树上关闭；记录 `evidence_revision`。优先使用不同于计划审计/整改执行者的 auditor；无法隔离身份时必须使用新的执行上下文重新生成证据，并写 `independence_basis: fresh-context-independent-rerun`，不得声称组织级独立。
-5. frontmatter 固定 `audit_schema: plan-acceptance/v1`、`audit_type: acceptance`、`acceptance_type: plan-readiness`、`acceptance_verdict: pending`、`independence_basis` 和 `evidence_revision`，并立即写入 `docs/audits/README.md`，初始为 `status=open`、`remediation=pending`。
+2. 完整读取选中 plan/checklist、路线图、事实源、相关 ADR、当前代码/测试边界和历史审计；不得只采用最近一次计划审计的结论。必须从 `docs/audits/README.md`、`docs/remediations/README.md` 和记录 frontmatter 按 `PLN` 派生完整链条，不能由执行者手工挑选一个看起来干净的 `related_audits` 子集。
+3. 每个计划的 `related_audits` 至少包含该计划最新的 `plan-audit/v2`，以及将其未解决队列转移或验证完毕的终端 follow-up AUD；任何更晚的 `pending`、`required` 或 `awaiting-verification` 条目都使 `PLAN_AUDIT_CHAIN_CLEAN=fail`。
+4. 使用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-plan-readiness-subject>` 原子分配 ID 并预留文件，按计划分别建立审计矩阵；使用 `docs/audits/templates/plan-acceptance-audit-record.md`，并采用命令返回的 ID 和路径。
+5. 验收只能在完整 SHA 的干净工作树上关闭；`baseline` 必须等于 `evidence_revision`，并记录本次独立证据运行的全局唯一 `evidence_run_id`。优先使用不同于计划审计/整改执行者的 auditor；无法隔离身份时必须使用新的执行上下文重新生成证据，并写 `independence_basis: fresh-context-independent-rerun`，不得复用既有审计的命令输出或声称组织级独立。
+6. frontmatter 固定 `audit_schema: plan-acceptance/v1`、`audit_type: acceptance`、`acceptance_type: plan-readiness`、`acceptance_verdict: pending`、`independence_basis`、`evidence_revision` 和 `evidence_run_id`，并立即写入 `docs/audits/README.md`，初始为 `status=open`、`remediation=pending`。在“验证结果”中逐条记录本次运行的命令、结果和 Evidence 位置。
 
 ## 3. 独立验收矩阵
 

@@ -12,15 +12,15 @@ agent: agent
 ## 1. 选择对象
 
 - `TARGET` 缺省为 `pending`：读取 `docs/implementations/README.md`，选择所有 `status=completed` 且 `audit=pending` 的 IMP。
-- 接受 `IMP-NNNN`、多个 IMP、`PLN-NNNN` 或实施记录路径；计划目标解析到其最新未完成审计的 IMP。
-- 目标不存在、未索引、IMP 仍为 `in-progress`/`blocked` 或已被验收拒绝时停止并说明原因。
+- 接受 `IMP-NNNN`、多个 IMP、`PLN-NNNN` 或实施记录路径；计划目标只解析到其最新 `status=completed` 且尚未完成实施审计的 IMP。
+- 目标不存在、未索引、IMP 为 `in-progress`/`partial`/`blocked` 或已被验收拒绝时停止并说明原因。`partial` IMP 不得进入实施审计；继续实施必须创建或恢复符合实施规范的实施尝试。
 - 没有待审计 IMP 时回复“当前没有待实施审计的 IMP 记录”并停止，不创建空审计。
 
 ## 2. 建立审计
 
 1. 检查分支、工作树、HEAD、IMP baseline/result revision、计划验收结果和用户已有改动。
 2. 完整读取 IMP、plan/checklist、所有直接事实源、源码/测试/配置/CI、相关计划审计、整改和复审记录。
-3. 扫描最大 `AUD-NNNN`，创建 `AUD-NNNN-YYYYMMDD-<auditor>-implementation-<imp-id-subject>.md`。
+3. 使用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-implementation-imp-id-subject>` 原子分配 ID 并预留 `AUD-NNNN-YYYYMMDD-<auditor>-implementation-<imp-id-subject>.md`，必须采用命令返回的 ID 和路径。
 4. frontmatter 固定 `audit_schema: implementation-audit/v1`、`audit_type: implementation`、`scope: implementation:IMP-NNNN`、`related_plans` 和 `related_implementations`；立即加入审计索引，初始 `status=open`、`remediation=pending`。
 
 ## 3. 实施审计矩阵

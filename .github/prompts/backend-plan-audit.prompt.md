@@ -15,11 +15,11 @@ agent: agent
 - `TARGET=PLN-NNNN`：选择该计划及其 checklist；允许选择活跃或归档计划，但必须在记录中说明状态。
 - `TARGET=PLN-NNNN,PLN-NNNN`：选择多个计划，去重后按编号升序审计。
 - 也可接受用户明确提供的 plan 文件路径；必须解析出 `plan_id`，并同时加载同号 checklist。
-- 不存在、重复 ID、plan/checklist 缺失、文件名与 frontmatter 不一致时，将其记录为审计 finding，不得静默跳过。
+- 显式 ID/路径不存在、重复到无法唯一解析或不是 plan 文件时，报告目标解析错误并停止，不创建审计；目标 plan 已唯一解析后，checklist 缺失、文件名与 frontmatter 不一致等对象完整性问题记录为审计 finding，不得静默跳过。
 - `AUDITOR` 缺省为当前 AI/工具的稳定 slug。
 - `FOCUS` 只增加某主题的检查深度，不得跳过本提示词规定的其他计划审计项。
 
-未指定 `TARGET` 且没有活跃计划时，回复“当前没有可审计的活跃计划”并停止，不创建空审计记录。用户明确指定的对象无法解析时，报告错误并停止。
+未指定 `TARGET` 且没有活跃计划时，回复“当前没有可审计的活跃计划”并停止，不创建空审计记录。目标解析错误与已解析对象的审计 finding 必须按上一条严格区分。
 
 严格遵循 [`docs/audits/README.md`](../../docs/audits/README.md) 和 [`docs/plans/README.md`](../../docs/plans/README.md)。历史审计不覆盖，历史计划不改写为当前规范。
 
@@ -27,7 +27,7 @@ agent: agent
 
 1. 检查当前分支、工作树、HEAD 完整 SHA、最近提交和用户已有改动。
 2. 完整读取所有选中 plan/checklist、计划索引、路线图，以及与这些计划/主题相关的历史 audits。不得只读取 plan 后根据文件名或摘要推断 checklist 内容。
-3. 扫描最大 `AUD-NNNN` 并创建一份审计记录：
+3. 使用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-plan-subject>` 原子分配 ID 并预留文件，必须采用命令返回的 `AUD-NNNN` 和路径，绝不自行猜测、覆盖或复用记录：
    - 单计划：`AUD-NNNN-YYYYMMDD-<auditor>-plan-<plan-id-subject>.md`；
    - 多计划或全部活跃计划：`AUD-NNNN-YYYYMMDD-<auditor>-plan-active-plans.md` 或 `...-plan-selected-plans.md`。
 4. 使用 [`docs/audits/templates/plan-audit-record.md`](../../docs/audits/templates/plan-audit-record.md)；固定 `audit_schema: plan-audit/v2`。`scope` 使用 `plan:PLN-NNNN` 或逗号分隔的计划 ID；`audit_type: targeted`；`related_plans` 列出全部对象。

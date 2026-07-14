@@ -11,6 +11,7 @@ scope: plan:PLN-NNNN
 subject: plan readiness acceptance
 baseline: git:full-commit-sha; worktree:clean
 evidence_revision: git:full-commit-sha; worktree:clean
+evidence_run_id: 00000000-0000-4000-8000-000000000000
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD

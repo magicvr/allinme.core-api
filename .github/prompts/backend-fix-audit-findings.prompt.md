@@ -21,7 +21,7 @@ agent: agent
 
 1. 检查分支、工作树、HEAD 完整 SHA、用户已有改动和源审计 baseline。
 2. 完整读取选中审计、其 findings、相关 plans、历史 follow-up audits 和直接事实源。
-3. 扫描 `docs/remediations/records/` 最大 `REM-NNNN` 并加一，创建：
+3. 使用 `docs/tools/reserve-governance-record.ps1 -Kind REM -Suffix <YYYYMMDD-owner-scope-subject>` 原子分配 ID 并预留记录，必须采用命令返回的 `REM-NNNN` 和路径：
    - 单审计：`REM-NNNN-YYYYMMDD-<owner>-audit-<audit-id-subject>.md`；
    - 多审计：`REM-NNNN-YYYYMMDD-<owner>-audit-active-audits.md` 或 `...-selected-audits.md`。
 4. frontmatter 至少记录 `status: in-progress`、`remediation_id`、`implementer`、`scope`、`source_audits`、`source_findings`、`baseline`、`started_at`、`last_updated` 和 `related_plans`。

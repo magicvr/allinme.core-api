@@ -17,7 +17,7 @@
 4. `status=completed`：计划范围已实施且本地 Evidence 齐全；`audit=pending`；`acceptance=pending`。
 5. `status=partial` 或 `status=blocked`：必须逐项记录未完成内容、阻断原因和恢复条件；不得进入完成验收。
 6. 实施审计完成后，索引写 `audit=audited-by:AUD-NNNN`；整改和复审仍以 `docs/audits/` 与 `docs/remediations/` 为准。
-7. 完成验收必须重新检查计划与实施两条审计链、IMP result revision 和当前干净 evidence revision；通过后索引写 `acceptance=accepted-by:AUD-NNNN`，失败或阻断写 `acceptance=rejected-by:AUD-NNNN`。计划不会自动归档。
+7. 完成验收必须从索引派生完整计划与实施审计链，引用最新 ready 计划验收和最新实施审计，重新检查 IMP result revision，并在与 baseline 相同的干净 evidence revision 上生成唯一 `evidence_run_id`；通过后索引写 `acceptance=accepted-by:AUD-NNNN`，失败或阻断写 `acceptance=rejected-by:AUD-NNNN`。计划不会自动归档。
 
 `completed`、`partial`、`blocked` 的 IMP 记录不可改写。发现实施缺陷时创建 REM 或新的 IMP；不得通过改写历史 IMP 伪造闭环完成。
 

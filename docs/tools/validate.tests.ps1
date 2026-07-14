@@ -1,7 +1,9 @@
 $ErrorActionPreference = 'Stop'
 
 $fixtureRoot = Join-Path $PSScriptRoot ('.validate-fixture-' + [Guid]::NewGuid().ToString('N'))
+$allocatorRoot = Join-Path $PSScriptRoot ('.allocator-fixture-' + [Guid]::NewGuid().ToString('N'))
 $validator = Join-Path $PSScriptRoot 'validate.ps1'
+$allocator = Join-Path $PSScriptRoot 'reserve-governance-record.ps1'
 
 function Invoke-Validator([string]$DocsRoot) {
     $previousErrorAction = $ErrorActionPreference
@@ -22,6 +24,15 @@ function Invoke-Validator([string]$DocsRoot) {
 
 try {
     New-Item -ItemType Directory -Path $fixtureRoot | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $allocatorRoot 'docs\audits\records') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $allocatorRoot 'docs\remediations\records') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $allocatorRoot 'docs\implementations\records') -Force | Out-Null
+    $firstAllocation = & $allocator -Kind AUD -Suffix '20260714-validator-plan-first' -RepositoryRoot $allocatorRoot
+    $secondAllocation = & $allocator -Kind AUD -Suffix '20260714-validator-plan-second' -RepositoryRoot $allocatorRoot
+    if ($firstAllocation -notmatch '^AUD-0001\s+docs/audits/records/AUD-0001-' -or
+        $secondAllocation -notmatch '^AUD-0002\s+docs/audits/records/AUD-0002-') {
+        throw "governance allocator did not reserve monotonically increasing IDs: $firstAllocation / $secondAllocation"
+    }
     $frontmatter = @'
 ---
 status: active
@@ -372,6 +383,7 @@ scope: plan:PLN-0001,PLN-0005
 subject: validator plan readiness
 baseline: git:0000000000000000000000000000000000000000; worktree:clean
 evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean
+evidence_run_id: 11111111-1111-4111-8111-111111111111
 started_at: 2026-07-14T03:00:00+08:00
 completed_at: 2026-07-14T03:15:00+08:00
 last_updated: 2026-07-14
@@ -489,10 +501,11 @@ scope: plan:PLN-0001
 subject: validator implementation completion
 baseline: git:1111111111111111111111111111111111111111; worktree:clean
 evidence_revision: git:1111111111111111111111111111111111111111; worktree:clean
+evidence_run_id: 22222222-2222-4222-8222-222222222222
 started_at: 2026-07-14T05:00:00+08:00
 completed_at: 2026-07-14T05:15:00+08:00
 last_updated: 2026-07-14
-related_audits: AUD-0006
+related_audits: AUD-0005, AUD-0006
 related_remediations: none
 related_implementations: IMP-0001
 supersedes: none
@@ -556,10 +569,68 @@ related_plans: PLN-0001
     $missingRelatedPlanAudit = $acceptancePlanAuditFrontmatter.Replace('related_audits: AUD-0004', 'related_audits: none')
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($missingRelatedPlanAudit + "`n" + $acceptancePlanMatrix) -Encoding UTF8
     $missingRelatedPlanAuditResult = Invoke-Validator $fixtureRoot
-    if ($missingRelatedPlanAuditResult.ExitCode -eq 0 -or $missingRelatedPlanAuditResult.Output -notmatch 'matching closed plan-audit/v2') {
+    if ($missingRelatedPlanAuditResult.ExitCode -eq 0 -or $missingRelatedPlanAuditResult.Output -notmatch 'latest matching plan audit|matching closed plan-audit/v2') {
         throw "validator accepted plan readiness without a matching plan audit: $($missingRelatedPlanAuditResult.Output)"
     }
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($acceptancePlanAuditFrontmatter + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+
+    $mismatchedEvidenceRevision = $acceptancePlanAuditFrontmatter.Replace(
+        'evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean',
+        'evidence_revision: git:3333333333333333333333333333333333333333; worktree:clean'
+    )
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($mismatchedEvidenceRevision + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+    $mismatchedEvidenceRevisionResult = Invoke-Validator $fixtureRoot
+    if ($mismatchedEvidenceRevisionResult.ExitCode -eq 0 -or $mismatchedEvidenceRevisionResult.Output -notmatch 'evidence_revision must match baseline') {
+        throw "validator accepted acceptance evidence from a different revision: $($mismatchedEvidenceRevisionResult.Output)"
+    }
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($acceptancePlanAuditFrontmatter + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+
+    $sameAuditorFrontmatter = $acceptancePlanAuditFrontmatter.Replace('independence_basis: fresh-context-independent-rerun', 'independence_basis: separate-auditor')
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($sameAuditorFrontmatter + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+    $sameAuditorResult = Invoke-Validator $fixtureRoot
+    if ($sameAuditorResult.ExitCode -eq 0 -or $sameAuditorResult.Output -notmatch 'must use a different auditor') {
+        throw "validator accepted a separate-auditor claim from the same auditor: $($sameAuditorResult.Output)"
+    }
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($acceptancePlanAuditFrontmatter + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+
+    $dirtyOmittedAuditFrontmatter = $planAuditFrontmatter.Replace('AUD-0004', 'AUD-0003').Replace('2026-07-14T00:30:00+08:00', '2026-07-14T00:20:00+08:00').Replace('2026-07-14T00:45:00+08:00', '2026-07-14T00:25:00+08:00')
+    $dirtyOmittedAuditName = 'AUD-0003-20260714-validator-plan-omitted-dirty-fixture.md'
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $dirtyOmittedAuditName) -Value ($dirtyOmittedAuditFrontmatter + "`n" + $planAuditMatrix) -Encoding UTF8
+    $dirtyOmittedIndex = $auditIndexContent + "`n- [AUD-0003](./records/$dirtyOmittedAuditName): ``status=closed``; ``remediation=required``; omitted dirty fixture."
+    Set-Content -LiteralPath $auditIndexPath -Value $dirtyOmittedIndex -Encoding UTF8
+    $dirtyOmittedResult = Invoke-Validator $fixtureRoot
+    if ($dirtyOmittedResult.ExitCode -eq 0 -or $dirtyOmittedResult.Output -notmatch 'dirty derived audit chain') {
+        throw "validator accepted readiness while omitting a dirty related audit: $($dirtyOmittedResult.Output)"
+    }
+    Remove-Item -LiteralPath (Join-Path $auditRecordsRoot $dirtyOmittedAuditName)
+    Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8
+
+    $missingLatestPlanAcceptance = $implementationAcceptanceFrontmatter.Replace('related_audits: AUD-0005, AUD-0006', 'related_audits: AUD-0006')
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAcceptanceName) -Value ($missingLatestPlanAcceptance + "`n" + $implementationAcceptanceMatrix) -Encoding UTF8
+    $missingLatestPlanAcceptanceResult = Invoke-Validator $fixtureRoot
+    if ($missingLatestPlanAcceptanceResult.ExitCode -eq 0 -or $missingLatestPlanAcceptanceResult.Output -notmatch 'latest plan acceptance') {
+        throw "validator accepted completion without the latest plan acceptance: $($missingLatestPlanAcceptanceResult.Output)"
+    }
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAcceptanceName) -Value ($implementationAcceptanceFrontmatter + "`n" + $implementationAcceptanceMatrix) -Encoding UTF8
+
+    $duplicateEvidenceRun = $implementationAcceptanceFrontmatter.Replace('22222222-2222-4222-8222-222222222222', '11111111-1111-4111-8111-111111111111')
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAcceptanceName) -Value ($duplicateEvidenceRun + "`n" + $implementationAcceptanceMatrix) -Encoding UTF8
+    $duplicateEvidenceRunResult = Invoke-Validator $fixtureRoot
+    if ($duplicateEvidenceRunResult.ExitCode -eq 0 -or $duplicateEvidenceRunResult.Output -notmatch 'evidence_run_id must be globally unique') {
+        throw "validator accepted a reused acceptance evidence run: $($duplicateEvidenceRunResult.Output)"
+    }
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAcceptanceName) -Value ($implementationAcceptanceFrontmatter + "`n" + $implementationAcceptanceMatrix) -Encoding UTF8
+
+    $partialImplementation = $implementationFrontmatter.Replace('status: completed', 'status: partial')
+    $partialImplementationIndex = (Get-Content -Raw -Encoding UTF8 (Join-Path $fixtureRoot 'implementations\README.md')).Replace('status=completed', 'status=partial')
+    Set-Content -LiteralPath (Join-Path $implementationRecordsRoot $implementationRecordName) -Value ($partialImplementation + "`n# Implementation") -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $fixtureRoot 'implementations\README.md') -Value $partialImplementationIndex -Encoding UTF8
+    $partialImplementationResult = Invoke-Validator $fixtureRoot
+    if ($partialImplementationResult.ExitCode -eq 0 -or $partialImplementationResult.Output -notmatch 'may only reference a completed IMP') {
+        throw "validator accepted an implementation audit for a partial IMP: $($partialImplementationResult.Output)"
+    }
+    Set-Content -LiteralPath (Join-Path $implementationRecordsRoot $implementationRecordName) -Value ($implementationFrontmatter + "`n# Implementation") -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $fixtureRoot 'implementations\README.md') -Value "# Implementations`n`n- [IMP-0001](./records/IMP-0001-20260714-validator-plan-pln-0001-fixture.md): ``status=completed``; ``audit=audited-by:AUD-0006``; ``acceptance=accepted-by:AUD-0007``; fixture." -Encoding UTF8
 
     $missingChainControl = $acceptancePlanMatrix.Replace('| PLAN_AUDIT_CHAIN_CLEAN | fixture plan audit chain | pass | none |', '')
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($acceptancePlanAuditFrontmatter + "`n" + $missingChainControl) -Encoding UTF8
@@ -643,8 +714,16 @@ related_plans: PLN-0001
     }
 
     $global:LASTEXITCODE = 0
-    Write-Output 'Validator self-test passed: valid governance accepted; phase-five contradictions, incomplete matrices, contradictory acceptance verdicts, missing audit-chain controls, dirty acceptance evidence, broken AUD/IMP/PLN references, unindexed audits, missing links, orphan plans, and incomplete closed audits rejected.'
+    Write-Output 'Validator self-test passed: valid governance and atomic ID allocation accepted; stale or dirty audit chains, reused evidence runs, revision drift, partial IMP audits, incomplete matrices, broken references, and invalid lifecycle states rejected.'
 } finally {
+    if (Test-Path -LiteralPath $allocatorRoot) {
+        $resolvedAllocatorRoot = (Resolve-Path $allocatorRoot).Path
+        $allowedAllocatorPrefix = (Resolve-Path $PSScriptRoot).Path + [System.IO.Path]::DirectorySeparatorChar + '.allocator-fixture-'
+        if (-not $resolvedAllocatorRoot.StartsWith($allowedAllocatorPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove unexpected allocator fixture path: $resolvedAllocatorRoot"
+        }
+        Remove-Item -LiteralPath $resolvedAllocatorRoot -Recurse -Force
+    }
     if (Test-Path -LiteralPath $fixtureRoot) {
         $resolvedFixtureRoot = (Resolve-Path $fixtureRoot).Path
         $allowedPrefix = (Resolve-Path $PSScriptRoot).Path + [System.IO.Path]::DirectorySeparatorChar + '.validate-fixture-'
