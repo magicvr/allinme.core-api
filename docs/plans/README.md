@@ -43,3 +43,9 @@ applies_to: implementation roadmap phase 6 pages
 - 审计可关联一个或多个计划，但审计 ID 与计划 ID 分别递增，不能共用编号。
 - 审计发现需要大规模整改时，新建计划并在审计的 `related_plans` 中引用；小范围修复可直接记录在审计中。
 - 计划完成不自动关闭审计。审计者必须复核修复或明确记录接受风险后，才能关闭审计。
+
+## 计划审计闭环与验收
+
+计划审计闭环使用 `$backend-plan-audit-until-ready`：先执行 `$backend-plan-audit`，再通过 `$backend-fix-audit-findings` 和 `$backend-follow-up-audit` 迭代清理 findings，最后运行独立的 `$backend-plan-acceptance-audit`。
+
+计划验收审计不依赖闭环上下文，可单独执行；无 `TARGET` 时选择所有活跃且未归档计划，并对每个计划给出 `ready`、`not-ready` 或 `blocked`。只有 `ready` 的计划才允许进入 `$backend-implement-plan`。

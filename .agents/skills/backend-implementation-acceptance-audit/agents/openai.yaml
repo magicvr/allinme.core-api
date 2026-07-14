@@ -1,0 +1,6 @@
+interface:
+  display_name: "Backend Implementation Acceptance Audit"
+  short_description: "Verify whether selected plans are fully implemented"
+  default_prompt: "Use $backend-implementation-acceptance-audit to verify that active plans are fully implemented."
+policy:
+  allow_implicit_invocation: false

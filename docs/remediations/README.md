@@ -48,7 +48,7 @@ related_plans: PLN-0005
 
 ## 当前索引
 
-- [`REM-0006`](./records/REM-0006-20260714-codex-audit-aud-0009-wp-facts-exact-output.md)：`status=in-progress`；`verification=not-ready`；整改 `AUD-0009-F001` 的 `WP-Facts` exact-output allowlist gap。
+- [`REM-0006`](./records/REM-0006-20260714-codex-audit-aud-0009-wp-facts-exact-output.md)：`status=completed`；`verification=pending`；整改 `AUD-0009-F001` 的 `WP-Facts` exact-output allowlist gap，等待独立复审。
 - [`REM-0005`](./records/REM-0005-20260714-codex-audit-active-audits.md)：`status=completed`；`verification=partial-by:AUD-0009`；整改 `AUD-0007-F001`、`AUD-0008-F001` 与 `AUD-0008-F002`。
 - [`REM-0004`](./records/REM-0004-20260714-codex-audit-aud-0006-contract-clause-parsers.md)：`status=completed`；`verification=partial-by:AUD-0008`；五个精确复现已修正，但同 clause deferral mask、整行 rejection 豁免和未识别关系词仍可绕过 validator。
 - [`REM-0003`](./records/REM-0003-20260714-codex-audit-aud-0005-contract-validators.md)：`status=completed`；`verification=partial-by:AUD-0006`；当前结构化 contract/DAG 正确，但两类 additive contradiction 仍可绕过 validator。

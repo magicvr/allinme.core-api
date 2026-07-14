@@ -342,6 +342,151 @@ related_plans: none
     $remediationIndexPath = Join-Path $fixtureRoot 'remediations\README.md'
     Set-Content -LiteralPath $remediationIndexPath -Value ("# Remediations`n`n- [REM-0001](./records/$remediationRecordName): ``status=completed``; ``verification=pending``; fixture.") -Encoding UTF8
 
+    $acceptancePlanAuditFrontmatter = @'
+---
+status: open
+audit_schema: plan-acceptance/v1
+audit_id: AUD-0005
+auditor: validator-test
+audit_type: acceptance
+acceptance_type: plan-readiness
+acceptance_verdict: ready
+scope: plan:PLN-0001
+subject: validator plan readiness
+baseline: git:0000000; worktree:clean
+started_at: 2026-07-14T03:00:00+08:00
+completed_at: pending
+last_updated: 2026-07-14
+related_audits: AUD-0004
+related_remediations: none
+supersedes: none
+related_plans: PLN-0001
+---
+'@
+    $acceptancePlanAuditName = 'AUD-0005-20260714-validator-plan-validator-readiness.md'
+    $acceptancePlanMatrix = @'
+# Plan readiness acceptance
+
+<!-- plan-acceptance-audit: PLN-0001 -->
+
+| Control | Evidence | Verdict | Finding |
+|---|---|---|---|
+| READY_IDENTITY | fixture identity | pass | none |
+| READY_SCOPE | fixture scope | pass | none |
+| READY_FACTS | fixture facts | pass | none |
+| READY_DEPENDENCIES | fixture dependencies | pass | none |
+| READY_DESIGN | fixture design | pass | none |
+| READY_EVIDENCE | fixture evidence | pass | none |
+| READY_GATES | fixture gates | pass | none |
+'@
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($acceptancePlanAuditFrontmatter + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+
+    $implementationRecordsRoot = Join-Path $fixtureRoot 'implementations\records'
+    $implementationTemplatesRoot = Join-Path $fixtureRoot 'implementations\templates'
+    New-Item -ItemType Directory -Path $implementationRecordsRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $implementationTemplatesRoot -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $fixtureRoot 'implementations\README.md') -Value "# Implementations`n`n- [IMP-0001](./records/IMP-0001-20260714-validator-plan-pln-0001-fixture.md): ``status=completed``; ``audit=pending``; ``acceptance=pending``; fixture." -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $implementationTemplatesRoot 'implementation-record.md') -Value '# Template' -Encoding UTF8
+    $implementationFrontmatter = @'
+---
+status: completed
+implementation_id: IMP-0001
+implementer: validator
+scope: plan:PLN-0001
+related_plans: PLN-0001
+plan_acceptance_audits: AUD-0005
+baseline: git:0000000; worktree:clean
+result_revision: git:1111111
+started_at: 2026-07-14T03:30:00+08:00
+completed_at: 2026-07-14T04:00:00+08:00
+last_updated: 2026-07-14
+---
+'@
+    $implementationRecordName = 'IMP-0001-20260714-validator-plan-pln-0001-fixture.md'
+    Set-Content -LiteralPath (Join-Path $implementationRecordsRoot $implementationRecordName) -Value ($implementationFrontmatter + "`n# Implementation") -Encoding UTF8
+
+    $implementationAuditFrontmatter = @'
+---
+status: open
+audit_schema: implementation-audit/v1
+audit_id: AUD-0006
+auditor: validator-test
+audit_type: implementation
+scope: implementation:IMP-0001
+subject: validator implementation
+baseline: git:1111111; worktree:clean
+started_at: 2026-07-14T04:30:00+08:00
+completed_at: pending
+last_updated: 2026-07-14
+related_audits: none
+related_remediations: none
+related_implementations: IMP-0001
+supersedes: none
+related_plans: PLN-0001
+---
+'@
+    $implementationAuditName = 'AUD-0006-20260714-validator-implementation-imp-0001-fixture.md'
+    $implementationAuditMatrix = @'
+# Implementation audit
+
+<!-- implementation-audit: IMP-0001 -->
+
+| Control | Evidence | Verdict | Finding |
+|---|---|---|---|
+| IMP_TRACEABILITY | fixture traceability | pass | none |
+| CHECKLIST_EVIDENCE | fixture checklist | pass | none |
+| CODE_CONTRACT | fixture contract | pass | none |
+| TEST_FAILURE | fixture tests | pass | none |
+| SECURITY_DATA | fixture security | pass | none |
+| MIGRATION_RECOVERY | fixture recovery | pass | none |
+| DOCS_CI_RELEASE | fixture release | pass | none |
+'@
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAuditName) -Value ($implementationAuditFrontmatter + "`n" + $implementationAuditMatrix) -Encoding UTF8
+
+    $implementationAcceptanceFrontmatter = @'
+---
+status: open
+audit_schema: implementation-acceptance/v1
+audit_id: AUD-0007
+auditor: validator-test
+audit_type: acceptance
+acceptance_type: implementation-completion
+acceptance_verdict: complete
+scope: plan:PLN-0001
+subject: validator implementation completion
+baseline: git:1111111; worktree:clean
+started_at: 2026-07-14T05:00:00+08:00
+completed_at: pending
+last_updated: 2026-07-14
+related_audits: AUD-0006
+related_remediations: none
+related_implementations: IMP-0001
+supersedes: none
+related_plans: PLN-0001
+---
+'@
+    $implementationAcceptanceName = 'AUD-0007-20260714-validator-plan-pln-0001-completion-acceptance.md'
+    $implementationAcceptanceMatrix = @'
+# Implementation completion acceptance
+
+<!-- implementation-acceptance-audit: PLN-0001 -->
+
+| Control | Evidence | Verdict | Finding |
+|---|---|---|---|
+| IMP_PRESENT | fixture IMP | pass | none |
+| SCOPE_COMPLETE | fixture scope | pass | none |
+| CHECKLIST_COMPLETE | fixture checklist | pass | none |
+| VALIDATION_GATES | fixture gates | pass | none |
+| AUDIT_CHAIN_CLEAN | fixture audit chain | pass | none |
+| RESIDUAL_RISK | fixture risk | pass | none |
+| ARCHIVE_READY | fixture archive | pass | none |
+'@
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAcceptanceName) -Value ($implementationAcceptanceFrontmatter + "`n" + $implementationAcceptanceMatrix) -Encoding UTF8
+    $auditIndexContent += "`n- [AUD-0005](./records/$acceptancePlanAuditName): ``status=open``; ``remediation=pending``; fixture."
+    $auditIndexContent += "`n- [AUD-0006](./records/$implementationAuditName): ``status=open``; ``remediation=pending``; fixture."
+    $auditIndexContent += "`n- [AUD-0007](./records/$implementationAcceptanceName): ``status=open``; ``remediation=pending``; fixture."
+    Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8
+
     $validResult = Invoke-Validator $fixtureRoot
     if ($validResult.ExitCode -ne 0) {
         throw "validator rejected valid fixture: $($validResult.Output)"

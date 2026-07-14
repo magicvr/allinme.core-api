@@ -1,0 +1,6 @@
+interface:
+  display_name: "Backend Plan Acceptance Audit"
+  short_description: "Verify whether selected plans are ready to implement"
+  default_prompt: "Use $backend-plan-acceptance-audit to verify that active plans are ready for implementation."
+policy:
+  allow_implicit_invocation: false

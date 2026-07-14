@@ -1,0 +1,6 @@
+interface:
+  display_name: "Implement and Audit Until Complete"
+  short_description: "Implement and audit plans until completion acceptance"
+  default_prompt: "Use $backend-implement-audit-until-complete to implement active plans and iterate until completion acceptance passes."
+policy:
+  allow_implicit_invocation: false

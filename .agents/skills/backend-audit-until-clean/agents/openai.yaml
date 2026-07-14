@@ -1,6 +1,0 @@
-interface:
-  display_name: "Audit Until Clean"
-  short_description: "Run a bounded audit remediation verification loop"
-  default_prompt: "Use $backend-audit-until-clean to audit all active plans and iterate until verified clean."
-policy:
-  allow_implicit_invocation: false

@@ -35,7 +35,7 @@ agent: agent
 |---|---|---|---|---|
 
 - 只处理 `open` 或 `partially-resolved` finding，以及为消除其根因必需的共享改动。
-- 不扩大到无关重构；发现新问题时记录为“建议专项/全量审计”，不得伪装成原 finding。
+- 不扩大到无关重构；发现新问题时记录为“建议创建专项审计或新计划”，不得伪装成原 finding。
 - 大规模、跨里程碑或需要长期跟踪的整改新建或关联 `PLN-NNNN` plan/checklist，并在 REM 中记录。
 - 对冲突或重复审计意见，依据当前 baseline 和证据选择实现方式，并在矩阵中解释如何同时处置各 source finding。
 

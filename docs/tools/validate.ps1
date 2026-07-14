@@ -15,9 +15,14 @@ $frontmatterExceptions = @(
     'README.md',
     'audits/README.md',
     'audits/templates/audit-record.md',
+    'audits/templates/implementation-acceptance-audit-record.md',
+    'audits/templates/implementation-audit-record.md',
+    'audits/templates/plan-acceptance-audit-record.md',
     'audits/templates/plan-audit-record.md',
     'decisions/README.md',
     'evidence/README.md',
+    'implementations/README.md',
+    'implementations/templates/implementation-record.md',
     'plans/README.md',
     'plans/archived/README.md',
     'plans/templates/checklist.md',
@@ -402,6 +407,37 @@ function Test-PhaseFiveDeploymentClauses([string]$Content, [string[]]$ForbiddenC
     }
 }
 
+function Test-AuditMatrix([string]$Content, [string]$Marker, [string[]]$Controls, [string]$AuditId, [System.Collections.Generic.List[string]]$Failures, [string]$Label) {
+    $markers = [regex]::Matches($Content, [regex]::Escape($Marker))
+    if ($markers.Count -ne 1) {
+        $Failures.Add("$Label must contain exactly one matrix marker: $Marker")
+        return
+    }
+    $markerIndex = $markers[0].Index
+    $matrixContent = $Content.Substring($markerIndex)
+    foreach ($control in $Controls) {
+        $rows = [regex]::Matches($matrixContent, "(?m)^\|\s*$([regex]::Escape($control))\s*\|(?<evidence>[^|]*)\|\s*(?<verdict>pass|fail)\s*\|(?<finding>[^|]*)\|\s*$")
+        if ($rows.Count -ne 1) {
+            $Failures.Add("$Label must contain one valid $control row: $Marker")
+            continue
+        }
+        $evidence = $rows[0].Groups['evidence'].Value.Trim()
+        $verdict = $rows[0].Groups['verdict'].Value
+        $finding = $rows[0].Groups['finding'].Value.Trim()
+        if ([string]::IsNullOrWhiteSpace($evidence) -or $evidence -match '^(...|TODO|TBD)$') {
+            $Failures.Add("$Label evidence is empty for ${control}: $Marker")
+        }
+        if ($verdict -eq 'fail') {
+            if ($finding -notmatch "^$([regex]::Escape($AuditId))-F\d{3}$" -or
+                $Content -notmatch "(?m)^###\s+$([regex]::Escape($finding))\s+-") {
+                $Failures.Add("Failed $Label control must reference an existing finding: $control in $Marker")
+            }
+        } elseif ($finding -ne 'none') {
+            $Failures.Add("Passing $Label control must use finding=none: $control in $Marker")
+        }
+    }
+}
+
 $failures = New-Object System.Collections.Generic.List[string]
 $markdownFiles = Get-ChildItem $docsRoot -Recurse -File -Filter '*.md'
 $planIds = @{}
@@ -410,6 +446,8 @@ $auditIds = @{}
 $auditRecords = @{}
 $remediationIds = @{}
 $remediationRecords = @{}
+$implementationIds = @{}
+$implementationRecords = @{}
 
 $auditsRoot = Join-Path $docsRoot 'audits'
 if (Test-Path -LiteralPath $auditsRoot) {
@@ -452,6 +490,9 @@ foreach ($file in $markdownFiles) {
             }
             if ($docsRelativePath.StartsWith('remediations/records/')) {
                 $requiredFields = @('status', 'remediation_id', 'implementer', 'scope', 'source_audits', 'source_findings', 'baseline', 'started_at', 'last_updated')
+            }
+            if ($docsRelativePath.StartsWith('implementations/records/')) {
+                $requiredFields = @('status', 'implementation_id', 'implementer', 'scope', 'related_plans', 'plan_acceptance_audits', 'baseline', 'result_revision', 'started_at', 'last_updated')
             }
             foreach ($field in $requiredFields) {
                 if ($frontmatter -notmatch "(?m)^${field}:\s*\S.*$") {
@@ -497,7 +538,7 @@ foreach ($file in $markdownFiles) {
     }
 
     if ($docsRelativePath.StartsWith('audits/records/')) {
-        if ($docsRelativePath -notmatch '^audits/records/(?<auditId>AUD-\d{4})-(?<date>\d{8})-[a-z0-9]+(?:-[a-z0-9]+)*-(?<scopeKind>repository|plan|feature|control|follow-up)-[a-z0-9]+(?:-[a-z0-9]+)*\.md$') {
+        if ($docsRelativePath -notmatch '^audits/records/(?<auditId>AUD-\d{4})-(?<date>\d{8})-[a-z0-9]+(?:-[a-z0-9]+)*-(?<scopeKind>repository|plan|implementation|feature|control|follow-up)-[a-z0-9]+(?:-[a-z0-9]+)*\.md$') {
             $failures.Add("Invalid audit filename: $relativePath")
         } elseif ($null -ne $frontmatter) {
             $auditId = $Matches['auditId']
@@ -532,7 +573,23 @@ foreach ($file in $markdownFiles) {
                 $failures.Add("Audit scope does not match filename scope kind: $relativePath")
             }
 
-            if ($scopeKind -eq 'plan') {
+            if ($scopeKind -eq 'implementation') {
+                $auditSchema = Get-FrontmatterValue $frontmatter 'audit_schema'
+                if ($auditSchema -ne 'implementation-audit/v1') {
+                    $failures.Add("Implementation audit must use audit_schema implementation-audit/v1: $relativePath")
+                }
+                $relatedImplementations = Get-ListValues (Get-FrontmatterValue $frontmatter 'related_implementations')
+                if ($relatedImplementations.Count -eq 0) {
+                    $failures.Add("Implementation audit must list related_implementations: $relativePath")
+                }
+                foreach ($relatedImplementation in $relatedImplementations) {
+                    if ($relatedImplementation -notmatch '^IMP-\d{4}$') {
+                        $failures.Add("Invalid related implementation ID in implementation audit: $relativePath ($relatedImplementation)")
+                        continue
+                    }
+                    Test-AuditMatrix $content "<!-- implementation-audit: $relatedImplementation -->" @('IMP_TRACEABILITY', 'CHECKLIST_EVIDENCE', 'CODE_CONTRACT', 'TEST_FAILURE', 'SECURITY_DATA', 'MIGRATION_RECOVERY', 'DOCS_CI_RELEASE') $auditId $failures 'Implementation audit matrix'
+                }
+            } elseif ($scopeKind -eq 'plan') {
                 $auditSchema = Get-FrontmatterValue $frontmatter 'audit_schema'
                 $legacyPlanAudit = $auditId -in @('AUD-0002', 'AUD-0003')
                 if ($legacyPlanAudit) {
@@ -540,14 +597,46 @@ foreach ($file in $markdownFiles) {
                         $failures.Add("Legacy plan audit must not claim v2 checklist evidence: $relativePath")
                     }
                 } else {
-                    if ($auditSchema -ne 'plan-audit/v2') {
-                        $failures.Add("Plan audit must use audit_schema plan-audit/v2: $relativePath")
-                    }
                     $relatedPlans = Get-ListValues (Get-FrontmatterValue $frontmatter 'related_plans')
-                    if ($relatedPlans.Count -eq 0) {
-                        $failures.Add("Plan audit must list related_plans: $relativePath")
-                    }
-                    foreach ($relatedPlan in $relatedPlans) {
+                    if ($auditSchema -in @('plan-acceptance/v1', 'implementation-acceptance/v1')) {
+                        if ($relatedPlans.Count -eq 0) {
+                            $failures.Add("Acceptance audit must list related_plans: $relativePath")
+                        }
+                        $acceptanceType = Get-FrontmatterValue $frontmatter 'acceptance_type'
+                        $expectedAcceptanceType = if ($auditSchema -eq 'plan-acceptance/v1') { 'plan-readiness' } else { 'implementation-completion' }
+                        if ($acceptanceType -ne $expectedAcceptanceType) {
+                            $failures.Add("Acceptance audit has incorrect acceptance_type: $relativePath")
+                        }
+                        $acceptanceVerdict = Get-FrontmatterValue $frontmatter 'acceptance_verdict'
+                        if ($acceptanceVerdict -notin @('pending', 'ready', 'not-ready', 'blocked', 'complete', 'incomplete')) {
+                            $failures.Add("Acceptance audit has invalid acceptance_verdict: $relativePath ($acceptanceVerdict)")
+                        }
+                        $markerPrefix = if ($auditSchema -eq 'plan-acceptance/v1') { 'plan-acceptance-audit' } else { 'implementation-acceptance-audit' }
+                        $controls = if ($auditSchema -eq 'plan-acceptance/v1') {
+                            @('READY_IDENTITY', 'READY_SCOPE', 'READY_FACTS', 'READY_DEPENDENCIES', 'READY_DESIGN', 'READY_EVIDENCE', 'READY_GATES')
+                        } else {
+                            @('IMP_PRESENT', 'SCOPE_COMPLETE', 'CHECKLIST_COMPLETE', 'VALIDATION_GATES', 'AUDIT_CHAIN_CLEAN', 'RESIDUAL_RISK', 'ARCHIVE_READY')
+                        }
+                        foreach ($relatedPlan in $relatedPlans) {
+                            if ($relatedPlan -notmatch '^PLN-\d{4}$') {
+                                $failures.Add("Invalid related plan ID in acceptance audit: $relativePath ($relatedPlan)")
+                                continue
+                            }
+                            Test-AuditMatrix $content "<!-- $markerPrefix`: $relatedPlan -->" $controls $auditId $failures 'Acceptance audit matrix'
+                        }
+                        if ($auditSchema -eq 'implementation-acceptance/v1') {
+                            $relatedImplementations = Get-ListValues (Get-FrontmatterValue $frontmatter 'related_implementations')
+                            if ($relatedImplementations.Count -eq 0) {
+                                $failures.Add("Implementation acceptance audit must list related_implementations: $relativePath")
+                            }
+                        }
+                    } elseif ($auditSchema -ne 'plan-audit/v2') {
+                        $failures.Add("Plan audit must use audit_schema plan-audit/v2: $relativePath")
+                    } else {
+                        if ($relatedPlans.Count -eq 0) {
+                            $failures.Add("Plan audit must list related_plans: $relativePath")
+                        }
+                        foreach ($relatedPlan in $relatedPlans) {
                         if ($relatedPlan -notmatch '^PLN-\d{4}$') {
                             $failures.Add("Invalid related plan ID in plan audit: $relativePath ($relatedPlan)")
                             continue
@@ -596,6 +685,7 @@ foreach ($file in $markdownFiles) {
                                 $failures.Add("Passing checklist control must use finding=none: $control/${relatedPlan} in $relativePath")
                             }
                         }
+                        }
                     }
                 }
             }
@@ -639,6 +729,48 @@ foreach ($file in $markdownFiles) {
                 $failures.Add("Remediation scope does not match filename scope kind: $relativePath")
             }
             $remediationRecords[$file.Name] = $remediationStatus
+        }
+    }
+
+    if ($docsRelativePath.StartsWith('implementations/records/')) {
+        if ($docsRelativePath -notmatch '^implementations/records/(?<implementationId>IMP-\d{4})-(?<date>\d{8})-[a-z0-9]+(?:-[a-z0-9]+)*-plan-(?<planId>pln-\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$') {
+            $failures.Add("Invalid implementation filename: $relativePath")
+        } elseif ($null -ne $frontmatter) {
+            $implementationId = $Matches['implementationId']
+            $implementationDate = $Matches['date']
+            $declaredImplementationId = Get-FrontmatterValue $frontmatter 'implementation_id'
+            if ($declaredImplementationId -ne $implementationId) {
+                $failures.Add("Implementation ID does not match filename: $relativePath ($declaredImplementationId != $implementationId)")
+            }
+            if ($implementationIds.ContainsKey($implementationId)) {
+                $failures.Add("Duplicate implementation ID: $implementationId")
+            } else {
+                $implementationIds[$implementationId] = $relativePath
+            }
+            $implementationStatus = Get-FrontmatterValue $frontmatter 'status'
+            if ($implementationStatus -notin @('in-progress', 'completed', 'partial', 'blocked')) {
+                $failures.Add("Invalid implementation status: $relativePath ($implementationStatus)")
+            }
+            if ($implementationStatus -ne 'in-progress') {
+                $completedAt = Get-FrontmatterValue $frontmatter 'completed_at'
+                if ([string]::IsNullOrWhiteSpace($completedAt) -or $completedAt -eq 'pending') {
+                    $failures.Add("Closed implementation must record completed_at: $relativePath")
+                }
+            }
+            $implementationStartedAt = Get-FrontmatterValue $frontmatter 'started_at'
+            $expectedImplementationDate = "$($implementationDate.Substring(0, 4))-$($implementationDate.Substring(4, 2))-$($implementationDate.Substring(6, 2))"
+            if ($implementationStartedAt -notlike "$expectedImplementationDate*") {
+                $failures.Add("Implementation filename date does not match started_at: $relativePath")
+            }
+            $declaredImplementationScope = Get-FrontmatterValue $frontmatter 'scope'
+            if ($declaredImplementationScope -notlike 'plan:*') {
+                $failures.Add("Implementation scope must start with plan:: $relativePath")
+            }
+            $relatedPlans = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'related_plans'))
+            if ($relatedPlans.Count -ne 1 -or $relatedPlans[0] -notmatch '^PLN-\d{4}$') {
+                $failures.Add("Implementation must identify exactly one matching related plan: $relativePath")
+            }
+            $implementationRecords[$file.Name] = $implementationStatus
         }
     }
 
@@ -782,42 +914,63 @@ if ($remediationRecords.Count -gt 0) {
     }
 }
 
+$implementationIndexPath = Join-Path $docsRoot 'implementations\README.md'
+if ($implementationRecords.Count -gt 0) {
+    if (-not (Test-Path -LiteralPath $implementationIndexPath)) {
+        $failures.Add('Implementation records exist but implementations/README.md is missing')
+    } else {
+        $implementationIndexContent = Get-Content -Raw -Encoding UTF8 $implementationIndexPath
+        foreach ($entry in $implementationRecords.GetEnumerator()) {
+            $target = './records/' + $entry.Key
+            $indexLines = Get-IndexLines $implementationIndexContent $target
+            if ($indexLines.Count -ne 1) {
+                $failures.Add("Implementation record must be indexed exactly once: $($entry.Key)")
+                continue
+            }
+            $indexLine = $indexLines[0].Value
+            if ($indexLine -notmatch ('status=' + [regex]::Escape($entry.Value)) -or
+                $indexLine -notmatch 'audit=(not-ready|pending|audited-by:AUD-\d{4})' -or
+                $indexLine -notmatch 'acceptance=(not-ready|pending|accepted-by:AUD-\d{4}|rejected-by:AUD-\d{4})') {
+                $failures.Add("Implementation index status is missing or inconsistent: $($entry.Key)")
+            }
+        }
+    }
+}
+
 $repositoryDocsRoot = (Join-Path $repoRoot 'docs')
 if ($docsRoot -eq $repositoryDocsRoot) {
     $requiredAuditEntrypoints = @(
-        '.github/prompts/backend-full-audit.prompt.md',
         '.github/prompts/backend-plan-audit.prompt.md',
+        '.github/prompts/backend-plan-acceptance-audit.prompt.md',
+        '.github/prompts/backend-implement-plan.prompt.md',
+        '.github/prompts/backend-implementation-audit.prompt.md',
+        '.github/prompts/backend-implementation-acceptance-audit.prompt.md',
         '.github/prompts/backend-fix-audit-findings.prompt.md',
         '.github/prompts/backend-follow-up-audit.prompt.md',
-        '.agents/skills/backend-full-audit/SKILL.md',
-        '.agents/skills/backend-full-audit/agents/openai.yaml',
         '.agents/skills/backend-plan-audit/SKILL.md',
         '.agents/skills/backend-plan-audit/agents/openai.yaml',
+        '.agents/skills/backend-plan-acceptance-audit/SKILL.md',
+        '.agents/skills/backend-plan-acceptance-audit/agents/openai.yaml',
+        '.agents/skills/backend-implement-plan/SKILL.md',
+        '.agents/skills/backend-implement-plan/agents/openai.yaml',
+        '.agents/skills/backend-implementation-audit/SKILL.md',
+        '.agents/skills/backend-implementation-audit/agents/openai.yaml',
+        '.agents/skills/backend-implementation-acceptance-audit/SKILL.md',
+        '.agents/skills/backend-implementation-acceptance-audit/agents/openai.yaml',
         '.agents/skills/backend-fix-audit-findings/SKILL.md',
         '.agents/skills/backend-fix-audit-findings/agents/openai.yaml',
         '.agents/skills/backend-follow-up-audit/SKILL.md',
         '.agents/skills/backend-follow-up-audit/agents/openai.yaml',
-        '.agents/skills/backend-audit-until-clean/SKILL.md',
-        '.agents/skills/backend-audit-until-clean/agents/openai.yaml'
+        '.agents/skills/backend-plan-audit-until-ready/SKILL.md',
+        '.agents/skills/backend-plan-audit-until-ready/agents/openai.yaml',
+        '.agents/skills/backend-implement-audit-until-complete/SKILL.md',
+        '.agents/skills/backend-implement-audit-until-complete/agents/openai.yaml',
+        'docs/implementations/README.md',
+        'docs/implementations/templates/implementation-record.md'
     )
     foreach ($entrypoint in $requiredAuditEntrypoints) {
         if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $entrypoint))) {
             $failures.Add("Missing audit command entrypoint: $entrypoint")
-        }
-    }
-
-    $legacyFullAuditPrompt = Join-Path $repoRoot '.github/prompts/backend-full-audit-cycle.prompt.md'
-    if (Test-Path -LiteralPath $legacyFullAuditPrompt) {
-        $failures.Add('Legacy full-audit prompt must not coexist with backend-full-audit.prompt.md')
-    }
-
-    $fullAuditPromptPath = Join-Path $repoRoot '.github/prompts/backend-full-audit.prompt.md'
-    if (Test-Path -LiteralPath $fullAuditPromptPath) {
-        $fullAuditPrompt = Get-Content -Raw -Encoding UTF8 $fullAuditPromptPath
-        if ($fullAuditPrompt -notmatch '(?m)^name:\s*backend-full-audit\s*$' -or
-            $fullAuditPrompt -notmatch 'scope:\s*repository:allinme\.core-api' -or
-            $fullAuditPrompt -notmatch 'audit-contract:\s*full-repository;\s*scope-may-not-narrow') {
-            $failures.Add('Full-audit prompt must enforce complete repository scope')
         }
     }
 
@@ -850,7 +1003,24 @@ if ($docsRoot -eq $repositoryDocsRoot) {
         }
     }
 
-    foreach ($skillName in @('backend-full-audit', 'backend-plan-audit', 'backend-fix-audit-findings', 'backend-follow-up-audit')) {
+    $promptContracts = @{
+        'backend-plan-acceptance-audit' = 'acceptance-contract:\s*plan-readiness;\s*default-target=active;\s*independent=true;\s*creates-audit'
+        'backend-implement-plan' = 'implementation-contract:\s*creates-imp-record;\s*default-target=active;\s*explicit-targets=true'
+        'backend-implementation-audit' = 'implementation-audit-contract:\s*default-target=pending-implementations;\s*creates-audit'
+        'backend-implementation-acceptance-audit' = 'acceptance-contract:\s*implementation-completion;\s*default-target=active;\s*independent=true;\s*creates-audit'
+    }
+    foreach ($promptName in $promptContracts.Keys) {
+        $promptPath = Join-Path $repoRoot ".github/prompts/$promptName.prompt.md"
+        if (Test-Path -LiteralPath $promptPath) {
+            $promptContent = Get-Content -Raw -Encoding UTF8 $promptPath
+            if ($promptContent -notmatch "(?m)^name:\s*$promptName\s*$" -or
+                $promptContent -notmatch $promptContracts[$promptName]) {
+                $failures.Add("Prompt contract is missing or invalid: $promptName")
+            }
+        }
+    }
+
+    foreach ($skillName in @('backend-plan-audit', 'backend-plan-acceptance-audit', 'backend-implement-plan', 'backend-implementation-audit', 'backend-implementation-acceptance-audit', 'backend-fix-audit-findings', 'backend-follow-up-audit')) {
         $skillRoot = Join-Path $repoRoot ".agents/skills/$skillName"
         $skillPath = Join-Path $skillRoot 'SKILL.md'
         $metadataPath = Join-Path $skillRoot 'agents/openai.yaml'
@@ -869,25 +1039,31 @@ if ($docsRoot -eq $repositoryDocsRoot) {
         }
     }
 
-    $orchestratorSkillPath = Join-Path $repoRoot '.agents/skills/backend-audit-until-clean/SKILL.md'
-    $orchestratorMetadataPath = Join-Path $repoRoot '.agents/skills/backend-audit-until-clean/agents/openai.yaml'
-    if (Test-Path -LiteralPath $orchestratorSkillPath) {
-        $orchestratorContent = Get-Content -Raw -Encoding UTF8 $orchestratorSkillPath
-        foreach ($dependencySkill in @('backend-plan-audit', 'backend-full-audit', 'backend-fix-audit-findings', 'backend-follow-up-audit')) {
-            if ($orchestratorContent -notmatch ('\$' + [regex]::Escape($dependencySkill))) {
-                $failures.Add("Audit orchestrator must invoke existing skill: $dependencySkill")
+    $orchestrators = @{
+        'backend-plan-audit-until-ready' = @('backend-plan-audit', 'backend-fix-audit-findings', 'backend-follow-up-audit', 'backend-plan-acceptance-audit')
+        'backend-implement-audit-until-complete' = @('backend-plan-acceptance-audit', 'backend-implement-plan', 'backend-implementation-audit', 'backend-fix-audit-findings', 'backend-follow-up-audit', 'backend-implementation-acceptance-audit')
+    }
+    foreach ($orchestratorName in $orchestrators.Keys) {
+        $orchestratorSkillPath = Join-Path $repoRoot ".agents/skills/$orchestratorName/SKILL.md"
+        $orchestratorMetadataPath = Join-Path $repoRoot ".agents/skills/$orchestratorName/agents/openai.yaml"
+        if (Test-Path -LiteralPath $orchestratorSkillPath) {
+            $orchestratorContent = Get-Content -Raw -Encoding UTF8 $orchestratorSkillPath
+            foreach ($dependencySkill in $orchestrators[$orchestratorName]) {
+                if ($orchestratorContent -notmatch ('\$' + [regex]::Escape($dependencySkill))) {
+                    $failures.Add("Audit orchestrator $orchestratorName must invoke existing skill: $dependencySkill")
+                }
+            }
+            if ($orchestratorContent -notmatch 'MAX_CYCLES' -or
+                $orchestratorContent -notmatch 'MAX_STAGNANT_CYCLES' -or
+                $orchestratorContent -notmatch 'persistent goal') {
+                $failures.Add("Audit orchestrator must establish a goal and enforce bounded loop circuit breakers: $orchestratorName")
             }
         }
-        if ($orchestratorContent -notmatch 'MAX_CYCLES' -or
-            $orchestratorContent -notmatch 'MAX_STAGNANT_CYCLES' -or
-            $orchestratorContent -notmatch 'persistent goal') {
-            $failures.Add('Audit orchestrator must establish a goal and enforce bounded loop circuit breakers')
-        }
-    }
-    if (Test-Path -LiteralPath $orchestratorMetadataPath) {
-        $orchestratorMetadata = Get-Content -Raw -Encoding UTF8 $orchestratorMetadataPath
-        if ($orchestratorMetadata -notmatch '(?m)^\s*allow_implicit_invocation:\s*false\s*$') {
-            $failures.Add('Audit orchestrator must require explicit invocation')
+        if (Test-Path -LiteralPath $orchestratorMetadataPath) {
+            $orchestratorMetadata = Get-Content -Raw -Encoding UTF8 $orchestratorMetadataPath
+            if ($orchestratorMetadata -notmatch '(?m)^\s*allow_implicit_invocation:\s*false\s*$') {
+                $failures.Add("Audit orchestrator must require explicit invocation: $orchestratorName")
+            }
         }
     }
 
@@ -919,6 +1095,22 @@ if ($docsRoot -eq $repositoryDocsRoot) {
             & git -C $repoRoot diff --quiet HEAD -- $trackedRemediationPath
             if ($LASTEXITCODE -ne 0) {
                 $failures.Add("Closed remediation record is immutable; create a new remediation instead: $trackedRemediationPath")
+            }
+        }
+    }
+
+    $trackedImplementationPaths = & git -C $repoRoot ls-tree -r --name-only HEAD -- docs/implementations/records 2>$null
+    foreach ($trackedImplementationPath in $trackedImplementationPaths) {
+        $currentImplementationPath = Join-Path $repoRoot $trackedImplementationPath
+        if (-not (Test-Path -LiteralPath $currentImplementationPath)) {
+            $failures.Add("Tracked implementation record must not be deleted or moved: $trackedImplementationPath")
+            continue
+        }
+        $headImplementationContent = (& git -C $repoRoot show "HEAD:$trackedImplementationPath" 2>$null | Out-String)
+        if ($headImplementationContent -match '(?m)^status:\s*(completed|partial|blocked)\s*$') {
+            & git -C $repoRoot diff --quiet HEAD -- $trackedImplementationPath
+            if ($LASTEXITCODE -ne 0) {
+                $failures.Add("Closed implementation record is immutable; create a new implementation instead: $trackedImplementationPath")
             }
         }
     }
