@@ -53,21 +53,88 @@ applies_to: validator fixture
     $phaseFivePlan = @'
 # Phase Five
 
+<!-- phase5-p0-deployment-evidence-contract
+p0_artifact_kinds: contract-fixture,disposable-spike
+live_evidence_gates: 5A-D-2,5B-4
+forbidden_p0_live_evidence: release-binary,supervisor-run,cleanup-schedule-run,watchdog-recovery-run,enospc-run,live-profile-run
+-->
+
 | Work package | P0 items | owner / reviewer | Inputs | Timebox | Evidence |
 |---|---|---|---|---:|---|
+| WP-Facts | P0-1 | owner / reviewer | plan revision | 1 day | facts |
+| WP-Schema-Recovery | P0-2 | owner / reviewer | WP-Facts | 1 day | schema |
+| WP-HTTP-Order | P0-3 | owner / reviewer | WP-Facts | 1 day | http |
+| WP-Lock | P0-4 | owner / reviewer | WP-Facts | 1 day | lock |
 | WP-Baseline-Evidence | P0-14, P0-23, P0-24, P0-25 | owner / reviewer | WP-Facts; plan revision | 3 days | validator |
+| WP-Files | P0-15 | owner / reviewer | WP-Lock | 1 day | files |
+| WP-Runtime | P0-17 | owner / reviewer | WP-Lock | 1 day | runtime |
+| WP-Release | P0-16 | owner / reviewer | WP-Facts; WP-Schema-Recovery; WP-HTTP-Order; WP-Lock; WP-Baseline-Evidence; WP-Files; WP-Runtime | 1 day | release |
 
 P0 dependency DAG: WP-Facts precedes Schema-Recovery, HTTP-Order, Lock, and Baseline-Evidence.
 '@
     $phaseFiveChecklist = @'
 # Phase Five Checklist
 
+- [ ] P0-1. Fixture.
+- [ ] P0-2. Fixture.
+- [ ] P0-3. Fixture.
+- [ ] P0-4. Fixture.
+- [ ] P0-5. Fixture.
+- [ ] P0-6. Fixture.
+- [ ] P0-7. Fixture.
+- [ ] P0-8. Fixture.
+- [ ] P0-9. Fixture.
+- [ ] P0-10. Fixture.
+- [ ] P0-11. Fixture.
+- [ ] P0-12. Fixture.
+- [ ] P0-13. Fixture.
+- [ ] P0-14. Fixture.
+- [ ] P0-15. Fixture.
+- [ ] P0-16. Fixture.
+- [ ] P0-17. Fixture.
+- [ ] P0-18. Fixture.
+- [ ] P0-19. Fixture.
+- [ ] P0-20. Fixture.
 - [ ] P0-21. Reject WP-Baseline-Evidence without WP-Facts.
 - [ ] P0-22. Produce `artifactKind=contract-fixture`; live validation belongs to 5A-D-2 or 5B-4.
 - [ ] P0-23. P0-22 uses `artifactKind=contract-fixture`; live evidence belongs to 5A-D and 5B.
+- [ ] P0-24. Fixture.
+- [ ] P0-25. Fixture.
 '@
     Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
     Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFiveChecklist) -Encoding UTF8
+
+    $contradictoryDagPlan = $phaseFivePlan + "`nWP-Baseline-Evidence may run before WP-Facts and does not depend on it."
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $contradictoryDagPlan) -Encoding UTF8
+    $contradictoryDagResult = Invoke-Validator $fixtureRoot
+    if ($contradictoryDagResult.ExitCode -eq 0 -or $contradictoryDagResult.Output -notmatch 'dependency ordering contradicts|denies a tracked edge') {
+        throw "validator did not reject an additive phase-five DAG contradiction: $($contradictoryDagResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
+
+    $contradictoryProfileChecklist = $phaseFiveChecklist.Replace('- [ ] P0-20. Fixture.', '- [ ] P0-20. P0 completion requires live supervisor, cleanup schedule, watchdog/recovery, ENOSPC evidence, and a live deployment profile.')
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $contradictoryProfileChecklist) -Encoding UTF8
+    $contradictoryProfileResult = Invoke-Validator $fixtureRoot
+    if ($contradictoryProfileResult.ExitCode -eq 0 -or $contradictoryProfileResult.Output -notmatch 'P0 deployment evidence clause must stop at contract fixtures') {
+        throw "validator did not reject an additive phase-five P0 deployment gate: $($contradictoryProfileResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFiveChecklist) -Encoding UTF8
+
+    $unexpectedP0Checklist = $phaseFiveChecklist + "`n- [ ] P0-26. Require live supervisor, cleanup schedule, watchdog/recovery, ENOSPC evidence, and a live deployment profile before P0 completes."
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $unexpectedP0Checklist) -Encoding UTF8
+    $unexpectedP0Result = Invoke-Validator $fixtureRoot
+    if ($unexpectedP0Result.ExitCode -eq 0 -or $unexpectedP0Result.Output -notmatch 'unexpected P0 item: P0-26') {
+        throw "validator did not reject an additive phase-five P0 item: $($unexpectedP0Result.Output)"
+    }
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFiveChecklist) -Encoding UTF8
+
+    $contradictoryProfilePlan = $phaseFivePlan + "`nP0 completion requires live supervisor, cleanup schedule, watchdog/recovery, ENOSPC evidence, and a live deployment profile."
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $contradictoryProfilePlan) -Encoding UTF8
+    $contradictoryProfilePlanResult = Invoke-Validator $fixtureRoot
+    if ($contradictoryProfilePlanResult.ExitCode -eq 0 -or $contradictoryProfilePlanResult.Output -notmatch 'P0 deployment evidence clause must stop at contract fixtures') {
+        throw "validator did not reject additive phase-five P0 deployment prose: $($contradictoryProfilePlanResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
 
     $auditRecordsRoot = Join-Path $fixtureRoot 'audits\records'
     New-Item -ItemType Directory -Path $auditRecordsRoot -Force | Out-Null
@@ -134,7 +201,7 @@ related_plans: PLN-0001
     $missingDagEdgePlan = $phaseFivePlan.Replace('WP-Facts; plan revision', 'plan revision')
     Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $missingDagEdgePlan) -Encoding UTF8
     $missingDagEdgeResult = Invoke-Validator $fixtureRoot
-    if ($missingDagEdgeResult.ExitCode -eq 0 -or $missingDagEdgeResult.Output -notmatch 'WP-Baseline-Evidence depend on WP-Facts') {
+    if ($missingDagEdgeResult.ExitCode -eq 0 -or $missingDagEdgeResult.Output -notmatch 'tracked contract for WP-Baseline-Evidence') {
         throw "validator did not reject a missing phase-five DAG edge: $($missingDagEdgeResult.Output)"
     }
     Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
@@ -218,7 +285,7 @@ related_plans: none
     }
 
     $global:LASTEXITCODE = 0
-    Write-Output 'Validator self-test passed: valid governance accepted; phase-five DAG/profile regressions, incomplete checklist matrices, unindexed audits, missing links, orphan plans, and incomplete closed audits rejected.'
+    Write-Output 'Validator self-test passed: valid governance accepted; phase-five DAG/profile removals and additive contradictions, incomplete checklist matrices, unindexed audits, missing links, orphan plans, and incomplete closed audits rejected.'
 } finally {
     if (Test-Path -LiteralPath $fixtureRoot) {
         $resolvedFixtureRoot = (Resolve-Path $fixtureRoot).Path

@@ -56,6 +56,139 @@ function Get-ListValues([string]$Value) {
     return @($Value.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
+function Test-PhaseFiveEdge([hashtable]$Dag, [string]$Prerequisite, [string]$Dependent) {
+    return $Dag.ContainsKey($Dependent) -and @($Dag[$Dependent]) -contains $Prerequisite
+}
+
+function Get-PhaseFiveDag([string]$Content, [System.Collections.Generic.List[string]]$Failures) {
+    $dag = @{}
+    $rows = [regex]::Matches($Content, '(?m)^\|\s*(?<package>WP-[A-Za-z0-9-]+)\s*\|(?<items>[^|]*)\|(?<owner>[^|]*)\|(?<inputs>[^|]*)\|(?<timebox>[^|]*)\|(?<evidence>[^|]*)\|\s*$')
+    foreach ($row in $rows) {
+        $package = $row.Groups['package'].Value
+        if ($dag.ContainsKey($package)) {
+            $Failures.Add("PLN-0005 dependency DAG contains duplicate work package: $package")
+            continue
+        }
+        $dependencies = @([regex]::Matches($row.Groups['inputs'].Value, 'WP-[A-Za-z0-9-]+') | ForEach-Object { $_.Value } | Select-Object -Unique)
+        $dag[$package] = $dependencies
+    }
+
+    $expectedPackages = @('WP-Facts', 'WP-Schema-Recovery', 'WP-HTTP-Order', 'WP-Lock', 'WP-Baseline-Evidence', 'WP-Files', 'WP-Runtime', 'WP-Release')
+    foreach ($package in $expectedPackages) {
+        if (-not $dag.ContainsKey($package)) {
+            $Failures.Add("PLN-0005 dependency DAG is missing work package: $package")
+        }
+    }
+    foreach ($package in @($dag.Keys)) {
+        if ($package -notin $expectedPackages) {
+            $Failures.Add("PLN-0005 dependency DAG contains unknown work package: $package")
+        }
+        foreach ($dependency in @($dag[$package])) {
+            if ($dependency -eq $package) {
+                $Failures.Add("PLN-0005 dependency DAG contains a self dependency: $package")
+            } elseif (-not $dag.ContainsKey($dependency)) {
+                $Failures.Add("PLN-0005 dependency DAG references unknown dependency: $package -> $dependency")
+            }
+        }
+    }
+
+    $requiredDependencies = @{
+        'WP-Facts' = @()
+        'WP-Schema-Recovery' = @('WP-Facts')
+        'WP-HTTP-Order' = @('WP-Facts')
+        'WP-Lock' = @('WP-Facts')
+        'WP-Baseline-Evidence' = @('WP-Facts')
+        'WP-Files' = @('WP-Lock')
+        'WP-Runtime' = @('WP-Lock')
+        'WP-Release' = @('WP-Facts', 'WP-Schema-Recovery', 'WP-HTTP-Order', 'WP-Lock', 'WP-Baseline-Evidence', 'WP-Files', 'WP-Runtime')
+    }
+    foreach ($package in $requiredDependencies.Keys) {
+        if (-not $dag.ContainsKey($package)) {
+            continue
+        }
+        $actual = @($dag[$package] | Sort-Object)
+        $expected = @($requiredDependencies[$package] | Sort-Object)
+        if (($actual -join ',') -ne ($expected -join ',')) {
+            $Failures.Add("PLN-0005 dependency DAG inputs do not match the tracked contract for ${package}: expected [$($expected -join ', ')], found [$($actual -join ', ')]")
+        }
+    }
+
+    $remaining = @{}
+    foreach ($package in $dag.Keys) {
+        $remaining[$package] = @($dag[$package]).Count
+    }
+    $ready = New-Object System.Collections.Generic.Queue[string]
+    foreach ($package in $remaining.Keys) {
+        if ($remaining[$package] -eq 0) {
+            $ready.Enqueue($package)
+        }
+    }
+    $processed = 0
+    while ($ready.Count -gt 0) {
+        $completed = $ready.Dequeue()
+        $processed++
+        foreach ($dependent in @($dag.Keys)) {
+            if (@($dag[$dependent]) -contains $completed) {
+                $remaining[$dependent]--
+                if ($remaining[$dependent] -eq 0) {
+                    $ready.Enqueue($dependent)
+                }
+            }
+        }
+    }
+    if ($dag.Count -gt 0 -and $processed -ne $dag.Count) {
+        $Failures.Add('PLN-0005 dependency DAG contains a cycle')
+    }
+    return $dag
+}
+
+function Test-PhaseFiveDependencyStatements([string]$Content, [hashtable]$Dag, [System.Collections.Generic.List[string]]$Failures) {
+    $contentWithoutDagRows = [regex]::Replace($Content, '(?m)^\|\s*WP-[A-Za-z0-9-]+\s*\|.*$', '')
+    foreach ($line in [regex]::Split($contentWithoutDagRows, '\r?\n')) {
+        if ($line -notmatch 'WP-[A-Za-z0-9-]+') {
+            continue
+        }
+        foreach ($match in [regex]::Matches($line, '(?<prerequisite>WP-[A-Za-z0-9-]+)\s*(?:->|\u2192)\s*(?<dependent>WP-[A-Za-z0-9-]+)')) {
+            if (-not (Test-PhaseFiveEdge $Dag $match.Groups['prerequisite'].Value $match.Groups['dependent'].Value)) {
+                $Failures.Add("PLN-0005 dependency statement is not present in the tracked DAG: $($match.Value)")
+            }
+        }
+        foreach ($match in [regex]::Matches($line, '(?i)(?<dependent>WP-[A-Za-z0-9-]+).*?(?:depends?\s+on|\u4F9D\u8D56)\s*(?<prerequisite>WP-[A-Za-z0-9-]+)')) {
+            if (-not (Test-PhaseFiveEdge $Dag $match.Groups['prerequisite'].Value $match.Groups['dependent'].Value)) {
+                $Failures.Add("PLN-0005 dependency statement contradicts the tracked DAG: $($match.Value)")
+            }
+        }
+        foreach ($match in [regex]::Matches($line, '(?i)(?<first>WP-[A-Za-z0-9-]+).*?(?:before|precedes?|\u5148\u4E8E|\u65E9\u4E8E).*?(?<second>WP-[A-Za-z0-9-]+)')) {
+            $first = $match.Groups['first'].Value
+            $second = $match.Groups['second'].Value
+            if (-not (Test-PhaseFiveEdge $Dag $first $second)) {
+                $Failures.Add("PLN-0005 dependency ordering contradicts or is absent from the tracked DAG: $($match.Value)")
+            }
+        }
+        if ($line -notmatch '(?i)(reject|must\s+reject|\u62D2\u7EDD)') {
+            foreach ($match in [regex]::Matches($line, '(?i)(?<dependent>WP-[A-Za-z0-9-]+).*?(?:does\s+not|doesn''t|need\s+not|without|\u4E0D\u4F9D\u8D56|\u65E0\u9700\u7B49\u5F85).*?(?:depend(?:ing)?\s+on\s+)?(?<prerequisite>WP-[A-Za-z0-9-]+)')) {
+                if (Test-PhaseFiveEdge $Dag $match.Groups['prerequisite'].Value $match.Groups['dependent'].Value) {
+                    $Failures.Add("PLN-0005 dependency statement denies a tracked edge: $($match.Value)")
+                }
+            }
+        }
+    }
+}
+
+function Test-PhaseFiveDeploymentClauses([string]$Content, [System.Collections.Generic.List[string]]$Failures) {
+    $liveEvidence = '(?i)(live\s+(?:deployment|profile|supervisor)|live-test|real\s+(?:deployment|profile|supervisor)|cleanup\s+schedule|watchdog(?:/|\s+and\s+)recovery|ENOSPC.{0,40}(?:run|evidence)|\u771F\u5B9E(?:\u9636\u6BB5\u4E94\s*)?(?:binary|\u76D1\u7763\u5668|\u90E8\u7F72)|cleanup\s*\u8C03\u5EA6|watchdog/recovery|ENOSPC.{0,40}(?:run|Evidence|\u8BC1\u636E)|\u90E8\u7F72\s*profile\s*run|\u5B9E\u6D4B.{0,20}(?:\u90E8\u7F72|profile))'
+    $obligation = '(?i)(must|required?|shall|before\s+P0|P0.{0,20}(?:complete|gate)|\u5FC5\u987B|\u8981\u6C42|\u5B8C\u6210\u524D|\u963B\u585E|\u4E0D\u5F97\u8FDB\u5165)'
+    $deferral = '(?i)(not\s+require|does\s+not\s+require|must\s+not\s+require|defer|belongs?\s+to|only.{0,40}(?:5A-D|5B)|\u4E0D\u5F97\u8981\u6C42|\u4E0D\u8981\u6C42|\u7559\u7ED9|\u5C5E\u4E8E|\u53EA\u80FD\u7531|\u540E\u79FB|\u5E76\u975E|\u4E0D\u5F97\u628A|\u7531.{0,40}(?:M1A|5A-D|5B).{0,20}(?:\u63D0\u4F9B|\u4EA7\u751F|\u5B8C\u6210))'
+    foreach ($line in [regex]::Split($Content, '\r?\n')) {
+        if ($line -notmatch '(?i)(^- \[[ xX]\] P0-\d+\.|P0.{0,40}(?:must|required?|complete|gate|\u5FC5\u987B|\u8981\u6C42|\u5B8C\u6210\u524D|\u963B\u585E))') {
+            continue
+        }
+        if ($line -match $liveEvidence -and $line -match $obligation -and $line -notmatch $deferral) {
+            $Failures.Add("PLN-0005 P0 deployment evidence clause must stop at contract fixtures and defer live runs: $($line.Trim())")
+        }
+    }
+}
+
 $failures = New-Object System.Collections.Generic.List[string]
 $markdownFiles = Get-ChildItem $docsRoot -Recurse -File -Filter '*.md'
 $planIds = @{}
@@ -327,13 +460,42 @@ $phaseFiveChecklistPath = Join-Path $docsRoot 'plans\PLN-0005-phase-05-attachmen
 if ((Test-Path -LiteralPath $phaseFivePlanPath) -and (Test-Path -LiteralPath $phaseFiveChecklistPath)) {
     $phaseFivePlan = Get-Content -Raw -Encoding UTF8 $phaseFivePlanPath
     $phaseFiveChecklist = Get-Content -Raw -Encoding UTF8 $phaseFiveChecklistPath
-    $baselineEvidenceRow = [regex]::Match($phaseFivePlan, '(?m)^\|\s*WP-Baseline-Evidence\s*\|.*$')
-    if (-not $baselineEvidenceRow.Success -or $baselineEvidenceRow.Value -notmatch 'WP-Facts') {
-        $failures.Add('PLN-0005 dependency DAG must make WP-Baseline-Evidence depend on WP-Facts')
+    $phaseFiveDag = Get-PhaseFiveDag $phaseFivePlan $failures
+    Test-PhaseFiveDependencyStatements $phaseFivePlan $phaseFiveDag $failures
+    Test-PhaseFiveDependencyStatements $phaseFiveChecklist $phaseFiveDag $failures
+
+    $deploymentContract = [regex]::Match($phaseFivePlan, '(?s)<!--\s*phase5-p0-deployment-evidence-contract\s*\r?\n(?<body>.*?)\r?\n-->')
+    if (-not $deploymentContract.Success -or
+        $deploymentContract.Groups['body'].Value -notmatch '(?m)^p0_artifact_kinds:\s*contract-fixture,disposable-spike\s*$' -or
+        $deploymentContract.Groups['body'].Value -notmatch '(?m)^live_evidence_gates:\s*5A-D-2,5B-4\s*$' -or
+        $deploymentContract.Groups['body'].Value -notmatch '(?m)^forbidden_p0_live_evidence:\s*release-binary,supervisor-run,cleanup-schedule-run,watchdog-recovery-run,enospc-run,live-profile-run\s*$') {
+        $failures.Add('PLN-0005 must define the structured P0 deployment evidence contract')
     }
-    if ($phaseFivePlan -notmatch '(?m)^.*P0 dependency DAG.*WP-Facts.*Schema-Recovery.*HTTP-Order.*Lock.*Baseline-Evidence.*$') {
-        $failures.Add('PLN-0005 dependency prose must match the tracked WP-Baseline-Evidence edge')
+
+    $p0Items = [regex]::Matches($phaseFiveChecklist, '(?m)^- \[[ xX]\] P0-(?<number>\d+)\..*$')
+    $p0Counts = @{}
+    foreach ($item in $p0Items) {
+        $number = [int]$item.Groups['number'].Value
+        if (-not $p0Counts.ContainsKey($number)) {
+            $p0Counts[$number] = 0
+        }
+        $p0Counts[$number]++
     }
+    foreach ($number in 1..25) {
+        if (-not $p0Counts.ContainsKey($number)) {
+            $failures.Add("PLN-0005 checklist is missing P0-${number}")
+        } elseif ($p0Counts[$number] -ne 1) {
+            $failures.Add("PLN-0005 checklist contains duplicate P0-${number}")
+        }
+    }
+    foreach ($number in $p0Counts.Keys) {
+        if ($number -lt 1 -or $number -gt 25) {
+            $failures.Add("PLN-0005 checklist contains an unexpected P0 item: P0-${number}")
+        }
+    }
+
+    Test-PhaseFiveDeploymentClauses $phaseFiveChecklist $failures
+    Test-PhaseFiveDeploymentClauses $phaseFivePlan $failures
 
     $p021Line = [regex]::Match($phaseFiveChecklist, '(?m)^- \[ \] P0-21\..*$')
     if (-not $p021Line.Success -or $p021Line.Value -notmatch 'WP-Baseline-Evidence.*WP-Facts') {

@@ -48,6 +48,7 @@ related_plans: PLN-0005
 
 ## 当前索引
 
+- [`REM-0003`](./records/REM-0003-20260714-codex-audit-aud-0005-contract-validators.md)：`status=completed`；`verification=pending`；已增加结构化 P0 deployment Evidence 契约、完整 dependency DAG 解析和 additive contradiction 负向 fixture。
 - [`REM-0002`](./records/REM-0002-20260714-codex-audit-aud-0004-rem-0001-follow-up.md)：`status=completed`；`verification=partial-by:AUD-0005`；当前计划文本已修正，但两项防语义漂移 validator 仍可被附加矛盾条款绕过。
 - [`REM-0001`](./records/REM-0001-20260714-codex-audit-active-audits.md)：`status=completed`；`verification=partial-by:AUD-0004`；6 个 source findings 中 4 个已复审确认，2 个转入 `AUD-0004` 继续整改。
 
