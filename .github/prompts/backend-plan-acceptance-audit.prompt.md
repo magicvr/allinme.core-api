@@ -1,7 +1,7 @@
 ---
 name: backend-plan-acceptance-audit
 description: "独立验收计划是否具备实施条件；默认验收所有活跃且未归档计划"
-argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [AUDITOR=codex] [FOCUS=...]"
+argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [AUDITOR=codex] [CONTEXT_ID=<uuid>] [FOCUS=...]"
 agent: agent
 ---
 
@@ -17,15 +17,16 @@ agent: agent
 - 多计划调用只是批量入口：必须按计划分别创建一份独立 AUD，每份记录的 `scope` 和 `related_plans` 只能包含一个 `PLN`，不得用一个全局 `acceptance_verdict` 代表多个计划。某个计划失败不得阻断同批次中已经独立通过的其他计划。
 - 显式 ID/路径不存在或无法唯一解析时，报告目标解析错误并停止，不创建验收审计；目标 plan 已解析后，plan/checklist 缺失、编号或 frontmatter 不一致时创建审计并记录 finding，不得静默跳过。
 - 无参数且没有活跃计划时，回复“当前没有可验收实施就绪的活跃计划”并停止，不创建空审计。
+- `FOCUS` 只能增加深度。`CONTEXT_ID` 必须来自不同于计划审计、整改和 follow-up 的新执行上下文。
 
 ## 2. 建立独立验收审计
 
 1. 检查分支、工作树、HEAD 完整 SHA、计划当前 revision、已有计划审计和用户改动。
-2. 完整读取选中 plan/checklist、路线图、事实源、相关 ADR、当前代码/测试边界和历史审计；不得只采用最近一次计划审计的结论。必须从 `docs/audits/README.md`、`docs/remediations/README.md` 和记录 frontmatter 按 `PLN` 派生完整链条，不能由执行者手工挑选一个看起来干净的 `related_audits` 子集。
-3. 每个计划的 `related_audits` 至少包含该计划最新的 `plan-audit/v2`，以及将其未解决队列转移或验证完毕的终端 follow-up AUD；`related_remediations` 必须列出该计划在当前验收前发生的全部相关 REM。任何更晚的 `pending`、`required` 或 `awaiting-verification` 条目都使 `PLAN_AUDIT_CHAIN_CLEAN=fail`。
-4. 对每个计划分别调用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-plan-readiness-plan-id-subject>` 原子分配 ID 并预留文件；使用 `docs/audits/templates/plan-acceptance-audit-record.md`，并采用命令返回的 ID 和路径。每份记录只允许一个矩阵、一个 `related_plans` 值和一个 verdict。
-5. `baseline` 和 `evidence_revision` 表示本次独立验证所针对的 subject commit，而不是包含本 AUD 文档的提交；两者必须相等并指向完整 SHA。开始预留 AUD 前 subject 工作树必须干净；预留后直到关闭，只允许本 AUD 和治理索引产生未提交差异。记录本次独立证据运行的全局唯一 `evidence_run_id`。优先使用不同于计划审计和相关整改执行者的 auditor；无法隔离身份时必须使用新的执行上下文重新生成证据，并写 `independence_basis: fresh-context-independent-rerun`，不得复用既有审计的命令输出或声称组织级独立。
-6. frontmatter 固定 `audit_schema: plan-acceptance/v2`、`audit_type: acceptance`、`acceptance_type: plan-readiness`、`acceptance_verdict: pending`、`plan_status_at_acceptance: active`、`independence_basis`、`evidence_revision` 和 `evidence_run_id`，并立即写入 `docs/audits/README.md`，初始为 `status=open`、`remediation=pending`。该状态快照用于保留计划后来归档后的历史合法性。在“验证结果”中逐条记录本次运行的命令、结果和 Evidence 位置。
+2. 完整读取计划、事实源和历史审计；从索引递归派生以 `plan-audit/v2` 或既有 plan-readiness 验收为根的计划就绪链，不得手选子集。实施审计/完成验收及仅由它们派生的 REM/follow-up 不属于计划就绪链，不得污染 readiness verdict。
+3. `related_audits` 至少包含最新计划审计及清理该就绪链的终端 follow-up；`related_remediations` 列出该就绪链在验收前发生的全部 REM。链内更晚的待处理状态使 Control 失败。
+4. 对每个计划先恢复相同计划/baseline 的唯一 open 验收；不存在时才调用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-plan-readiness-plan-id-subject>` 分配记录。
+5. `started_at` 固定链条快照；链条在证据运行期间变化时重启。`baseline` 与 `evidence_revision` 必须相等。记录新的 `execution_context_id`、完整 `source_context_ids` 和唯一 `evidence_run_id`。
+6. frontmatter 固定 `governance_contract: audit-loop/v3`、`audit_schema: plan-acceptance/v2`、`independence_basis: separate-context`、上下文字段及现有验收字段，并立即索引。
 
 ## 3. 独立验收矩阵
 
@@ -52,7 +53,8 @@ agent: agent
 
 - 填写 `acceptance_verdict`、`completed_at`、验证结果、未执行项、剩余风险和关闭结论。
 - `ready`：关闭审计并写 `remediation=none`；`acceptance_verdict: ready`。
-- `not-ready` 或 `blocked`：关闭审计并写 `remediation=required`；`acceptance_verdict` 使用对应值，所有 finding 保留可追溯证据。
+- `not-ready`：关闭审计并写 `remediation=required`。
+- `blocked`：关闭审计并写 `remediation=decision-required`；记录责任人和恢复条件，不进入自动整改队列。
 - 不得自动把计划改为 active、归档计划或开始实施。下一步分别使用 `$backend-fix-audit-findings` 或 `$backend-implement-plan`。
 - 全程使用中文；代码、命令、路径、ID、固定状态值和矩阵 Control 名称保留原样。
 

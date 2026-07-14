@@ -1,18 +1,18 @@
 ---
 name: backend-plan-acceptance-audit
-description: Independently verify whether every active unarchived plan, or plans selected by PLN ID/path, are ready to implement. Create indexed plan-readiness acceptance AUD records without modifying the plans.
+description: Verify plan readiness in a separate execution context, creating one resumable acceptance AUD per active or selected plan without modifying it.
 ---
 
 # Backend Plan Acceptance Audit
 
 1. 解析仓库根目录，并在执行任何验收前完整读取 `.github/prompts/backend-plan-acceptance-audit.prompt.md`。
 2. 将该 prompt 视为唯一规范正文，完整执行对象解析、独立证据检查、验收矩阵、AUD 创建和索引流转。
-3. 将 `$backend-plan-acceptance-audit` 后的文本解释为可选 `TARGET`、`AUDITOR` 和 `FOCUS`；默认 `TARGET=active`。
+3. 将调用文本解释为可选 `TARGET`、`AUDITOR`、`CONTEXT_ID` 和 `FOCUS`；默认 `TARGET=active`。`FOCUS` 只能增加深度。
 4. 无参数时验收全部活跃且未归档计划；显式目标必须逐个解析，不得静默遗漏。多计划调用必须拆成每个计划一份独立 AUD，禁止共享一个 `acceptance_verdict`。
-5. 不得采用已有计划审计的结论代替独立复核，也不得修改 plan/checklist 消除 finding；必须记录 `independence_basis`、干净且与 baseline 相同的 `evidence_revision`，以及本次运行唯一的 `evidence_run_id`。
-6. 必须从仓库索引派生目标计划的完整 AUD/REM/follow-up 链，`related_audits` 至少包含最新计划审计和终端复审；状态中的 `verified-by`、`continued-by` 和 `awaiting-verification` 目标必须真实存在并匹配源记录，不得通过漏列或伪造引用制造干净链条。
+5. 必须在不同于计划审计、整改和 follow-up 的新执行上下文中运行；缺少新的 `CONTEXT_ID` 时停止并输出 handoff。不得采用既有结论代替复核；必须记录 `execution_context_id`、`source_context_ids`、`independence_basis: separate-context`、`evidence_revision` 和唯一 `evidence_run_id`。
+6. 必须递归派生以计划审计/计划就绪验收为根的 AUD/REM/follow-up 链；排除纯实施审计链。相关状态引用必须真实匹配，不得漏列或伪造。
 7. 只有所有强制 Control 通过且 `PLAN_AUDIT_CHAIN_CLEAN` 通过时才能写 `acceptance_verdict: ready`。
-8. 生成的审计记录和最终汇报必须使用中文；代码、命令、路径、ID 及固定状态值保持原样。
+8. 预留前恢复相同计划/baseline 的唯一 open 验收，不得重复创建。生成的记录和最终汇报必须使用中文；固定状态值保持原样。
 
 ```text
 $backend-plan-acceptance-audit

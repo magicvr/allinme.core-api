@@ -50,6 +50,6 @@ applies_to: implementation roadmap phase 6 pages
 
 ## 计划审计闭环与验收
 
-计划审计闭环使用 `$backend-plan-audit-until-ready`：先执行 `$backend-plan-audit`，再通过 `$backend-fix-audit-findings` 和 `$backend-follow-up-audit` 迭代清理 findings，最后运行独立的 `$backend-plan-acceptance-audit`。
+计划审计闭环使用 `$backend-plan-audit-until-ready`：普通审计严格一计划一 AUD；整改按单一计划链分组；follow-up 和最终验收必须在不同执行上下文运行。作为实施闭环子流程时使用 `GOAL_MODE=child`，不得嵌套 persistent goal。
 
 计划验收审计不依赖闭环运行上下文，可单独执行，但必须独立重建并检查完整计划 AUD/REM/follow-up 链；无 `TARGET` 时选择所有活跃且未归档计划，但必须为每个计划分别创建一份 AUD 并给出 `ready`、`not-ready` 或 `blocked`，禁止用一个全局 verdict 混合多个计划。只有 `PLAN_AUDIT_CHAIN_CLEAN=pass` 且 verdict 为 `ready` 的计划才允许进入 `$backend-implement-plan`。

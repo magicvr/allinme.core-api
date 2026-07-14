@@ -1,6 +1,6 @@
 interface:
   display_name: "Backend Plan Audit"
-  short_description: "Audit all active or explicitly selected plans"
-  default_prompt: "Use $backend-plan-audit to audit all active implementation plans."
+  short_description: "Create one formal audit per selected plan"
+  default_prompt: "Use $backend-plan-audit to create or resume one formal AUD for each active implementation plan."
 policy:
   allow_implicit_invocation: false

@@ -14,13 +14,16 @@
 ```yaml
 status: in-progress
 remediation_schema: remediation/v2
+governance_contract: audit-loop/v3
 remediation_id: REM-0001
 implementer: codex
+execution_context_id: 00000000-0000-4000-8000-000000000000
 scope: audit:AUD-0002,AUD-0003
 source_audits: AUD-0002, AUD-0003
 source_findings: AUD-0002-F001, AUD-0003-F001
 baseline: git:<full-sha>; worktree:clean
 result_revision: pending
+parent_result_revision: none
 affects_implementation: false
 related_implementations: none
 started_at: 2026-07-14T04:00:00+08:00
@@ -49,6 +52,8 @@ related_plans: PLN-0005
 5. 是否影响已有 IMP、关联哪些 implementation，以及是否已具备 follow-up audit 条件。
 
 `affects_implementation: true` 表示 REM 修改了产品代码、测试、migration、运行配置或发布 artifact。此时必须列出 `related_implementations`；REM 通过 follow-up 后，其 `result_revision` 进入对应 IMP 的 effective revision 链。历史 remediation/v1 记录保持不可变，不补写这些字段。
+
+新合同 REM 不得跨计划或跨 IMP 合并。实施 REM 的 `parent_result_revision` 必须等于创建时的 effective 链尾，关闭时 `result_revision` 必须为其 Git 后代；并行分叉必须先合并，才能进入复审。
 
 整改不能把源审计 finding 改写为 resolved。只有新的 follow-up audit 可以独立确认修复结果。
 

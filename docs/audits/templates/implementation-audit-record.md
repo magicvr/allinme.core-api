@@ -1,8 +1,10 @@
 ---
 status: open
+governance_contract: audit-loop/v3
 audit_schema: implementation-audit/v1
 audit_id: AUD-NNNN
 auditor: auditor-name-and-version
+execution_context_id: 00000000-0000-4000-8000-000000000000
 audit_type: implementation
 scope: implementation:IMP-NNNN
 subject: implementation audit
@@ -27,13 +29,13 @@ related_plans: PLN-NNNN
 
 | Control | Evidence | Verdict | Finding |
 |---|---|---|---|
-| IMP_TRACEABILITY | 具体证据 | pass/fail | none 或 AUD-NNNN-F001 |
-| CHECKLIST_EVIDENCE | 具体证据 | pass/fail | none 或 finding |
-| CODE_CONTRACT | 具体证据 | pass/fail | none 或 finding |
-| TEST_FAILURE | 具体证据 | pass/fail | none 或 finding |
-| SECURITY_DATA | 具体证据 | pass/fail | none 或 finding |
-| MIGRATION_RECOVERY | 具体证据 | pass/fail | none 或 finding |
-| DOCS_CI_RELEASE | 具体证据 | pass/fail | none 或 finding |
+| IMP_TRACEABILITY | <required:IMP/plan/revision mapping> | pass/fail | none 或 AUD-NNNN-F001 |
+| CHECKLIST_EVIDENCE | <required:item/date/command/result evidence> | pass/fail | none 或 finding |
+| CODE_CONTRACT | <required:file/symbol/contract evidence> | pass/fail | none 或 finding |
+| TEST_FAILURE | <required:commands and failure-path results> | pass/fail | none 或 finding |
+| SECURITY_DATA | <required:security/data checks> | pass/fail | none 或 finding |
+| MIGRATION_RECOVERY | <required:migration/recovery checks> | pass/fail | none 或 finding |
+| DOCS_CI_RELEASE | <required:docs/CI/artifact evidence> | pass/fail | none 或 finding |
 
 ## Findings
 

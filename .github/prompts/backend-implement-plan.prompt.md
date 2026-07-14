@@ -1,7 +1,7 @@
 ---
 name: backend-implement-plan
 description: "按计划和 checklist 实施一个或多个活跃计划，并创建可追溯的 IMP 实施记录"
-argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [IMPLEMENTER=codex] [FOCUS=...]"
+argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [IMPLEMENTER=codex] [CONTEXT_ID=<uuid>] [FOCUS=...]"
 agent: agent
 ---
 
@@ -12,14 +12,15 @@ agent: agent
 ## 1. 对象与前置条件
 
 - `TARGET` 缺省为 `active`：选择所有活跃且未归档计划；显式目标可为一个或多个 `PLN-NNNN` 或 plan 路径。
-- 每个计划必须有对应且已关闭的 `backend-plan-acceptance-audit`，最新验收为 `acceptance_verdict: ready`、`PLAN_AUDIT_CHAIN_CLEAN=pass`，其后没有新的 `remediation=required` 计划审计或计划 revision 漂移。缺失或条件不满足时停止该计划，不得绕过验收直接实施。
+- 每个计划必须有已关闭且最新为 `ready` 的计划验收，其后没有新的 `required`、`decision-required`、待复审计划链状态或 plan/checklist 漂移。否则停止，不得绕过。
 - 目标无法解析、plan/checklist 缺失或存在未解决的范围冲突时，报告具体原因并停止，不得静默缩小范围。
+- `FOCUS` 只能增加深度；`CONTEXT_ID` 是实施上下文复用的 UUIDv4。
 
 ## 2. 创建 IMP 记录
 
 1. 检查分支、工作树、HEAD 完整 SHA、计划验收结果、用户已有改动和实施依赖。
 2. 先读取该计划全部 IMP：若存在 `status: in-progress` 的唯一记录则恢复该记录；若最新记录为 `completed`，除非失败验收或 follow-up 明确要求新的实施尝试，否则停止并交回审计/验收闭环；若需要新尝试，使用 `docs/tools/reserve-governance-record.ps1 -Kind IMP -Suffix <YYYYMMDD-implementer-plan-plan-id-subject>` 原子分配 ID 并预留 `IMP-NNNN-YYYYMMDD-<implementer>-plan-<plan-id-subject>.md`，必须采用命令返回的 ID 和路径。
-3. 使用 `docs/implementations/templates/implementation-record.md`，固定 `implementation_schema: implementation/v2`，先写 `status: in-progress`、固定 baseline、`started_at`、`related_plans`，并把最新 ready 计划验收的 `evidence_revision` 写入 `plan_evidence_revision`。若该验收之后 plan/checklist 内容发生漂移，必须停止并重新进行计划审计闭环。立即更新 `docs/implementations/README.md` 索引。
+3. 使用模板，固定 `governance_contract: audit-loop/v3`、`implementation_schema: implementation/v2` 和 `execution_context_id`，再写现有字段。若验收后 plan/checklist 漂移则停止。立即更新索引。
 4. 创建 IMP 和索引后才能修改产品代码、测试、计划、checklist 或工具配置。
 
 ## 3. 实施纪律

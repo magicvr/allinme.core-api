@@ -7,9 +7,9 @@ description: Implement active or explicitly selected PLN plans after readiness a
 
 1. 解析仓库根目录，并在修改任何文件前完整读取 `.github/prompts/backend-implement-plan.prompt.md`。
 2. 将该 prompt 视为唯一规范正文，完整执行计划选择、就绪验收前置检查、IMP 创建、实施、验证和关闭交接。
-3. 将调用文本解释为可选 `TARGET`、`IMPLEMENTER` 和 `FOCUS`；默认 `TARGET=active`。
+3. 将调用文本解释为可选 `TARGET`、`IMPLEMENTER`、`CONTEXT_ID` 和 `FOCUS`；默认 `TARGET=active`。`FOCUS` 不得缩小计划范围。
 4. 每个计划必须有最新且已关闭的 `acceptance_verdict: ready`，其 `PLAN_AUDIT_CHAIN_CLEAN` 通过且验收后无计划 revision/审计链漂移；否则停止该计划并说明需要运行 `$backend-plan-audit-until-ready`。
-5. 每个计划创建独立 IMP；IMP 和索引建立前不得开始产品实现。
+5. 每个计划创建或恢复独立 IMP，记录 `execution_context_id`；IMP 和索引建立前不得开始产品实现。
 6. 不得把未执行项勾选为完成，不得自动归档计划，也不得修改已关闭 AUD/REM/IMP。
 7. 生成的实施记录和最终汇报必须使用中文；代码、命令、路径、ID 及固定状态值保持原样。
 

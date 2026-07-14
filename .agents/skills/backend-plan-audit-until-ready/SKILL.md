@@ -16,15 +16,16 @@ description: Orchestrate plan audit, remediation, follow-up verification, and in
 
 - `TARGET=active`：默认选择全部活跃且未归档计划；也接受单个或多个 `PLN-NNNN`。
 - `MAX_CYCLES=3`，范围 1–10；`MAX_STAGNANT_CYCLES=2`，范围 1–3。
-- 可传递 `AUDITOR` 和 `FOCUS`，但不得缩小底层 skill 的强制范围。
+- `GOAL_MODE=standalone|child`，默认 `standalone`；只有 standalone 可以创建或完成 persistent goal。
+- 分别接受 `AUDITOR`、`FOLLOW_UP_AUDITOR`、`ACCEPTANCE_AUDITOR` 和 `FOCUS`；三个审计阶段必须使用不同执行上下文，`FOCUS` 不得缩小底层 skill 的强制范围。
 
 ## 闭环
 
-1. 建立或复用匹配的 persistent goal；目标是最新计划验收 `acceptance_verdict: ready`，且相关 AUD/REM 链无待整改或待复审项。
-2. 将 `TARGET` 解析为不可变的计划 ID 集合，并根据索引识别当前阶段；已有待整改 AUD 或待复审 REM 时先恢复该队列，不得每轮无条件创建新的计划审计。
-3. 从索引派生该计划集合当前全部 `remediation=required` AUD，包括计划审计、follow-up 和先前失败的计划验收 AUD；调用 `$backend-fix-audit-findings TARGET=<AUD 列表>`，再对这些 AUD 已有或新产生且 `verification=pending` 的 REM 调用 `$backend-follow-up-audit TARGET=<REM 列表>`。
-4. 仅当某计划在当前 revision 上不存在已关闭的 `plan-audit/v2`，或上次审计后 plan/checklist/事实源发生漂移时，调用 `$backend-plan-audit TARGET=<计划列表>`；新审计产生 finding 时返回步骤 3。已有当前且链条干净的计划不得重复审计制造记录噪音。
-5. 审计链干净后，对不可变集合中的每个计划分别调用 `$backend-plan-acceptance-audit TARGET=<单一计划>`；禁止回退到子 skill 的默认全量范围或用一个验收 AUD 合并多个计划。
+1. `GOAL_MODE=standalone` 时建立或复用匹配的 persistent goal；`child` 时复用外层目标但不得创建、完成或阻塞它。目标是最新计划验收 `acceptance_verdict: ready`，且相关 AUD/REM 链无待整改、待复审或执行中的 open AUD。
+2. 将 `TARGET` 解析为不可变集合并识别阶段；优先恢复唯一 open AUD、待整改 AUD 或待复审 REM。若源 AUD 已有关联 `status=blocked; verification=not-ready` REM，停止并报告恢复条件，不得重复创建 REM。
+3. 从索引派生该计划集合当前全部 `remediation=required` AUD，包括计划审计、follow-up 和先前失败的计划验收 AUD；调用 `$backend-fix-audit-findings TARGET=<AUD 列表>`。`remediation=decision-required` 不得进入自动整改。
+4. 仅当某计划在当前 revision 上不存在已关闭的当前合同计划审计，或上次审计后 plan/checklist/事实源发生漂移时，逐个调用 `$backend-plan-audit TARGET=<单一计划>`；新审计产生 finding 时返回步骤 3。禁止用共享 AUD 合并多个计划。
+5. 整改完成后，把每个待复审 REM 交给不同于整改上下文的新执行上下文调用 `$backend-follow-up-audit TARGET=<单一 REM>`。审计链干净后，再把每个计划交给另一个新的执行上下文调用 `$backend-plan-acceptance-audit TARGET=<单一计划>`。必须显式传递新的 `CONTEXT_ID`；无法创建独立上下文时停止并输出精确 handoff，不得在当前上下文自我复审或填写独立声明。
 6. 验收为 `ready` 时完成；验收产生 finding 时，以该验收 AUD 进入下一整改/复审周期，并在复审后重新执行独立验收，不重复创建计划审计，除非整改改变了计划 revision。一个 cycle 定义为一次“阶段解析、派生待处理队列、整改/复审、必要审计、验收”的完整尝试；只有队列状态、revision、finding 或 verdict 均未变化时才计为 stagnant cycle。
 
 ## 停止条件

@@ -1,7 +1,7 @@
 ---
 name: backend-follow-up-audit
 description: "独立复审待验证 REM 整改记录及其引用的审计报告，并创建新的 follow-up AUD"
-argument-hint: "[TARGET=pending|REM-0001|AUD-0002] [AUDITOR=codex] [FOCUS=...]"
+argument-hint: "[TARGET=pending|REM-0001|AUD-0002] [AUDITOR=codex] [CONTEXT_ID=<uuid>] [FOCUS=...]"
 agent: agent
 ---
 
@@ -16,13 +16,14 @@ agent: agent
 - 若用户指定 `AUD-NNNN`，查找引用该审计且 `verification=pending` 的最新 REM；不存在时停止并建议先运行整改提示词。
 - 显式目标不存在、未索引、仍为 `status: in-progress` 或 `verification=not-ready` 时停止并说明原因，不得假设整改已完成。
 - 没有待复审 REM 时回复“当前没有待复审整改记录”并停止。
+- 多 REM 调用按 REM 分别创建 AUD。`FOCUS` 只能增加深度；`CONTEXT_ID` 必须来自不同于整改和源审计的新上下文。
 
 ## 2. 创建 follow-up 审计
 
 1. 检查分支、工作树、当前 HEAD 完整 SHA、REM baseline、实现 revision 和用户已有改动。
 2. 完整读取 REM、全部 source audits/findings、相关 plans、事实源、代码变更和测试证据。
-3. 使用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-follow-up-remediation-id-subject>` 原子分配 ID 并预留 `AUD-NNNN-YYYYMMDD-<auditor>-follow-up-<remediation-id-subject>.md`，必须采用命令返回的 ID 和路径。
-4. frontmatter 使用 `audit_type: follow-up`、`scope: follow-up:REM-NNNN`、`related_audits` 指向源审计、`related_remediations` 指向 REM、`related_plans` 指向相关计划；REM 涉及实施时还必须透传 `related_implementations`。固定当前复审 baseline，并验证它与 REM `result_revision` 的关系。
+3. 先恢复相同 REM/result revision 的唯一 open follow-up；不存在时才调用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-follow-up-remediation-id-subject>` 分配。
+4. 使用 `docs/audits/templates/follow-up-audit-record.md`，固定 `governance_contract: audit-loop/v3`、`execution_context_id`、`source_context_ids`、`independence_basis: separate-context` 和唯一 `evidence_run_id`。当前 context 不得等于任何 source context；旧源缺少 context 时写 `legacy-unavailable`。
 5. 在同一次文件变更中加入 `docs/audits/README.md` 索引，初始写 `status=open`、`remediation=pending`。未索引视为创建失败。
 
 ## 3. 独立复核
@@ -71,4 +72,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.test
 git diff HEAD --check
 ```
 
-最终汇报 follow-up AUD、REM、source audits、逐项 verdict、索引流转和下一步。复审无论通过、部分通过或失败都创建新 AUD；不得向已关闭报告追加。
+最终汇报 follow-up AUD、REM、source audits、逐项 verdict、索引流转和下一步。复审无论通过、部分通过或失败都必须拥有独立 AUD；已有匹配 open AUD 时恢复，否则新建，绝不向已关闭报告追加。

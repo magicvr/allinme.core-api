@@ -1,11 +1,12 @@
 ---
 name: backend-plan-audit
 description: "审计所有活跃实施计划，或审计通过 TARGET 参数明确指定的一个或多个 PLN 计划"
-argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [AUDITOR=codex] [FOCUS=...]"
+argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [AUDITOR=codex] [CONTEXT_ID=<uuid>] [FOCUS=...]"
 agent: agent
 ---
 
 <!-- audit-contract: plan; default-target=active; explicit-targets=true; checklist-matrix-required -->
+<!-- audit-loop-v3: single-subject; resume-open; context-id -->
 
 你是 `allinme.core-api` 的实施计划审计者。本提示词只审计计划的正确性、完整性、可执行性及其与事实源/当前代码的兼容性，不得把结果宣称为全仓质量审计。
 
@@ -13,10 +14,11 @@ agent: agent
 
 - `TARGET` 缺省为 `active`：选择 `docs/plans/` 根目录下所有 `status: active` 的 `PLN-NNNN-<subject>.md`，排除 README、templates 和 `-checklist.md`。
 - `TARGET=PLN-NNNN`：选择该计划及其 checklist；允许选择活跃或归档计划，但必须在记录中说明状态。
-- `TARGET=PLN-NNNN,PLN-NNNN`：选择多个计划，去重后按编号升序审计。
+- `TARGET=PLN-NNNN,PLN-NNNN`：批量分派多个单计划审计；去重后按编号升序执行，每个计划必须有独立 AUD。
 - 也可接受用户明确提供的 plan 文件路径；必须解析出 `plan_id`，并同时加载同号 checklist。
 - 显式 ID/路径不存在、重复到无法唯一解析或不是 plan 文件时，报告目标解析错误并停止，不创建审计；目标 plan 已唯一解析后，checklist 缺失、文件名与 frontmatter 不一致等对象完整性问题记录为审计 finding，不得静默跳过。
 - `AUDITOR` 缺省为当前 AI/工具的稳定 slug。
+- `CONTEXT_ID` 是本执行上下文全程复用的 UUIDv4；未提供时在首次创建记录前生成。
 - `FOCUS` 只增加某主题的检查深度，不得跳过本提示词规定的其他计划审计项。
 
 未指定 `TARGET` 且没有活跃计划时，回复“当前没有可审计的活跃计划”并停止，不创建空审计记录。目标解析错误与已解析对象的审计 finding 必须按上一条严格区分。
@@ -27,10 +29,8 @@ agent: agent
 
 1. 检查当前分支、工作树、HEAD 完整 SHA、最近提交和用户已有改动。
 2. 完整读取所有选中 plan/checklist、计划索引、路线图，以及与这些计划/主题相关的历史 audits。不得只读取 plan 后根据文件名或摘要推断 checklist 内容。
-3. 使用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-plan-subject>` 原子分配 ID 并预留文件，必须采用命令返回的 `AUD-NNNN` 和路径，绝不自行猜测、覆盖或复用记录：
-   - 单计划：`AUD-NNNN-YYYYMMDD-<auditor>-plan-<plan-id-subject>.md`；
-   - 多计划或全部活跃计划：`AUD-NNNN-YYYYMMDD-<auditor>-plan-active-plans.md` 或 `...-plan-selected-plans.md`。
-4. 使用 [`docs/audits/templates/plan-audit-record.md`](../../docs/audits/templates/plan-audit-record.md)；固定 `audit_schema: plan-audit/v2`。`scope` 使用 `plan:PLN-NNNN` 或逗号分隔的计划 ID；`audit_type: targeted`；`related_plans` 列出全部对象。
+3. 对每个计划先查找同 scope/baseline 的 open AUD；唯一匹配时恢复，多个时停止。不存在时调用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-plan-plan-id-subject>` 分配单计划文件。
+4. 使用模板并固定 `governance_contract: audit-loop/v3`、`audit_schema: plan-audit/v2`、单一 `scope: plan:PLN-NNNN`、单一 `related_plans` 和 `execution_context_id: <CONTEXT_ID>`。
 5. 固定不可变 baseline 和开始时间，立即以 `status: open` 保存，并在同一次变更中加入 `docs/audits/README.md` 当前索引，初始状态为 `status=open`、`remediation=pending`。零 finding 也保留审计记录；未加入索引视为创建失败。
 
 ## 2. 为每个计划建立事实上下文
@@ -62,7 +62,7 @@ agent: agent
 
 ## 4. 强制 Checklist 审计矩阵
 
-对每个 `related_plans` 中的计划分别创建一个矩阵，不能合并多个计划，也不能只写总体结论。结构必须严格为：
+每份 AUD 只允许一个计划和一个矩阵。批量调用必须创建多份 AUD，不能合并。结构必须严格为：
 
 ```markdown
 <!-- plan-checklist-audit: PLN-NNNN -->
@@ -120,10 +120,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1
 
 ## 7. 输出、关闭与整改交接
 
-先向用户汇报审计 ID、选中计划、严重度分布、跨计划冲突、验证结果和剩余风险。
-
 本提示词只执行计划审计，不修改 plan/checklist 或产品实现来消除 finding。需要整改时使用 `/backend-fix-audit-findings` 或 `$backend-fix-audit-findings`。
 
-只有每个相关计划的六项 Checklist 审计矩阵均存在、证据完整且所有 `fail` 都有 finding 时才能关闭审计。随后为每个 finding 写明当前 disposition，填写 `completed_at` 和关闭结论，将记录设为 `closed`，并同步更新索引：存在 `open` 或 `partially-resolved` finding 时写 `remediation=required`；零 finding 时写 `remediation=none`；仅有批准风险时写 `remediation=accepted-risk`。后续整改创建 `REM`，复核使用新的 follow-up audit。
+只有该计划六项矩阵证据完整且所有 `fail` 都有完整 finding 时才能关闭。填写 disposition、`completed_at` 和关闭结论，并同步索引：存在 `open`/`partially-resolved` finding 时写 `remediation=required`；零 finding 写 `remediation=none`；只有明确责任人批准且无 open finding 时才写 `remediation=accepted-risk`。验证索引后再向用户汇报。
 
 全程使用中文，按计划和严重度组织发现，引用具体章节、文件、符号和命令证据。

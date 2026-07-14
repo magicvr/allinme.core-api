@@ -1,8 +1,10 @@
 ---
 status: open
+governance_contract: audit-loop/v3
 audit_schema: plan-audit/v2
 audit_id: AUD-NNNN
 auditor: auditor-name-and-version
+execution_context_id: 00000000-0000-4000-8000-000000000000
 audit_type: targeted
 scope: plan:PLN-NNNN
 subject: concise plan subject
@@ -34,12 +36,12 @@ related_plans: PLN-NNNN
 
 | Control | Evidence | Verdict | Finding |
 |---|---|---|---|
-| PAIRING | 具体文件、frontmatter、链接和索引证据 | pass/fail | none 或 AUD-NNNN-F001 |
-| PLAN_TO_CHECKLIST | plan 义务到 checklist 条目的映射或缺口 | pass/fail | none 或 finding |
-| CHECKLIST_TO_PLAN | checklist 额外约束及其事实源依据 | pass/fail | none 或 finding |
-| CHECKED_EVIDENCE | 已勾选项统计与 Evidence 抽样/全检结果 | pass/fail/not-applicable | none 或 finding |
-| GATE_COMPLETENESS | 风险到测试/发布门禁的覆盖证据 | pass/fail | none 或 finding |
-| ARCHIVE_CLOSURE | 完成、剩余风险、确认与归档条件证据 | pass/fail | none 或 finding |
+| PAIRING | <required:file/section/index evidence> | pass/fail | none 或 AUD-NNNN-F001 |
+| PLAN_TO_CHECKLIST | <required:obligation-to-item mapping> | pass/fail | none 或 finding |
+| CHECKLIST_TO_PLAN | <required:extra-constraint source mapping> | pass/fail | none 或 finding |
+| CHECKED_EVIDENCE | <required:checked counts and dated revision evidence> | pass/fail/not-applicable | none 或 finding |
+| GATE_COMPLETENESS | <required:risk-to-gate mapping> | pass/fail | none 或 finding |
+| ARCHIVE_CLOSURE | <required:closure and approval evidence> | pass/fail | none 或 finding |
 
 ## Findings
 

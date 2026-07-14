@@ -1,11 +1,12 @@
 ---
 name: backend-fix-audit-findings
 description: "根据所有待整改审计报告或明确指定的 AUD 报告修正问题，并生成独立 REM 整改记录"
-argument-hint: "[TARGET=active|AUD-0002|AUD-0002,AUD-0003] [OWNER=codex] [FOCUS=...]"
+argument-hint: "[TARGET=active|AUD-0002|AUD-0002,AUD-0003] [OWNER=codex] [CONTEXT_ID=<uuid>] [FOCUS=...]"
 agent: agent
 ---
 
 <!-- remediation-contract: default-target=required-audits; creates-rem-record -->
+<!-- remediation-v3: single-chain; parent-result-revision; context-id -->
 
 你是 `allinme.core-api` 的审计整改执行者。你的职责是根据审计 findings 修正根因并生成可复核的整改记录，不得修改已关闭审计报告，也不得自行宣称问题已经审计验证通过。
 
@@ -15,16 +16,17 @@ agent: agent
 - 接受 `TARGET=AUD-NNNN`、逗号分隔的多个 AUD、审计报告路径，或用户用自然语言明确指定的审计编号/主题。
 - 显式对象不存在、未被索引、重复或没有可整改 finding 时，报告具体原因，不得静默替换为其他报告。
 - 多份报告包含相同根因时合并实现工作，但必须保留每个 source finding 到整改项的映射。
+- 不得跨计划或跨 IMP 合并 REM；批量目标按单一计划/IMP 链分组。`FOCUS` 不得缩小 finding 范围，`CONTEXT_ID` 在当前整改上下文复用。
 - 若没有 `remediation=required` 的索引项，回复“当前没有待整改审计报告”并停止。
 
 ## 2. 建立整改记录
 
 1. 检查分支、工作树、HEAD 完整 SHA、用户已有改动和源审计 baseline。
 2. 完整读取选中审计、其 findings、相关 plans、历史 follow-up audits 和直接事实源。
-3. 使用 `docs/tools/reserve-governance-record.ps1 -Kind REM -Suffix <YYYYMMDD-owner-scope-subject>` 原子分配 ID 并预留记录，必须采用命令返回的 `REM-NNNN` 和路径：
+3. 先恢复相同 source findings 和 baseline 的唯一 `status: in-progress` REM；不存在时才调用 `docs/tools/reserve-governance-record.ps1 -Kind REM -Suffix <YYYYMMDD-owner-scope-subject>` 分配：
    - 单审计：`REM-NNNN-YYYYMMDD-<owner>-audit-<audit-id-subject>.md`；
    - 多审计：`REM-NNNN-YYYYMMDD-<owner>-audit-active-audits.md` 或 `...-selected-audits.md`。
-4. frontmatter 固定 `remediation_schema: remediation/v2`，并至少记录 `status: in-progress`、`remediation_id`、`implementer`、`scope`、`source_audits`、`source_findings`、`baseline`、`result_revision: pending`、`affects_implementation`、`related_implementations`、`started_at`、`last_updated` 和 `related_plans`。若 source AUD 涉及 IMP，必须把对应 IMP 写入 `related_implementations`。
+4. frontmatter 固定 `governance_contract: audit-loop/v3`、`remediation_schema: remediation/v2`、`execution_context_id` 及现有字段。影响实施时还必须记录 `parent_result_revision`，它等于整改开始时 IMP/已验证 REM 的有效链尾。
 5. 在同一次文件变更中把 REM 加入 `docs/remediations/README.md` 索引，初始写为 `status=in-progress`、`verification=not-ready`。没有索引的整改记录视为创建失败。
 
 ## 3. 制定 finding 映射
@@ -46,7 +48,7 @@ agent: agent
 3. 不得把“代码已改”“测试曾通过”或原审计建议本身当作验证证据。
 4. 保留实际 revision、命令、结果、Evidence 位置、未执行原因和剩余风险。
 5. 不修改任何 `status: closed` 的 AUD，也不把 finding 的 disposition 回写为 resolved；只有 follow-up audit 可以给出复核结论。
-6. 修改产品代码、测试、migration、运行配置或发布 artifact 时写 `affects_implementation: true`；只修改计划、审计治理文本或不影响交付结果的说明时写 `false`。对 completed IMP 的窄范围修复由 REM 作为不可变的后续实施 revision；若工作超出 source finding、需要重跑计划工作包或改变范围，停止本 REM 并创建新的 IMP。
+6. 修改产品交付时写 `affects_implementation: true`；其 `result_revision` 必须包含 `parent_result_revision` 的全部历史且为其 Git 后代。若出现并行分叉，先合并到单一 commit 再关闭 REM。
 
 ## 5. 完成整改记录与索引
 

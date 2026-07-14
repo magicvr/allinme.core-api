@@ -27,9 +27,10 @@ related_plans: PLN-0005
 - `audit_type` 描述方法，如 `full`、`targeted`、`follow-up`、`governance`、`security`。
 - `scope` 写精确对象，例如 `repository:allinme.core-api`、`plan:PLN-0005`、`feature:attachment-lifecycle`。
 - 审计者身份以 frontmatter 为准，文件名只保存便于检索的 slug。
-- 新计划审计必须使用 `audit_schema: plan-audit/v2` 和 [`templates/plan-audit-record.md`](./templates/plan-audit-record.md)。每个相关计划必须有独立的 Checklist 审计矩阵、plan/checklist 双链接和六项固定 Control；缺失时不得关闭。
-- 计划实施就绪验收使用 `audit_schema: plan-acceptance/v2`；实施审计使用 `audit_schema: implementation-audit/v1`；实施完成验收使用 `audit_schema: implementation-acceptance/v2`。两类验收严格一计划一 AUD；多目标调用必须拆分记录。三者都必须独立创建 AUD，不得把结论写回 IMP 或旧审计正文。
-- 两类验收 AUD 必须记录 `plan_status_at_acceptance: active`、`independence_basis`、完整 SHA 的干净 `evidence_revision` 和全局唯一 UUIDv4 `evidence_run_id`；`baseline` 必须与 `evidence_revision` 相同。状态快照保证计划后来归档时历史验收仍有效。这里的 revision 是开始写治理记录前的 subject commit，AUD 与索引自身的变更不属于被验收对象。验收链必须从索引按 PLN/IMP 派生，所有状态引用必须指向真实且关系匹配的 REM/follow-up AUD。`ready`/`complete` 必须与全部矩阵 Control、AUD 索引 remediation 状态及 IMP acceptance 状态一致；实施完成还必须记录由最新 IMP 和已验证实施 REM 派生的 `effective_result_revision`。
+- 新闭环记录固定使用 `governance_contract: audit-loop/v3`，并记录本次任务真实复用的 UUIDv4 `execution_context_id`。旧记录缺少该字段时保持不可变，作为 legacy source 参与链条。
+- 计划审计和实施审计也严格一计划/一 IMP 一 AUD；多目标调用只是批量分派。共享跨计划结论只能放在最终汇报，不得共享 remediation 状态。
+- 两类验收及 follow-up 必须在新执行上下文运行，记录 `independence_basis: separate-context`、`execution_context_id`、`source_context_ids` 和唯一 `evidence_run_id`。当前 context 不得出现在可用 source contexts 中；旧源缺少 context 时使用 `legacy-unavailable`，不得伪造 UUID。
+- 两类验收仍使用 v2 schema，并严格一计划一 AUD。实施完成的 `effective_result_revision` 必须由 IMP 与已验证实施 REM 形成线性 Git 祖先链，不得按记录编号猜测链尾。
 
 ## 记录和追溯原则
 
@@ -57,7 +58,7 @@ related_plans: PLN-0005
 
 `AUD-0002` 与 `AUD-0003` 创建于 `plan-audit/v2` 合同生效前，作为 legacy v1 原样保留；不得补写不存在的 checklist 审计证据。其 findings 仍按当前整改流程处理。
 
-新审计从 [`templates/audit-record.md`](./templates/audit-record.md) 创建，并运行 [`../tools/validate.ps1`](../tools/validate.ps1)。
+普通新审计从 [`templates/audit-record.md`](./templates/audit-record.md) 创建；闭环 follow-up 使用 [`templates/follow-up-audit-record.md`](./templates/follow-up-audit-record.md)。创建后运行 [`../tools/validate.ps1`](../tools/validate.ps1)。
 
 ## 审计命令入口
 
@@ -108,5 +109,8 @@ $backend-plan-audit TARGET="PLN-0005,PLN-0006" FOCUS=recovery
 - `remediation=continued-by:AUD-NNNN`：部分或未修正，当前整改队列已转移到新的 follow-up audit。
 - `remediation=none`：无 finding 或无需整改。
 - `remediation=accepted-risk`：剩余问题已由明确责任人接受风险。
+- `remediation=decision-required`：外部权限、依赖或用户决策阻断，不进入自动整改队列。
+
+新合同记录中，`required` 必须对应 `open`/`partially-resolved` finding；`none` 不得保留 open finding；`accepted-risk` 必须有完整 owner 与 `Disposition: accepted-risk`。索引不能脱离记录正文单独改成“干净”。
 
 创建审计时同时增加 `status=open; remediation=pending` 索引；关闭审计时同步更新 `status=closed` 和最终 remediation 状态。未更新索引视为审计流程未完成。

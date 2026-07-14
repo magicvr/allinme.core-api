@@ -1,6 +1,6 @@
 interface:
   display_name: "Backend Implementation Acceptance Audit"
-  short_description: "Verify whether selected plans are fully implemented"
-  default_prompt: "Use $backend-implementation-acceptance-audit to verify that active plans are fully implemented."
+  short_description: "Independently verify implementation completion"
+  default_prompt: "Use $backend-implementation-acceptance-audit in a new execution context to verify completion from the IMP/REM revision chain."
 policy:
   allow_implicit_invocation: false

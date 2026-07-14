@@ -1,13 +1,16 @@
 ---
 status: open
+governance_contract: audit-loop/v3
 audit_schema: implementation-acceptance/v2
 audit_id: AUD-NNNN
 auditor: auditor-name-and-version
+execution_context_id: 00000000-0000-4000-8000-000000000000
+source_context_ids: legacy-unavailable
 audit_type: acceptance
 acceptance_type: implementation-completion
 acceptance_verdict: pending
 plan_status_at_acceptance: active
-independence_basis: separate-auditor
+independence_basis: separate-context
 scope: plan:PLN-NNNN
 subject: implementation completion acceptance
 baseline: git:full-commit-sha; worktree:clean
@@ -34,13 +37,13 @@ related_plans: PLN-NNNN
 
 | Control | Evidence | Verdict | Finding |
 |---|---|---|---|
-| IMP_PRESENT | 最新 IMP 与 IMP/REM effective revision 链证据 | pass/fail | none 或 AUD-NNNN-F001 |
-| SCOPE_COMPLETE | 具体证据 | pass/fail | none 或 finding |
-| CHECKLIST_COMPLETE | 具体证据 | pass/fail | none 或 finding |
-| VALIDATION_GATES | 具体证据 | pass/fail | none 或 finding |
-| AUDIT_CHAIN_CLEAN | 计划/实施 AUD、REM、follow-up 链和验收基线证据 | pass/fail | none 或 finding |
-| RESIDUAL_RISK | 具体证据 | pass/fail | none 或 finding |
-| ARCHIVE_READY | 具体证据 | pass/fail | none 或 finding |
+| IMP_PRESENT | <required:IMP and linear effective revision chain> | pass/fail | none 或 AUD-NNNN-F001 |
+| SCOPE_COMPLETE | <required:plan-to-change evidence> | pass/fail | none 或 finding |
+| CHECKLIST_COMPLETE | <required:item/date/revision evidence> | pass/fail | none 或 finding |
+| VALIDATION_GATES | <required:commands/results/artifacts> | pass/fail | none 或 finding |
+| AUDIT_CHAIN_CLEAN | <required:derived AUD/REM/follow-up evidence> | pass/fail | none 或 finding |
+| RESIDUAL_RISK | <required:risk owner/decision evidence> | pass/fail | none 或 finding |
+| ARCHIVE_READY | <required:closure/approval prerequisites> | pass/fail | none 或 finding |
 
 ## Findings
 

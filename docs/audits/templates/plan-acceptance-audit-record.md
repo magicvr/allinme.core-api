@@ -1,13 +1,16 @@
 ---
 status: open
+governance_contract: audit-loop/v3
 audit_schema: plan-acceptance/v2
 audit_id: AUD-NNNN
 auditor: auditor-name-and-version
+execution_context_id: 00000000-0000-4000-8000-000000000000
+source_context_ids: legacy-unavailable
 audit_type: acceptance
 acceptance_type: plan-readiness
 acceptance_verdict: pending
 plan_status_at_acceptance: active
-independence_basis: separate-auditor
+independence_basis: separate-context
 scope: plan:PLN-NNNN
 subject: plan readiness acceptance
 baseline: git:full-commit-sha; worktree:clean
@@ -31,14 +34,14 @@ related_plans: PLN-NNNN
 
 | Control | Evidence | Verdict | Finding |
 |---|---|---|---|
-| READY_IDENTITY | 具体证据 | pass/fail | none 或 AUD-NNNN-F001 |
-| READY_SCOPE | 具体证据 | pass/fail | none 或 finding |
-| READY_FACTS | 具体证据 | pass/fail | none 或 finding |
-| READY_DEPENDENCIES | 具体证据 | pass/fail | none 或 finding |
-| READY_DESIGN | 具体证据 | pass/fail | none 或 finding |
-| READY_EVIDENCE | 具体证据 | pass/fail | none 或 finding |
-| READY_GATES | 具体证据 | pass/fail | none 或 finding |
-| PLAN_AUDIT_CHAIN_CLEAN | 相关计划 AUD/REM/follow-up 链和验收基线证据 | pass/fail | none 或 finding |
+| READY_IDENTITY | <required:file/frontmatter/index evidence> | pass/fail | none 或 AUD-NNNN-F001 |
+| READY_SCOPE | <required:scope section evidence> | pass/fail | none 或 finding |
+| READY_FACTS | <required:fact-source/code evidence> | pass/fail | none 或 finding |
+| READY_DEPENDENCIES | <required:dependency/version evidence> | pass/fail | none 或 finding |
+| READY_DESIGN | <required:decision/stop-condition evidence> | pass/fail | none 或 finding |
+| READY_EVIDENCE | <required:test/CI/recovery plan evidence> | pass/fail | none 或 finding |
+| READY_GATES | <required:entry/release/owner evidence> | pass/fail | none 或 finding |
+| PLAN_AUDIT_CHAIN_CLEAN | <required:derived AUD/REM chain evidence> | pass/fail | none 或 finding |
 
 ## Findings
 
