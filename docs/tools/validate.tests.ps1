@@ -112,6 +112,30 @@ P0 dependency DAG: WP-Facts precedes Schema-Recovery, HTTP-Order, Lock, and Base
     }
     Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
 
+    $unknownFactSourcePlan = $phaseFivePlan.Replace('plan/checklist diffs', 'plan/checklist diffs, docs/99-untracked-fact.md')
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $unknownFactSourcePlan) -Encoding UTF8
+    $unknownFactSourceResult = Invoke-Validator $fixtureRoot
+    if ($unknownFactSourceResult.ExitCode -eq 0 -or $unknownFactSourceResult.Output -notmatch 'WP-Facts output contains unknown or non-canonical token: docs/99-untracked-fact.md') {
+        throw "validator did not reject an unknown WP-Facts source: $($unknownFactSourceResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
+
+    $duplicateFactSourcePlan = $phaseFivePlan.Replace('docs/04-validation.md, plan/checklist diffs', 'docs/04-validation.md, docs/04-validation.md, plan/checklist diffs')
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $duplicateFactSourcePlan) -Encoding UTF8
+    $duplicateFactSourceResult = Invoke-Validator $fixtureRoot
+    if ($duplicateFactSourceResult.ExitCode -eq 0 -or $duplicateFactSourceResult.Output -notmatch 'WP-Facts output contains duplicate token: docs/04-validation.md') {
+        throw "validator did not reject a duplicate WP-Facts source: $($duplicateFactSourceResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
+
+    $ambiguousFactSourcePlan = $phaseFivePlan.Replace('docs/04-validation.md, plan/checklist diffs', 'docs/04-validation.md, docs/04-validation, plan/checklist diffs')
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $ambiguousFactSourcePlan) -Encoding UTF8
+    $ambiguousFactSourceResult = Invoke-Validator $fixtureRoot
+    if ($ambiguousFactSourceResult.ExitCode -eq 0 -or $ambiguousFactSourceResult.Output -notmatch 'WP-Facts output contains unknown or non-canonical token: docs/04-validation') {
+        throw "validator did not reject an ambiguous WP-Facts source spelling: $($ambiguousFactSourceResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
+
     $negativePronounDagPlan = $phaseFivePlan + "`nWP-Baseline-Evidence can consume WP-Facts metadata but does not depend on it."
     Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $negativePronounDagPlan) -Encoding UTF8
     $negativePronounDagResult = Invoke-Validator $fixtureRoot

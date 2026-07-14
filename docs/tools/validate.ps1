@@ -180,8 +180,21 @@ function Test-PhaseFiveFactsOutput([string]$Content, [System.Collections.Generic
         'plan/checklist'
     )
     $evidence = $row.Groups['evidence'].Value
+    $outputTokens = @(
+        [regex]::Split($evidence, '[,\uFF0C\u3001;\uFF1B\s]+') |
+            ForEach-Object { $_.Trim('`', '.', ':', ',', ';') } |
+            Where-Object { $_ -match '^(?:docs|plan)[/\\]' }
+    )
+    foreach ($outputToken in $outputTokens) {
+        if ($outputToken -notin $requiredOutputs) {
+            $Failures.Add("PLN-0005 WP-Facts output contains unknown or non-canonical token: $outputToken")
+        }
+    }
+    foreach ($duplicate in @($outputTokens | Group-Object | Where-Object { $_.Count -gt 1 })) {
+        $Failures.Add("PLN-0005 WP-Facts output contains duplicate token: $($duplicate.Name)")
+    }
     foreach ($requiredOutput in $requiredOutputs) {
-        if ($evidence -notmatch [regex]::Escape($requiredOutput)) {
+        if ($outputTokens -notcontains $requiredOutput) {
             $Failures.Add("PLN-0005 WP-Facts output is missing required fact source: $requiredOutput")
         }
     }

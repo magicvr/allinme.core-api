@@ -41,8 +41,9 @@ related_plans: PLN-0005
 
 ## 当前索引
 
-- [`AUD-0008`](./records/AUD-0008-20260714-codex-follow-up-rem-0004-contract-clause-parsers.md)：`status=closed`；`remediation=awaiting-verification:REM-0005`；`scope=follow-up:REM-0004`；REM-0005 已处理同 clause deferral mask、整行 rejection 豁免和未识别关系词，等待独立复审。
-- [`AUD-0007`](./records/AUD-0007-20260714-codex-plan-pln-0005-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=awaiting-verification:REM-0005`；`scope=plan:PLN-0005`；REM-0005 已补齐 `WP-Facts` 五份强制事实源出口，等待独立复审。
+- [`AUD-0009`](./records/AUD-0009-20260714-codex-follow-up-rem-0005-active-audits.md)：`status=closed`；`remediation=required`；`scope=follow-up:REM-0005`；AUD-0008 的两项 parser finding 已验证，AUD-0007 的 WP-Facts exact-output gap 仍需整改。
+- [`AUD-0008`](./records/AUD-0008-20260714-codex-follow-up-rem-0004-contract-clause-parsers.md)：`status=closed`；`remediation=verified-by:AUD-0009`；`scope=follow-up:REM-0004`；REM-0005 的 clause deferral mask、整行 rejection 豁免和未识别关系词已通过独立复审。
+- [`AUD-0007`](./records/AUD-0007-20260714-codex-plan-pln-0005-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=continued-by:AUD-0009`；`scope=plan:PLN-0005`；WP-Facts 五份强制事实源已验证，但 exact-output allowlist 仍需整改。
 - [`AUD-0006`](./records/AUD-0006-20260714-codex-follow-up-rem-0003-contract-validators.md)：`status=closed`；`remediation=continued-by:AUD-0008`；`scope=follow-up:REM-0003`；五个精确复现已修正，但剩余 parser 绕过已转入新的 follow-up audit。
 - [`AUD-0005`](./records/AUD-0005-20260714-codex-follow-up-rem-0002-contracts.md)：`status=closed`；`remediation=continued-by:AUD-0006`；`scope=follow-up:REM-0002`；当前整改队列已转移到新的 follow-up audit。
 - [`AUD-0004`](./records/AUD-0004-20260714-codex-follow-up-rem-0001-active-audits.md)：`status=closed`；`remediation=continued-by:AUD-0005`；`scope=follow-up:REM-0001`；当前整改队列已转移到新的 follow-up audit。
