@@ -13,7 +13,8 @@ description: Verify implementation completion in a separate execution context us
 6. 必须从索引派生完整计划/实施 AUD、REM 和 follow-up 链；`related_audits` 必须包含最新 ready 计划验收、最新实施审计和终端复审，`related_remediations` 必须包含影响有效实施 revision 的全部 REM，不得漏列较新的失败记录或使用不存在的状态引用。
 7. 没有 IMP、IMP 未完成或缺少实施审计时仍创建结构合法的负向 AUD；没有 IMP 时使用 `related_implementations: none`、`effective_result_revision: none`，并以 `acceptance_next_action` 把队列路由到 implement、implementation-audit、remediate 或 decision，不得伪造 IMP 索引或用 REM 代替 IMP。
 8. 只有全部 Control 通过、计划与实施审计链均干净且计划验收未漂移时才能写 `acceptance_verdict: complete`。
-9. 预留前恢复相同计划/effective revision/治理 baseline 的唯一 open 验收；漂移时终止为 superseded 后新建。生成的记录和最终汇报必须使用中文；固定状态值保持原样。
+9. `complete` 前必须独立重跑至少一条与计划风险匹配、且不属于治理 validator 或 `git diff --check` 的 subject-specific 验证命令；不能只引用 IMP、实施审计或 follow-up 的历史结果。
+10. 预留前恢复相同计划/effective revision/治理 baseline 的唯一 open 验收；漂移时终止为 superseded 后新建。生成的记录和最终汇报必须使用中文；固定状态值保持原样。
 
 ```text
 $backend-implementation-acceptance-audit

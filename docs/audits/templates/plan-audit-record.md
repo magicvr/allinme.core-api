@@ -9,6 +9,8 @@ audit_type: targeted
 scope: plan:PLN-NNNN
 subject: concise plan subject
 baseline: git:full-commit-sha; worktree:clean
+evidence_revision: git:full-commit-sha; worktree:clean
+audited_subject_paths: docs/plans/PLN-NNNN-subject.md, docs/plans/PLN-NNNN-subject-checklist.md
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD

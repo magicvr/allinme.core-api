@@ -1,6 +1,6 @@
 interface:
   display_name: "Plan Audit Until Ready"
-  short_description: "Close plan findings with independent acceptance"
-  default_prompt: "Use $backend-plan-audit-until-ready to close active plan audit chains with separate-context review and acceptance."
+  short_description: "Run set-aware plan audit closure with verification-first routing"
+  default_prompt: "Use $backend-plan-audit-until-ready to close selected plan chains with cross-plan checks, verification-first remediation, and separate-context readiness acceptance."
 policy:
   allow_implicit_invocation: false

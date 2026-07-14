@@ -44,12 +44,12 @@ applies_to: implementation roadmap phase 6 pages
 
 ## 关联审计
 
-- 审计可关联一个或多个计划，但审计 ID 与计划 ID 分别递增，不能共用编号。
-- 审计发现需要大规模整改时，新建计划并在审计的 `related_plans` 中引用；小范围修复可直接记录在审计中。
+- 新合同审计严格一计划一 AUD；多计划调用只负责集合级交叉检查和分派，每个受影响计划拥有独立 finding 与 remediation 状态。旧版多计划审计保持不可变。
+- 审计发现需要大规模整改时，新建计划并在审计中引用；任何实际修复都必须通过独立 REM 或新的实施 IMP 完成，审计记录本身不得直接整改。
 - 计划完成不自动关闭审计。审计者必须复核修复或明确记录接受风险后，才能关闭审计。
 
 ## 计划审计闭环与验收
 
-计划审计闭环使用 `$backend-plan-audit-until-ready`：普通审计严格一计划一 AUD；整改按单一计划链分组；follow-up 和最终验收必须在不同执行上下文运行。作为实施闭环子流程时使用 `GOAL_MODE=child`，不得嵌套 persistent goal。
+计划审计闭环使用 `$backend-plan-audit-until-ready`：批量入口先执行集合级交叉检查，再严格一计划一 AUD；整改按单一计划链分组，且 partial REM 必须先复审后重新整改；follow-up 和最终验收必须在不同执行上下文运行。计划审计记录必须绑定 `evidence_revision` 与 `audited_subject_paths`。作为实施闭环子流程时使用 `GOAL_MODE=child`，不得嵌套 persistent goal。
 
 计划验收审计不依赖闭环运行上下文，可单独执行，但必须独立重建并检查完整计划 AUD/REM/follow-up 链；无 `TARGET` 时选择所有活跃且未归档计划，但必须为每个计划分别创建一份 AUD 并给出 `ready`、`not-ready` 或 `blocked`，禁止用一个全局 verdict 混合多个计划。只有 `PLAN_AUDIT_CHAIN_CLEAN=pass` 且 verdict 为 `ready` 的计划才允许进入 `$backend-implement-plan`。
