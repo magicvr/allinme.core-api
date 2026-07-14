@@ -29,6 +29,7 @@ related_plans: PLN-0005
 - 审计者身份以 frontmatter 为准，文件名只保存便于检索的 slug。
 - 新计划审计必须使用 `audit_schema: plan-audit/v2` 和 [`templates/plan-audit-record.md`](./templates/plan-audit-record.md)。每个相关计划必须有独立的 Checklist 审计矩阵、plan/checklist 双链接和六项固定 Control；缺失时不得关闭。
 - 计划实施就绪验收使用 `audit_schema: plan-acceptance/v1`；实施审计使用 `audit_schema: implementation-audit/v1`；实施完成验收使用 `audit_schema: implementation-acceptance/v1`。三者都必须独立创建 AUD，不得把结论写回 IMP 或旧审计正文。
+- 两类验收 AUD 必须记录 `independence_basis` 和完整 SHA 的干净 `evidence_revision`。`ready`/`complete` 必须与全部矩阵 Control、AUD 索引 remediation 状态及 IMP acceptance 状态一致；计划就绪还必须通过 `PLAN_AUDIT_CHAIN_CLEAN`，实施完成必须同时清理计划和实施审计链。
 
 ## 记录和追溯原则
 
@@ -90,8 +91,9 @@ $backend-plan-audit TARGET="PLN-0005,PLN-0006" FOCUS=recovery
 ```
 
 - 计划审计的 `TARGET` 缺省为 `active`，也可指定一个或多个 `PLN` ID；它只证明选中计划的质量，不代表全仓审计。
-- 计划和实施验收的 `TARGET` 缺省为全部活跃且未归档计划；验收必须独立读取计划、IMP、代码、测试和 Evidence。
+- 计划和实施验收的 `TARGET` 缺省为全部活跃且未归档计划；验收必须独立读取计划、IMP、代码、测试和 Evidence，并在干净的不可变 evidence revision 上关闭。
 - 实施审计只接受 completed IMP；实施闭环不能绕过计划可实施验收，也不能自动归档计划。
+- 两个闭环 skill 必须把规范化后的同一 `TARGET` 传递给每个子 skill；整改和复审只能选择该目标集合关联的 AUD/REM，不得回退到默认全量队列。
 - 审计提示词只生成审计记录，不直接整改。整改必须生成独立 [`REM`](../remediations/README.md)，复审再生成新的 follow-up `AUD`。
 - Codex 官方已弃用只存在于个人 `~/.codex/prompts` 的 custom prompts；仓库使用可版本化的 `.agents/skills`，通过 `$skill-name` 显式调用，并关闭隐式触发。
 

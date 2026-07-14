@@ -21,7 +21,8 @@ agent: agent
 1. 检查分支、工作树、HEAD 完整 SHA、计划当前 revision、已有计划审计和用户改动。
 2. 完整读取选中 plan/checklist、路线图、事实源、相关 ADR、当前代码/测试边界和历史审计；不得只采用最近一次计划审计的结论。
 3. 扫描最大 `AUD-NNNN`，按计划分别建立审计矩阵；使用 `docs/audits/templates/plan-acceptance-audit-record.md`。
-4. frontmatter 固定 `audit_schema: plan-acceptance/v1`、`audit_type: acceptance`、`acceptance_type: plan-readiness`、`acceptance_verdict: pending`，并立即写入 `docs/audits/README.md`，初始为 `status=open`、`remediation=pending`。
+4. 验收只能在完整 SHA 的干净工作树上关闭；记录 `evidence_revision`。优先使用不同于计划审计/整改执行者的 auditor；无法隔离身份时必须使用新的执行上下文重新生成证据，并写 `independence_basis: fresh-context-independent-rerun`，不得声称组织级独立。
+5. frontmatter 固定 `audit_schema: plan-acceptance/v1`、`audit_type: acceptance`、`acceptance_type: plan-readiness`、`acceptance_verdict: pending`、`independence_basis` 和 `evidence_revision`，并立即写入 `docs/audits/README.md`，初始为 `status=open`、`remediation=pending`。
 
 ## 3. 独立验收矩阵
 
@@ -40,8 +41,9 @@ agent: agent
 | READY_DESIGN | 冻结决策、替代方案、输入/输出和停止条件 | pass/fail | none 或 finding |
 | READY_EVIDENCE | checklist、测试、失败注入、CI、artifact 和回退证据计划 | pass/fail | none 或 finding |
 | READY_GATES | 实施入口、最小验证、发布/恢复门禁和 owner | pass/fail | none 或 finding |
+| PLAN_AUDIT_CHAIN_CLEAN | 相关计划审计、整改和复审链无待处理 finding，且没有晚于当前基线的新计划缺陷 | pass/fail | none 或 finding |
 
-任何 `fail` 都必须关联当前审计 finding。验收必须区分 `ready`、`not-ready` 和 `blocked`：只有所有 Control 为 `pass`、没有未处置的阻断 finding 且实施入口明确时才可写 `ready`。
+任何 `fail` 都必须关联当前审计 finding。验收必须区分 `ready`、`not-ready` 和 `blocked`：只有所有 Control 为 `pass`、没有未处置的阻断 finding、计划审计链干净且实施入口明确时才可写 `ready`。
 
 ## 4. 关闭与索引
 

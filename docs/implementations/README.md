@@ -11,13 +11,13 @@
 
 ## 生命周期与索引
 
-1. 实施前必须存在独立计划验收 AUD，且最新 `acceptance_verdict: ready`。
+1. 实施前必须存在已关闭的独立计划验收 AUD，且最新 `acceptance_verdict: ready`、`PLAN_AUDIT_CHAIN_CLEAN=pass`，验收后没有计划 revision 或审计链漂移。
 2. 修改代码、测试、文档或 checklist 前先创建 IMP 并加入本索引。
 3. `status=in-progress`：正在实施；`audit=not-ready`；`acceptance=not-ready`。
 4. `status=completed`：计划范围已实施且本地 Evidence 齐全；`audit=pending`；`acceptance=pending`。
 5. `status=partial` 或 `status=blocked`：必须逐项记录未完成内容、阻断原因和恢复条件；不得进入完成验收。
 6. 实施审计完成后，索引写 `audit=audited-by:AUD-NNNN`；整改和复审仍以 `docs/audits/` 与 `docs/remediations/` 为准。
-7. 完成验收通过后，索引写 `acceptance=accepted-by:AUD-NNNN`；失败或阻断写 `acceptance=rejected-by:AUD-NNNN`。计划不会自动归档。
+7. 完成验收必须重新检查计划与实施两条审计链、IMP result revision 和当前干净 evidence revision；通过后索引写 `acceptance=accepted-by:AUD-NNNN`，失败或阻断写 `acceptance=rejected-by:AUD-NNNN`。计划不会自动归档。
 
 `completed`、`partial`、`blocked` 的 IMP 记录不可改写。发现实施缺陷时创建 REM 或新的 IMP；不得通过改写历史 IMP 伪造闭环完成。
 

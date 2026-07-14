@@ -6,9 +6,11 @@ auditor: auditor-name-and-version
 audit_type: acceptance
 acceptance_type: plan-readiness
 acceptance_verdict: pending
+independence_basis: separate-auditor
 scope: plan:PLN-NNNN
 subject: plan readiness acceptance
 baseline: git:full-commit-sha; worktree:clean
+evidence_revision: git:full-commit-sha; worktree:clean
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD
@@ -34,6 +36,7 @@ related_plans: PLN-NNNN
 | READY_DESIGN | 具体证据 | pass/fail | none 或 finding |
 | READY_EVIDENCE | 具体证据 | pass/fail | none 或 finding |
 | READY_GATES | 具体证据 | pass/fail | none 或 finding |
+| PLAN_AUDIT_CHAIN_CLEAN | 相关计划 AUD/REM/follow-up 链和验收基线证据 | pass/fail | none 或 finding |
 
 ## Findings
 

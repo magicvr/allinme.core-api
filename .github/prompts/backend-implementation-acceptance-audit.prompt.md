@@ -21,7 +21,8 @@ agent: agent
 1. 检查分支、工作树、HEAD、计划验收结果、IMP baseline/result revision、实施审计和用户已有改动。
 2. 重新读取 plan/checklist、IMP、代码/测试/配置/CI、Evidence、所有相关 AUD/REM/follow-up；不得直接采用 IMP 或最近审计的完成声明。
 3. 扫描最大 `AUD-NNNN`，按计划创建 `AUD-NNNN-YYYYMMDD-<auditor>-plan-<plan-id>-completion-acceptance.md` 或多计划等价文件。
-4. frontmatter 固定 `audit_schema: implementation-acceptance/v1`、`audit_type: acceptance`、`acceptance_type: implementation-completion`、`acceptance_verdict: pending`、`related_implementations`，立即加入审计索引，初始 `status=open`、`remediation=pending`。
+4. 验收只能在完整 SHA 的干净工作树上关闭；重新运行足以推翻完成声明的验证并记录 `evidence_revision`。优先使用不同于 implementer 和实施审计者的 auditor；无法隔离身份时必须使用新的执行上下文独立重跑，并写 `independence_basis: fresh-context-independent-rerun`，不得声称组织级独立。
+5. frontmatter 固定 `audit_schema: implementation-acceptance/v1`、`audit_type: acceptance`、`acceptance_type: implementation-completion`、`acceptance_verdict: pending`、`independence_basis`、`evidence_revision`、`related_implementations`，立即加入审计索引，初始 `status=open`、`remediation=pending`。
 
 ## 3. 完成验收矩阵
 
@@ -37,11 +38,11 @@ agent: agent
 | SCOPE_COMPLETE | 计划范围、非目标、工作包和代码变更闭合 | pass/fail | none 或 finding |
 | CHECKLIST_COMPLETE | 所有强制条目、实际 Evidence 和未执行项 | pass/fail | none 或 finding |
 | VALIDATION_GATES | 测试、失败注入、race、migration/recovery、CI 和发布门禁 | pass/fail | none 或 finding |
-| AUDIT_CHAIN_CLEAN | 实施审计、整改、复审链无待处理 finding | pass/fail | none 或 finding |
+| AUDIT_CHAIN_CLEAN | 计划审计、实施审计、整改和复审链均无待处理 finding，且链条基线未发生漂移 | pass/fail | none 或 finding |
 | RESIDUAL_RISK | 剩余风险、接受人、范围和后续动作明确 | pass/fail | none 或 finding |
 | ARCHIVE_READY | 完成报告、用户确认前置条件和 plan/checklist 归档条件 | pass/fail | none 或 finding |
 
-只有全部 Control 通过、最新实施审计链无 `remediation=required`、IMP 为 `completed` 且证据可复核时，`acceptance_verdict` 才能写 `complete`。否则写 `incomplete` 或 `blocked`。
+只有全部 Control 通过、相关计划和实施审计链无 `remediation=required`、IMP 为 `completed`、最新计划验收仍为 `ready` 且证据 revision 与当前验收 baseline 一致时，`acceptance_verdict` 才能写 `complete`。否则写 `incomplete` 或 `blocked`。
 
 ## 4. 关闭与索引
 

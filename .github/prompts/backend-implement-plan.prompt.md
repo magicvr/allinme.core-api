@@ -12,7 +12,7 @@ agent: agent
 ## 1. 对象与前置条件
 
 - `TARGET` 缺省为 `active`：选择所有活跃且未归档计划；显式目标可为一个或多个 `PLN-NNNN` 或 plan 路径。
-- 每个计划必须有对应的 `backend-plan-acceptance-audit`，且最新验收 `acceptance_verdict: ready`。缺失或非 `ready` 时停止该计划，不得绕过验收直接实施。
+- 每个计划必须有对应且已关闭的 `backend-plan-acceptance-audit`，最新验收为 `acceptance_verdict: ready`、`PLAN_AUDIT_CHAIN_CLEAN=pass`，其后没有新的 `remediation=required` 计划审计或计划 revision 漂移。缺失或条件不满足时停止该计划，不得绕过验收直接实施。
 - 目标无法解析、plan/checklist 缺失或存在未解决的范围冲突时，报告具体原因并停止，不得静默缩小范围。
 
 ## 2. 创建 IMP 记录
