@@ -1,7 +1,7 @@
 ---
 name: backend-implement-plan
 description: "按计划和 checklist 实施一个或多个活跃计划，并创建可追溯的 IMP 实施记录"
-argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [IMPLEMENTER=codex] [CONTEXT_ID=<uuid>] [FOCUS=...]"
+argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [IMPLEMENTER=codex] [CONTEXT_ID=<uuid>] [CONTEXT_REF=<runtime-ref>] [FOCUS=...]"
 agent: agent
 ---
 
@@ -14,15 +14,15 @@ agent: agent
 ## 1. 对象与前置条件
 
 - `TARGET` 缺省为 `active`：选择所有活跃且未归档计划；显式目标可为一个或多个 `PLN-NNNN` 或 plan 路径。
-- 每个计划必须有已关闭且最新为 `ready` 的计划验收，其后没有新的 `required`、`decision-required`、待复审计划链状态或 plan/checklist 漂移。否则停止，不得绕过。
+- 每个计划必须有已关闭且最新为 `ready` 的计划验收，其后没有新的 `required`、`decision-required`、待复审计划链状态、完整活跃 peer 集合变化或最新计划审计 `audited_subject_paths` 内容漂移。否则停止，不得绕过。
 - 目标无法解析、plan/checklist 缺失或存在未解决的范围冲突时，报告具体原因并停止，不得静默缩小范围。
-- `FOCUS` 只能增加深度；`CONTEXT_ID` 是实施上下文复用的 UUIDv4。
+- `FOCUS` 只能增加深度；`CONTEXT_ID` 是本次实施运行的 UUIDv4 correlation ID，不证明上下文隔离；`CONTEXT_REF` 记录运行时提供的当前 task/agent/thread 引用，无法提供时写 `runtime-unavailable`。
 
 ## 2. 创建 IMP 记录
 
 1. 检查分支、工作树、HEAD 完整 SHA、计划验收结果、用户已有改动和实施依赖。
 2. 先读取该计划全部 IMP：若存在 `status: in-progress` 的唯一记录则恢复该记录；若最新记录为 `completed`，除非失败验收或 follow-up 明确要求新的实施尝试，否则停止并交回审计/验收闭环；若需要新尝试，使用 `docs/tools/reserve-governance-record.ps1 -Kind IMP -Suffix <YYYYMMDD-implementer-plan-plan-id-subject>` 原子分配 ID 并预留 `IMP-NNNN-YYYYMMDD-<implementer>-plan-<plan-id-subject>.md`，必须采用命令返回的 ID 和路径。
-3. 使用模板，固定 `governance_contract: audit-loop/v3`、`implementation_schema: implementation/v2` 和 `execution_context_id`。`baseline` 是创建 IMP 前包含 ready 验收链的干净治理快照；若验收后 plan/checklist 漂移则停止。立即更新索引。
+3. 使用模板，固定 `governance_contract: audit-loop/v3`、`workflow_contract_revision: audit-runtime/v1`、`implementation_schema: implementation/v2`、`execution_context_id` 和 `runtime_context_ref`。`baseline` 是创建 IMP 前包含 ready 验收链的干净治理快照；若验收后完整 peer 快照或 subject path 漂移则停止。立即更新索引。
 4. 创建 IMP 和索引后才能修改产品代码、测试、计划、checklist 或工具配置。
 5. 若本次实施由 `acceptance_next_action: implement` 的完成验收触发，把该 AUD 写入 IMP 的 `trigger_audits`，并将其审计索引从 `remediation=implementation-required` 原子流转为 `remediation=implemented-by:IMP-NNNN`；普通首次实施使用 `trigger_audits: none`。
 6. 在修改任何产品代码、测试、plan/checklist 或工具配置前，把新建或发生恢复性状态变更的 in-progress IMP、实施索引及触发 AUD 索引流转作为独立 `open checkpoint` governance commit 提交。若匹配 checkpoint 已在当前 `HEAD` 且工作树干净，直接复用，禁止创建空提交。无法取得干净 checkpoint 时停止，不得开始实施。
@@ -32,7 +32,7 @@ agent: agent
 - 严格按 plan 的范围、依赖顺序、工作包和停止条件实施，不把 FOCUS 解释为缩小范围。
 - 每项 checklist 完成后紧随记录日期、revision、命令、结果和 Evidence；未完成项不得勾选或写成已完成。
 - 先写可证伪测试和失败路径，再实现代码；保留实际测试、构建、迁移、恢复、CI、artifact 和未执行原因。
-- 发现计划缺陷、跨里程碑变更或新增外部契约时暂停实施，更新计划或创建新计划；不得用代码提交掩盖计划漂移。
+- 实施期间只允许在 checklist 写入实际 Evidence；不得在同一 IMP 内修改 plan 契约、范围、冻结值或未执行门禁。发现计划缺陷、跨里程碑变更或新增外部契约时，把 IMP 关闭为 `partial`/`blocked`，更新或新建计划并重新完成计划审计与 ready 验收后，再创建新的 IMP；不得用代码提交掩盖计划漂移或事后改变验收标准。
 - 不修改 `status: closed` 的 AUD、REM 或 IMP；不自动归档计划，不把用户确认当作默认授权。
 
 ## 4. 完成与交接

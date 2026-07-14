@@ -1,6 +1,6 @@
 interface:
   display_name: "Backend Plan Audit"
   short_description: "Create one formal audit per selected plan"
-  default_prompt: "Use $backend-plan-audit to create or resume one formal AUD for each active implementation plan."
+  default_prompt: "Use $backend-plan-audit to audit selected plans against the complete active peer set at an exact evidence revision."
 policy:
   allow_implicit_invocation: false

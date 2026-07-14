@@ -705,9 +705,12 @@ foreach ($file in $markdownFiles) {
                 if ((Get-FrontmatterValue $frontmatter 'governance_contract') -eq 'audit-loop/v3') {
                     $requiredFields += @('execution_context_id')
                 }
-                if ((Get-FrontmatterValue $frontmatter 'governance_contract') -eq 'audit-loop/v3' -and
+                if ((Get-FrontmatterValue $frontmatter 'workflow_contract_revision') -eq 'audit-runtime/v1') {
+                    $requiredFields += @('runtime_context_ref')
+                }
+                if ((Get-FrontmatterValue $frontmatter 'workflow_contract_revision') -eq 'audit-runtime/v1' -and
                     (Get-FrontmatterValue $frontmatter 'audit_schema') -eq 'plan-audit/v2') {
-                    $requiredFields += @('evidence_revision', 'audited_subject_paths')
+                    $requiredFields += @('evidence_revision', 'evidence_worktree_revision', 'evidence_runner', 'audited_peer_plans', 'audited_subject_paths')
                 }
                 if ((Get-FrontmatterValue $frontmatter 'status') -eq 'superseded') {
                     $requiredFields += @('completed_at', 'superseded_by', 'supersession_reason')
@@ -724,11 +727,17 @@ foreach ($file in $markdownFiles) {
                 if ((Get-FrontmatterValue $frontmatter 'governance_contract') -eq 'audit-loop/v3') {
                     $requiredFields += @('execution_context_id', 'parent_result_revision')
                 }
+                if ((Get-FrontmatterValue $frontmatter 'workflow_contract_revision') -eq 'audit-runtime/v1') {
+                    $requiredFields += @('runtime_context_ref')
+                }
             }
             if ($docsRelativePath.StartsWith('implementations/records/')) {
                 $requiredFields = @('status', 'implementation_schema', 'implementation_id', 'implementer', 'scope', 'related_plans', 'plan_acceptance_audits', 'trigger_audits', 'plan_evidence_revision', 'baseline', 'result_revision', 'started_at', 'last_updated')
                 if ((Get-FrontmatterValue $frontmatter 'governance_contract') -eq 'audit-loop/v3') {
                     $requiredFields += @('execution_context_id')
+                }
+                if ((Get-FrontmatterValue $frontmatter 'workflow_contract_revision') -eq 'audit-runtime/v1') {
+                    $requiredFields += @('runtime_context_ref')
                 }
             }
             foreach ($field in $requiredFields) {
@@ -772,11 +781,11 @@ foreach ($file in $markdownFiles) {
         if ($Matches['checklist']) {
             $planIds[$key].Checklist++
             $planMetadata[$planId].ChecklistPath = $relativePath
-            $planMetadata[$planId].ChecklistDocsPath = "docs/$docsRelativePath"
+            $planMetadata[$planId].ChecklistDocsPath = ("docs/$docsRelativePath" -replace '\\', '/')
         } else {
             $planIds[$key].Plan++
             $planMetadata[$planId].PlanPath = $relativePath
-            $planMetadata[$planId].PlanDocsPath = "docs/$docsRelativePath"
+            $planMetadata[$planId].PlanDocsPath = ("docs/$docsRelativePath" -replace '\\', '/')
         }
     } elseif ($docsRelativePath.StartsWith('plans/') -and
         $docsRelativePath -notin @('plans/README.md', 'plans/archived/README.md') -and
@@ -794,11 +803,20 @@ foreach ($file in $markdownFiles) {
             $governanceContract = Get-FrontmatterValue $frontmatter 'governance_contract'
             $executionContextId = Get-FrontmatterValue $frontmatter 'execution_context_id'
             $sourceContextIds = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'source_context_ids'))
+            $runtimeContextRef = Get-FrontmatterValue $frontmatter 'runtime_context_ref'
+            $sourceContextRefs = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'source_context_refs'))
+            $workflowContractRevision = Get-FrontmatterValue $frontmatter 'workflow_contract_revision'
             if (-not [string]::IsNullOrWhiteSpace($governanceContract) -and $governanceContract -ne 'audit-loop/v3') {
                 $failures.Add("Invalid governance_contract: $relativePath ($governanceContract)")
             }
             if ($governanceContract -eq 'audit-loop/v3' -and -not (Test-UuidV4 $executionContextId)) {
                 $failures.Add("audit-loop/v3 record must use a UUIDv4 execution_context_id: $relativePath")
+            }
+            if (-not [string]::IsNullOrWhiteSpace($workflowContractRevision) -and $workflowContractRevision -ne 'audit-runtime/v1') {
+                $failures.Add("Invalid workflow_contract_revision: $relativePath ($workflowContractRevision)")
+            }
+            if ($workflowContractRevision -eq 'audit-runtime/v1' -and [string]::IsNullOrWhiteSpace($runtimeContextRef)) {
+                $failures.Add("audit-loop/v3 record must declare runtime_context_ref: $relativePath")
             }
             if ($governanceContract -eq 'audit-loop/v3' -and
                 (Get-FrontmatterValue $frontmatter 'baseline') -notmatch '^git:[0-9a-fA-F]{40};\s*worktree:clean$') {
@@ -880,6 +898,14 @@ foreach ($file in $markdownFiles) {
                     if ($sourceContextIds.Count -eq 0) {
                         $failures.Add("implementation-audit/v2 must record source_context_ids: $relativePath")
                     }
+                    if ($workflowContractRevision -eq 'audit-runtime/v1' -and ($runtimeContextRef -eq 'runtime-unavailable' -or $sourceContextRefs.Count -eq 0)) {
+                        $failures.Add("implementation-audit/v2 must record a real runtime_context_ref and source_context_refs: $relativePath")
+                    }
+                    foreach ($sourceContextRef in $sourceContextRefs) {
+                        if ($sourceContextRef -ne 'legacy-unavailable' -and $sourceContextRef -eq $runtimeContextRef) {
+                            $failures.Add("Implementation audit runtime context must differ from every source context ref: $relativePath")
+                        }
+                    }
                     foreach ($sourceContextId in $sourceContextIds) {
                         if ($sourceContextId -ne 'legacy-unavailable' -and -not (Test-UuidV4 $sourceContextId)) {
                             $failures.Add("Invalid source_context_id in implementation audit: $relativePath ($sourceContextId)")
@@ -890,6 +916,10 @@ foreach ($file in $markdownFiles) {
                     }
                     if ($implementationAuditEvidenceRevision -notmatch '^git:[0-9a-fA-F]{40};\s*worktree:clean$') {
                         $failures.Add("implementation-audit/v2 evidence_revision must be a full git SHA on a clean worktree: $relativePath")
+                    }
+                    if ($workflowContractRevision -eq 'audit-runtime/v1' -and ((Get-FrontmatterValue $frontmatter 'evidence_worktree_revision') -ne "git:$(Get-GitRevision $implementationAuditEvidenceRevision)" -or
+                        (Get-FrontmatterValue $frontmatter 'evidence_runner') -ne 'docs/tools/invoke-revision-evidence.ps1')) {
+                        $failures.Add("implementation-audit/v2 must bind detached evidence execution to evidence_revision: $relativePath")
                     }
                     if (-not (Test-UuidV4 $implementationAuditEvidenceRunId)) {
                         $failures.Add("implementation-audit/v2 must record a valid UUIDv4 evidence_run_id: $relativePath")
@@ -956,6 +986,14 @@ foreach ($file in $markdownFiles) {
                             if ($sourceContextIds.Count -eq 0) {
                                 $failures.Add("audit-loop/v3 acceptance must record source_context_ids: $relativePath")
                             }
+                            if ($workflowContractRevision -eq 'audit-runtime/v1' -and ($runtimeContextRef -eq 'runtime-unavailable' -or $sourceContextRefs.Count -eq 0)) {
+                                $failures.Add("audit-loop/v3 acceptance must record a real runtime_context_ref and source_context_refs: $relativePath")
+                            }
+                            foreach ($sourceContextRef in $sourceContextRefs) {
+                                if ($sourceContextRef -ne 'legacy-unavailable' -and $sourceContextRef -eq $runtimeContextRef) {
+                                    $failures.Add("Acceptance runtime context must differ from every source context ref: $relativePath")
+                                }
+                            }
                             foreach ($sourceContextId in $sourceContextIds) {
                                 if ($sourceContextId -ne 'legacy-unavailable' -and -not (Test-UuidV4 $sourceContextId)) {
                                     $failures.Add("Invalid source_context_id in acceptance: $relativePath ($sourceContextId)")
@@ -973,6 +1011,10 @@ foreach ($file in $markdownFiles) {
                         }
                         if ($evidenceRevision -notmatch '^git:[0-9a-fA-F]{40};\s*worktree:clean$') {
                             $failures.Add("Acceptance audit evidence_revision must be a full git SHA on a clean worktree: $relativePath")
+                        }
+                        if ($workflowContractRevision -eq 'audit-runtime/v1' -and ((Get-FrontmatterValue $frontmatter 'evidence_worktree_revision') -ne "git:$(Get-GitRevision $evidenceRevision)" -or
+                            (Get-FrontmatterValue $frontmatter 'evidence_runner') -ne 'docs/tools/invoke-revision-evidence.ps1')) {
+                            $failures.Add("Acceptance audit must bind detached evidence execution to evidence_revision: $relativePath")
                         }
                         $acceptanceRevisionSha = Get-GitRevision $acceptanceBaseline
                         $acceptanceEvidenceSha = Get-GitRevision $evidenceRevision
@@ -1097,12 +1139,37 @@ foreach ($file in $markdownFiles) {
                         }
                         if ($governanceContract -eq 'audit-loop/v3') {
                             $planAuditEvidenceRevision = Get-FrontmatterValue $frontmatter 'evidence_revision'
+                            $auditedPeerPlans = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'audited_peer_plans'))
                             $auditedSubjectPaths = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'audited_subject_paths'))
                             if ($planAuditEvidenceRevision -notmatch '^git:[0-9a-fA-F]{40};\s*worktree:clean$') {
                                 $failures.Add("audit-loop/v3 plan audit evidence_revision must be a full git SHA on a clean worktree: $relativePath")
                             }
                             if ($auditedSubjectPaths.Count -lt 2) {
                                 $failures.Add("audit-loop/v3 plan audit must record plan/checklist audited_subject_paths: $relativePath")
+                            }
+                            if ($workflowContractRevision -eq 'audit-runtime/v1' -and ($auditedPeerPlans.Count -eq 0 -or $auditedPeerPlans -notcontains $relatedPlans[0])) {
+                                $failures.Add("audit-loop/v3 plan audit must record an audited_peer_plans set containing its subject: $relativePath")
+                            }
+                            if ($workflowContractRevision -eq 'audit-runtime/v1' -and
+                                $planMetadata.ContainsKey($relatedPlans[0]) -and
+                                $planMetadata[$relatedPlans[0]].Status -eq 'active') {
+                                $expectedActivePeers = @($planMetadata.Keys | Where-Object { $planMetadata[$_].Status -eq 'active' } | Sort-Object)
+                                $normalizedAuditedPeers = @($auditedPeerPlans | Sort-Object -Unique)
+                                if (($expectedActivePeers -join ',') -ne ($normalizedAuditedPeers -join ',')) {
+                                    $failures.Add("Active plan audit must snapshot the complete active peer set: $relativePath (expected=$($expectedActivePeers -join ','); actual=$($normalizedAuditedPeers -join ','))")
+                                }
+                            }
+                            foreach ($auditedPeerPlan in $auditedPeerPlans) {
+                                $normalizedAuditedSubjectPaths = @($auditedSubjectPaths | ForEach-Object { $_ -replace '\\', '/' })
+                                $peerPlanPathCount = @($normalizedAuditedSubjectPaths | Where-Object { $_ -match "^docs/plans/$([regex]::Escape($auditedPeerPlan))-.+\.md$" -and $_ -notmatch '-checklist\.md$' }).Count
+                                $peerChecklistPathCount = @($normalizedAuditedSubjectPaths | Where-Object { $_ -match "^docs/plans/$([regex]::Escape($auditedPeerPlan))-.+-checklist\.md$" }).Count
+                                if ($peerPlanPathCount -eq 0 -or $peerChecklistPathCount -eq 0) {
+                                    $failures.Add("Plan audit peer snapshot must include each peer plan/checklist path: $relativePath ($auditedPeerPlan; actual=$($normalizedAuditedSubjectPaths -join ','))")
+                                }
+                            }
+                            if ($workflowContractRevision -eq 'audit-runtime/v1' -and ((Get-FrontmatterValue $frontmatter 'evidence_worktree_revision') -ne "git:$(Get-GitRevision $planAuditEvidenceRevision)" -or
+                                (Get-FrontmatterValue $frontmatter 'evidence_runner') -ne 'docs/tools/invoke-revision-evidence.ps1')) {
+                                $failures.Add("Plan audit must bind detached evidence execution to evidence_revision: $relativePath")
                             }
                             foreach ($auditedPath in $auditedSubjectPaths) {
                                 if ($auditedPath -match '(^|/)(?:\.\.?)(?:/|$)' -or $auditedPath -match '[*?\[\]]' -or $auditedPath.StartsWith('/') -or $auditedPath.EndsWith('/')) {
@@ -1148,6 +1215,14 @@ foreach ($file in $markdownFiles) {
                 if ($sourceContextIds.Count -eq 0) {
                     $failures.Add("audit-loop/v3 follow-up must record source_context_ids: $relativePath")
                 }
+                if ($workflowContractRevision -eq 'audit-runtime/v1' -and ($runtimeContextRef -eq 'runtime-unavailable' -or $sourceContextRefs.Count -eq 0)) {
+                    $failures.Add("audit-loop/v3 follow-up must record a real runtime_context_ref and source_context_refs: $relativePath")
+                }
+                foreach ($sourceContextRef in $sourceContextRefs) {
+                    if ($sourceContextRef -ne 'legacy-unavailable' -and $sourceContextRef -eq $runtimeContextRef) {
+                        $failures.Add("Follow-up runtime context must differ from every source context ref: $relativePath")
+                    }
+                }
                 $followUpRemediations = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'related_remediations'))
                 if ($followUpRemediations.Count -ne 1 -or $declaredScope -ne "follow-up:$($followUpRemediations[0])") {
                     $failures.Add("audit-loop/v3 follow-up must identify exactly one matching REM: $relativePath")
@@ -1170,6 +1245,10 @@ foreach ($file in $markdownFiles) {
                 if ($followUpEvidenceRevision -notmatch '^git:[0-9a-fA-F]{40};\s*worktree:clean$') {
                     $failures.Add("audit-loop/v3 follow-up must record a full evidence_revision: $relativePath")
                 }
+                if ($workflowContractRevision -eq 'audit-runtime/v1' -and ((Get-FrontmatterValue $frontmatter 'evidence_worktree_revision') -ne "git:$(Get-GitRevision $followUpEvidenceRevision)" -or
+                    (Get-FrontmatterValue $frontmatter 'evidence_runner') -ne 'docs/tools/invoke-revision-evidence.ps1')) {
+                    $failures.Add("Follow-up must bind detached evidence execution to evidence_revision: $relativePath")
+                }
             }
             if ($governanceContract -eq 'audit-loop/v3') {
                 Test-FindingDetails $content $auditId $failures 'audit-loop/v3'
@@ -1187,11 +1266,15 @@ foreach ($file in $markdownFiles) {
                 Baseline = Get-FrontmatterValue $frontmatter 'baseline'
                 EvidenceRevision = Get-FrontmatterValue $frontmatter 'evidence_revision'
                 AuditedSubjectPaths = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'audited_subject_paths'))
+                AuditedPeerPlans = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'audited_peer_plans'))
                 EvidenceRunId = Get-FrontmatterValue $frontmatter 'evidence_run_id'
                 EffectiveResultRevision = Get-FrontmatterValue $frontmatter 'effective_result_revision'
                 GovernanceContract = $governanceContract
+                WorkflowContractRevision = $workflowContractRevision
                 ExecutionContextId = $executionContextId
                 SourceContextIds = $sourceContextIds
+                RuntimeContextRef = $runtimeContextRef
+                SourceContextRefs = $sourceContextRefs
                 StartedAt = Get-FrontmatterValue $frontmatter 'started_at'
                 CompletedAt = Get-FrontmatterValue $frontmatter 'completed_at'
                 SupersededBy = Get-FrontmatterValue $frontmatter 'superseded_by'
@@ -2633,13 +2716,15 @@ if ($docsRoot -eq $repositoryDocsRoot) {
         if ($planAuditPrompt -notmatch '(?m)^name:\s*backend-plan-audit\s*$' -or
             $planAuditPrompt -notmatch 'TARGET' -or
             $planAuditPrompt -notmatch 'PEER_SET' -or
-            $planAuditPrompt -notmatch 'peer-set-contract:\s*target-subset-of-peer-set;\s*audit-target-only;\s*inspect-complete-peer-set' -or
+            $planAuditPrompt -notmatch 'peer-set-contract:\s*target-subset-of-peer-set;\s*audit-target-only;\s*inspect-complete-peer-set;\s*persist-peer-snapshot' -or
             $planAuditPrompt -notmatch 'audit-contract:\s*plan;\s*default-target=active;\s*explicit-targets=true;\s*checklist-matrix-required' -or
             $planAuditPrompt -notmatch 'audit_schema:\s*plan-audit/v2' -or
             $planAuditPrompt -notmatch 'governance_contract:\s*audit-loop/v3' -or
             $planAuditPrompt -notmatch 'audit-loop-v3:\s*single-subject;\s*resume-open;\s*context-id;\s*revision-bound;\s*set-aware-dispatch' -or
             $planAuditPrompt -notmatch 'evidence_revision' -or
+            $planAuditPrompt -notmatch 'audited_peer_plans' -or
             $planAuditPrompt -notmatch 'audited_subject_paths' -or
+            $planAuditPrompt -notmatch 'invoke-revision-evidence\.ps1' -or
             $planAuditPrompt -notmatch 'subject-specific') {
             $failures.Add('Plan-audit prompt must default to active plans and support explicit targets')
         }
@@ -2662,7 +2747,7 @@ if ($docsRoot -eq $repositoryDocsRoot) {
         if ($followUpPrompt -notmatch '(?m)^name:\s*backend-follow-up-audit\s*$' -or
             $followUpPrompt -notmatch 'follow-up-contract:\s*default-target=pending-remediations;\s*creates-new-audit' -or
             $followUpPrompt -notmatch 'independence_basis:\s*separate-context' -or
-            $followUpPrompt -notmatch 'context-dispatch-contract:\s*runtime-provided-new-task-context;\s*local-uuid-generation-forbidden' -or
+            $followUpPrompt -notmatch 'context-dispatch-contract:\s*runtime-provided-new-task-context;\s*runtime-ref-required;\s*correlation-uuid-not-identity' -or
             $followUpPrompt -notmatch 'source_context_ids') {
             $failures.Add('Follow-up prompt must target pending REM records and create a new AUD')
         }
@@ -2687,10 +2772,13 @@ if ($docsRoot -eq $repositoryDocsRoot) {
                  $promptContent -notmatch 'evidence_revision' -or
                  $promptContent -notmatch 'evidence_run_id' -or
                  $promptContent -notmatch 'execution_context_id' -or
-                 $promptContent -notmatch 'source_context_ids' -or
+                  $promptContent -notmatch 'source_context_ids' -or
+                  $promptContent -notmatch 'runtime_context_ref' -or
+                  $promptContent -notmatch 'source_context_refs' -or
+                  $promptContent -notmatch 'invoke-revision-evidence\.ps1' -or
                  $promptContent -notmatch 'independence_basis:\s*separate-context' -or
                  $promptContent -notmatch 'remediation=decision-required' -or
-                 $promptContent -notmatch 'context-dispatch-contract:\s*runtime-provided-new-task-context;\s*local-uuid-generation-forbidden' -or
+                 $promptContent -notmatch 'context-dispatch-contract:\s*runtime-provided-new-task-context;\s*runtime-ref-required;\s*correlation-uuid-not-identity' -or
                  $promptContent -notmatch 'acceptance-chain-contract:\s*derived-index-chain;\s*evidence-run-id;\s*governance-baseline-and-subject-evidence')) {
                 $failures.Add("Acceptance prompt must define independence and evidence revision requirements: $promptName")
             }
@@ -2706,8 +2794,11 @@ if ($docsRoot -eq $repositoryDocsRoot) {
                 $failures.Add('Implementation acceptance prompt must use v2 effective revision semantics')
             }
             if ($promptName -eq 'backend-implementation-audit' -and
-                ($promptContent -notmatch 'audit_schema:\s*implementation-audit/v2' -or
-                 $promptContent -notmatch 'context-dispatch-contract:\s*runtime-provided-new-task-context;\s*local-uuid-generation-forbidden' -or
+                 ($promptContent -notmatch 'audit_schema:\s*implementation-audit/v2' -or
+                  $promptContent -notmatch 'runtime_context_ref' -or
+                  $promptContent -notmatch 'source_context_refs' -or
+                  $promptContent -notmatch 'invoke-revision-evidence\.ps1' -or
+                 $promptContent -notmatch 'context-dispatch-contract:\s*runtime-provided-new-task-context;\s*runtime-ref-required;\s*correlation-uuid-not-identity' -or
                  $promptContent -notmatch 'implementation-audit-v2:\s*separate-context;\s*governance-baseline;\s*evidence-equals-result')) {
                 $failures.Add('Implementation audit prompt must bind independent v2 evidence to the IMP result revision')
             }
@@ -2746,6 +2837,7 @@ if ($docsRoot -eq $repositoryDocsRoot) {
             }
             if ($recordCreatorContent -notmatch 'governance_contract:\s*audit-loop/v3' -or
                 $recordCreatorContent -notmatch 'execution_context_id' -or
+                $recordCreatorContent -notmatch 'runtime_context_ref|CONTEXT_REF' -or
                 $recordCreatorContent -notmatch 'FOCUS' -or
                 $recordCreatorContent -notmatch 'governance-handoff-contract:' -or
                 $recordCreatorContent -notmatch 'open checkpoint' -or
@@ -2802,7 +2894,7 @@ if ($docsRoot -eq $repositoryDocsRoot) {
                 $orchestratorContent -notmatch 'verification.*remediation|先复审后整改' -or
                 $orchestratorContent -notmatch 'per-plan|按计划|每个计划' -or
                 $orchestratorContent -notmatch 'orchestration-step-contract:\s*one-durable-transition-per-plan-per-cycle' -or
-                $orchestratorContent -notmatch 'context-dispatch-contract:\s*independent-stages-require-new-runtime-task;\s*uuid-is-not-isolation' -or
+                $orchestratorContent -notmatch 'context-dispatch-contract:\s*independent-stages-require-new-runtime-task;\s*runtime-ref-required;\s*uuid-is-not-isolation' -or
                 $orchestratorContent -notmatch 'governance-handoff-contract:\s*child-must-return-clean-terminal-governance-revision' -or
                 $orchestratorContent -notmatch 'governance_revision' -or
                 $orchestratorContent -notmatch 'plan-isolation:\s*one-plan-block-does-not-stop-peers') {
@@ -2816,26 +2908,6 @@ if ($docsRoot -eq $repositoryDocsRoot) {
                     $failures.Add("Audit orchestrator $orchestratorName must propagate an explicit TARGET to: $dependencySkill")
                 }
             }
-            }
-            if ($orchestratorName -eq 'backend-plan-audit-until-ready' -and
-                ($orchestratorContent -notmatch 'GOAL_MODE=standalone\|child' -or
-                 $orchestratorContent -notmatch 'plan-loop-contract:\s*immutable-target-set;\s*separate-advance-set;\s*set-aware-plan-audit;\s*verification-before-remediation;\s*per-plan-terminal-state' -or
-                 $orchestratorContent -notmatch 'ADVANCE_SET' -or
-                 $orchestratorContent -notmatch 'peer-routing-contract:\s*target-is-complete-peer-set;\s*advance-set-is-subset;\s*plan-audit-target-is-drifted-subset' -or
-                 $orchestratorContent -notmatch 'STEP_MODE=loop\|single-transition' -or
-                 $orchestratorContent -notmatch 'single-transition.*MAX_CYCLES=1' -or
-                 $orchestratorContent -notmatch 'MAX_CYCLES=8' -or
-                 $orchestratorContent -notmatch 'queue-order:\s*open-audits;\s*pending-remediation-verification;\s*required-audit-remediation;\s*set-aware-plan-audit;\s*readiness-acceptance')) {
-                $failures.Add('Plan audit orchestrator must preserve peer/advance sets, adequate cycle budget, and single-transition child routing')
-            }
-            if ($orchestratorName -eq 'backend-implement-audit-until-complete' -and
-                ($orchestratorContent -notmatch 'GOAL_MODE=child\s+STEP_MODE=single-transition\s+MAX_CYCLES=1' -or
-                 $orchestratorContent -notmatch 'peer-routing-contract:\s*target-is-complete-peer-set;\s*readiness-advance-set-is-subset' -or
-                 $orchestratorContent -notmatch 'MAX_CYCLES=12' -or
-                 $orchestratorContent -notmatch 'orchestration-step-contract:\s*one-durable-transition-per-plan-per-cycle;\s*nested-loop-forbidden' -or
-                 $orchestratorContent -notmatch 'implementation-loop-contract:\s*immutable-target-set;\s*verification-before-remediation;\s*controlled-implementation-reentry;\s*per-plan-terminal-state')) {
-                $failures.Add('Implementation audit orchestrator must route failed acceptance through explicit next actions')
-            }
             if ($orchestratorName -eq 'backend-implement-audit-until-complete' -and
                 $orchestratorContent -notmatch 'fresh-plan-contract:\s*set-aware-plan-audit-before-readiness-acceptance') {
                 $failures.Add('Implementation orchestrator must enter the plan audit child loop before readiness acceptance on fresh plans')
@@ -2844,6 +2916,7 @@ if ($docsRoot -eq $repositoryDocsRoot) {
                 $orchestratorContent -notmatch 'queue-order:\s*open-work;\s*pending-remediation-verification;\s*routed-remediation;\s*readiness;\s*implementation;\s*implementation-audit;\s*completion-acceptance') {
                 $failures.Add('Implementation orchestrator must preserve verification-first routed queue ordering')
             }
+        }
         if (Test-Path -LiteralPath $orchestratorMetadataPath) {
             $orchestratorMetadata = Get-Content -Raw -Encoding UTF8 $orchestratorMetadataPath
             if ($orchestratorMetadata -notmatch '(?m)^\s*allow_implicit_invocation:\s*false\s*$') {
@@ -2905,7 +2978,10 @@ if ($docsRoot -eq $repositoryDocsRoot) {
         $historyBaseRevision = $env:AUDIT_HISTORY_BASE
     }
     if ([string]::IsNullOrWhiteSpace($historyBaseRevision)) {
+        $previousErrorPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'SilentlyContinue'
         $upstreamRevision = (& git -C $repoRoot rev-parse --verify '@{upstream}' 2>$null | Select-Object -First 1)
+        $ErrorActionPreference = $previousErrorPreference
         if ($LASTEXITCODE -eq 0 -and $upstreamRevision -match '^[0-9a-fA-F]{40}$') {
             $historyBaseRevision = (& git -C $repoRoot merge-base HEAD $upstreamRevision 2>$null | Select-Object -First 1)
         }

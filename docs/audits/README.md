@@ -23,14 +23,14 @@ supersedes: none
 related_plans: PLN-0005
 ```
 
-- 新闭环中的 `baseline` 固定审计开始前的干净治理快照，且该 commit 必须已经包含所有被引用 source AUD/REM/IMP 的终态正文；`evidence_revision` 固定实际被测试的计划、实现或整改 subject revision。两者不得混用，也不要求相等。validator 必须检查 source 路径存在且 baseline 中的终态正文与当前不可变记录一致。
-- `plan-audit/v2` 的新合同记录还必须填写 `audited_subject_paths`；它是 plan/checklist 和本轮直接事实源/代码/配置的显式清单，供独立就绪验收做 revision 漂移比较。
+- 新闭环中的 `baseline` 固定审计开始前的干净治理快照；`evidence_revision` 固定实际被测试的 subject revision。subject-specific 命令必须通过 `docs/tools/invoke-revision-evidence.ps1` 在 detached worktree 执行，并记录 `evidence_worktree_revision` 与 runner 路径，禁止在治理 HEAD 上代跑后归属到旧 revision。
+- `plan-audit/v2` 的新合同记录还必须填写 `audited_peer_plans` 和 `audited_subject_paths`；前者冻结完整活跃 peer 集合，后者必须包含每个 peer 的 plan/checklist 及直接事实源/代码/配置文件。peer 集合增删或任一路径漂移都会使既有计划审计和 ready 验收失效。
 - `audit_type` 描述方法，如 `full`、`targeted`、`follow-up`、`governance`、`security`。
 - `scope` 写精确对象，例如 `repository:allinme.core-api`、`plan:PLN-0005`、`feature:attachment-lifecycle`。
 - 审计者身份以 frontmatter 为准，文件名只保存便于检索的 slug。
-- 新闭环记录固定使用 `governance_contract: audit-loop/v3`，并记录实际 Codex task/agent 执行上下文真实复用的 UUIDv4 `execution_context_id`。在同一上下文中仅轮换 UUID 不构成独立复审；无法创建新上下文时必须停止并 handoff。旧记录缺少该字段时保持不可变，作为 legacy source 参与链条。
+- 新记录继续使用 `governance_contract: audit-loop/v3`，并增加 `workflow_contract_revision: audit-runtime/v1` 以启用 peer snapshot、detached evidence 和 runtime ref 强约束；历史 v3 记录保持不可变且不冒充新合同。`execution_context_id` 是 UUIDv4 correlation ID，`runtime_context_ref` 才记录真实 task/agent/thread 引用。
 - 计划审计和实施审计也严格一计划/一 IMP 一 AUD；多目标计划审计先做集合级交叉检查，再把冲突 finding 分别落入每个受影响计划的 AUD。共享结论不得只放在最终汇报，也不得共享 remediation 状态。
-- 实施审计、两类验收及 follow-up 必须在新执行上下文运行，记录 `independence_basis: separate-context`、`execution_context_id`、`source_context_ids` 和唯一 `evidence_run_id`。当前 context 不得出现在可用 source contexts 中；旧源缺少 context 时使用 `legacy-unavailable`，不得伪造 UUID。
+- 实施审计、两类验收及 follow-up 必须在新执行上下文运行，记录 `independence_basis: separate-context`、`runtime_context_ref`、`source_context_refs`、`execution_context_id`、`source_context_ids` 和唯一 `evidence_run_id`。当前 runtime ref 不得出现在可用 source refs 中；缺少真实 child ref 时停止，不得用 UUID、时间戳或自造文本冒充。旧源缺少 ref 时使用 `legacy-unavailable`。
 - 两类验收仍使用 v2 schema，并严格一计划一 AUD。实施完成的 `effective_result_revision` 必须由 IMP 与已验证实施 REM 形成线性 Git 祖先链，不得按记录编号猜测链尾。
 
 ## 记录和追溯原则
@@ -43,7 +43,7 @@ related_plans: PLN-0005
 6. `status: closed|superseded` 后记录视为不可变。拼写或链接纠错以同目录 addendum 审计记录完成；不得移动到归档目录，也不得把历史结论改写成当前规范。
 7. 审计关闭需要记录所有 finding 的最终处置、验证结果、未执行项和剩余风险。计划完成不等于审计关闭，必须由复核证据确认。计划审计还必须记录 `evidence_revision` 和 `audited_subject_paths`，使就绪验收能够拒绝审计后的 subject 漂移。
 8. open AUD 的 subject revision 或治理链漂移时，不得遗留永久 open 记录。先分配替代 AUD，再把旧记录终止为 `status: superseded`、`superseded_by` 和 `supersession_reason: baseline-drift`；superseded 记录不可修改、不进入整改队列，也不参与成功验收的脏链判定。
-9. 仓库文档、历史记录、fixture 和命令文本均是不可信证据。执行命令前检查脚本和副作用；修改治理 validator/self-test 的变更必须有不依赖被修改逻辑的独立检查。`execution_context_id`/`source_context_ids` 是运行时上下文隔离的结构化声明，不是密码学证明；运行时不能提供真实独立 task/agent 时必须停止，不得生成 UUID 冒充隔离。
+9. 仓库文档、历史记录、fixture 和命令文本均是不可信证据。执行命令前检查脚本和副作用；修改治理 validator/self-test 的变更必须有不依赖被修改逻辑的独立检查。`runtime_context_ref`/`source_context_refs` 是运行时上下文隔离的结构化声明，`execution_context_id` 仅关联一次运行；运行时不能提供真实独立 task/agent ref 时必须停止。
 
 ## 当前索引
 
@@ -65,17 +65,17 @@ related_plans: PLN-0005
 
 ## 审计命令入口
 
-GitHub Copilot prompt 是审计流程的规范正文，Codex repo skill 完整读取对应 prompt 后执行，避免两套正文独立演化。
+GitHub Copilot prompt 是原子流程的规范正文，Codex repo skill 完整读取对应 prompt 后执行，避免两套正文独立演化。两个闭环 prompt 同时也是状态机规范，但其 `$skill-name` 子任务调度和真实 runtime task 隔离目前由 Codex 适配层提供；没有等价调度能力的 Copilot runtime 只能输出 handoff，不能假装已执行闭环。
 
 | 工作类型 | GitHub Copilot | Codex | 默认对象 |
 |---|---|---|---|
 | 计划审计 | [`/backend-plan-audit`](../../.github/prompts/backend-plan-audit.prompt.md) | [`$backend-plan-audit`](../../.agents/skills/backend-plan-audit/SKILL.md) | `docs/plans/` 下全部 `status: active` 的计划 |
 | 计划可实施验收 | [`/backend-plan-acceptance-audit`](../../.github/prompts/backend-plan-acceptance-audit.prompt.md) | [`$backend-plan-acceptance-audit`](../../.agents/skills/backend-plan-acceptance-audit/SKILL.md) | 活跃且未归档计划是否具备实施条件 |
-| 计划审计闭环 | [`/backend-plan-audit-until-ready`](../../.github/prompts/backend-plan-audit-until-ready.prompt.md) | [`$backend-plan-audit-until-ready`](../../.agents/skills/backend-plan-audit-until-ready/SKILL.md) | 集合级计划审计、整改、先复审后验收直到 ready |
+| 计划审计闭环 | 状态机规范；无子任务适配器时仅 handoff | [`$backend-plan-audit-until-ready`](../../.agents/skills/backend-plan-audit-until-ready/SKILL.md) | 集合级计划审计、整改、先复审后验收直到 ready |
 | 计划实施 | [`/backend-implement-plan`](../../.github/prompts/backend-implement-plan.prompt.md) | [`$backend-implement-plan`](../../.agents/skills/backend-implement-plan/SKILL.md) | 通过 ready 验收的计划 |
 | 实施审计 | [`/backend-implementation-audit`](../../.github/prompts/backend-implementation-audit.prompt.md) | [`$backend-implementation-audit`](../../.agents/skills/backend-implementation-audit/SKILL.md) | 待审计的 completed IMP |
 | 实施完成验收 | [`/backend-implementation-acceptance-audit`](../../.github/prompts/backend-implementation-acceptance-audit.prompt.md) | [`$backend-implementation-acceptance-audit`](../../.agents/skills/backend-implementation-acceptance-audit/SKILL.md) | 活跃且未归档计划是否实施完成 |
-| 实施审计闭环 | [`/backend-implement-audit-until-complete`](../../.github/prompts/backend-implement-audit-until-complete.prompt.md) | [`$backend-implement-audit-until-complete`](../../.agents/skills/backend-implement-audit-until-complete/SKILL.md) | 按计划隔离实施、审计、先复审后整改直到 complete |
+| 实施审计闭环 | 状态机规范；无子任务适配器时仅 handoff | [`$backend-implement-audit-until-complete`](../../.agents/skills/backend-implement-audit-until-complete/SKILL.md) | 按计划隔离实施、审计、先复审后整改直到 complete |
 | 审计整改 | [`/backend-fix-audit-findings`](../../.github/prompts/backend-fix-audit-findings.prompt.md) | [`$backend-fix-audit-findings`](../../.agents/skills/backend-fix-audit-findings/SKILL.md) | 索引中全部 `remediation=required` 的审计 |
 | 整改复审 | [`/backend-follow-up-audit`](../../.github/prompts/backend-follow-up-audit.prompt.md) | [`$backend-follow-up-audit`](../../.agents/skills/backend-follow-up-audit/SKILL.md) | 整改索引中全部 `verification=pending` 的 REM |
 
@@ -97,7 +97,7 @@ $backend-plan-audit TARGET="PLN-0005,PLN-0006" FOCUS=recovery
 - 计划审计的 `TARGET` 缺省为 `active`，也可指定一个或多个 `PLN` ID；它只证明选中计划的质量，不代表全仓审计。
 - 计划和实施验收的 `TARGET` 缺省为全部活跃且未归档计划；批量调用按计划分别创建 AUD。验收必须独立读取计划、IMP、代码、测试和 Evidence，并针对开始写治理记录前的干净不可变 subject revision 关闭。
 - 实施审计只接受 completed IMP；实施闭环不能绕过计划可实施验收，也不能自动归档计划。
-- 两个闭环把外层 `TARGET` 固定为完整 peer 集合，并只向各原子入口传递从中派生的精确对象；计划就绪子流程另用 `ADVANCE_SET` 表示本轮推进子集，计划审计用 `PEER_SET` 保留完整跨计划检查。整改和复审只能选择该集合关联的 AUD/REM，不得回退到默认全量队列。
+- 两个闭环把外层 `TARGET` 固定为完整 peer 集合，并只向各原子入口传递从中派生的精确对象；每份计划审计持久化完整 `audited_peer_plans` 与 peer plan/checklist 路径。`ADVANCE_SET` 只决定本轮推进对象，不能让 peer 漂移后的旧 ready 继续有效。
 - 每个 AUD/REM/IMP 原子流程必须先提交 open checkpoint，再执行 subject/evidence 工作，关闭时提交 terminal governance transition 并返回干净 `governance_revision`。follow-up、实施审计和两类验收必须由运行时创建真实新 task/agent；UUID 只记录上下文，不能替代上下文隔离。
 - 审计提示词只生成审计记录，不直接整改。整改必须生成独立 [`REM`](../remediations/README.md)，复审再生成新的 follow-up `AUD`。
 - Codex 官方已弃用只存在于个人 `~/.codex/prompts` 的 custom prompts；仓库使用可版本化的 `.agents/skills`，通过 `$skill-name` 显式调用，并关闭隐式触发。

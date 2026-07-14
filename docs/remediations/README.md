@@ -18,6 +18,7 @@ governance_contract: audit-loop/v3
 remediation_id: REM-0001
 implementer: codex
 execution_context_id: 00000000-0000-4000-8000-000000000000
+runtime_context_ref: runtime-unavailable
 scope: audit:AUD-0002,AUD-0003
 source_audits: AUD-0002, AUD-0003
 source_findings: AUD-0002-F001, AUD-0003-F001

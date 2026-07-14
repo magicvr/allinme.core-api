@@ -1,6 +1,6 @@
 interface:
   display_name: "Backend Implementation Acceptance Audit"
   short_description: "Independently verify implementation completion"
-  default_prompt: "Create a new runtime task, then use $backend-implementation-acceptance-audit there to verify completion from the IMP/REM revision chain."
+  default_prompt: "From a parent task, create a child and use $backend-implementation-acceptance-audit with its runtime CONTEXT_REF to verify completion."
 policy:
   allow_implicit_invocation: false

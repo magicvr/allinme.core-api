@@ -1,7 +1,7 @@
 ---
 name: backend-fix-audit-findings
 description: "根据所有待整改审计报告或明确指定的 AUD 报告修正问题，并生成独立 REM 整改记录"
-argument-hint: "[TARGET=active|AUD-0002|AUD-0002,AUD-0003] [OWNER=codex] [CONTEXT_ID=<uuid>] [FOCUS=...]"
+argument-hint: "[TARGET=active|AUD-0002|AUD-0002,AUD-0003] [OWNER=codex] [CONTEXT_ID=<uuid>] [CONTEXT_REF=<runtime-ref>] [FOCUS=...]"
 agent: agent
 ---
 
@@ -18,7 +18,7 @@ agent: agent
 - 接受 `TARGET=AUD-NNNN`、逗号分隔的多个 AUD、审计报告路径，或用户用自然语言明确指定的审计编号/主题。
 - 显式对象不存在、未被索引、重复或没有可整改 finding 时，报告具体原因，不得静默替换为其他报告。
 - 多份报告包含相同根因时合并实现工作，但必须保留每个 source finding 到整改项的映射。
-- 不得跨计划或跨 IMP 合并 REM；批量目标按单一计划/IMP 链分组。`FOCUS` 不得缩小 finding 范围，`CONTEXT_ID` 在当前整改上下文复用。
+- 不得跨计划或跨 IMP 合并 REM；批量目标按单一计划/IMP 链分组。`FOCUS` 不得缩小 finding 范围；`CONTEXT_ID` 是本次整改运行的 UUIDv4 correlation ID，`CONTEXT_REF` 记录运行时提供的当前 task/agent/thread 引用，无法提供时写 `runtime-unavailable`。
 - 若没有 `remediation=required` 的索引项，回复“当前没有待整改审计报告”并停止。
 
 ## 2. 建立整改记录
@@ -28,7 +28,7 @@ agent: agent
 3. 先恢复相同 source findings 和 baseline 的唯一 `status: in-progress` REM；不存在时才调用 `docs/tools/reserve-governance-record.ps1 -Kind REM -Suffix <YYYYMMDD-owner-scope-subject>` 分配：
    - 单审计：`REM-NNNN-YYYYMMDD-<owner>-audit-<audit-id-subject>.md`；
    - 多审计：`REM-NNNN-YYYYMMDD-<owner>-audit-active-audits.md` 或 `...-selected-audits.md`。
-4. frontmatter 固定 `governance_contract: audit-loop/v3`、`remediation_schema: remediation/v2`、`execution_context_id` 及现有字段。影响实施时还必须记录 `parent_result_revision`，它等于整改开始时 IMP/已验证 REM 的有效链尾。
+4. frontmatter 固定 `governance_contract: audit-loop/v3`、`workflow_contract_revision: audit-runtime/v1`、`remediation_schema: remediation/v2`、`execution_context_id`、`runtime_context_ref` 及现有字段。影响实施时还必须记录 `parent_result_revision`，它等于整改开始时 IMP/已验证 REM 的有效链尾。
 5. 在同一次文件变更中把 REM 加入 `docs/remediations/README.md` 索引，初始写为 `status=in-progress`、`verification=not-ready`。没有索引的整改记录视为创建失败。
 6. 在修改任何 subject 文件前，把新建或发生恢复性状态变更的 in-progress REM 与整改索引作为独立 `open checkpoint` governance commit 提交。若匹配 checkpoint 已在当前 `HEAD` 且工作树干净，直接复用，禁止创建空提交。无法取得干净 checkpoint 时停止，不得开始整改。
 

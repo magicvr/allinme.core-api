@@ -4,6 +4,7 @@
 - `validate-audit-workflows.ps1`：只读检查两个闭环及其原子 prompt/skill 是否保留真实 runtime task 隔离、open/terminal governance commit、clean `governance_revision`、足够 cycle budget、single-transition child 路由和 `TARGET`/`ADVANCE_SET`/`PEER_SET` 分离。
 - `validate.tests.ps1`：用独立 fixture 验证合法计划、实施、审计、整改和验收结构通过，并拒绝未绑定 revision 的计划审计、治理命令冒充 subject 验证、partial REM 重复排队、倒置时间、多计划单 verdict、旧 IMP 验收、伪造状态跳转、漏列 effective REM、脏验收基线、失效对象引用和非法治理结构。
 - `reserve-governance-record.ps1`：在跨进程互斥区内分配 `AUD` / `REM` / `IMP` 编号，并通过原子 `CreateNew` 预留目标文件，避免并发执行复用同一 ID。
+- `invoke-revision-evidence.ps1`：把 subject-specific 命令放入指定 commit 的临时 detached worktree 执行，输出 exact revision、tree、argv、exit code 和运行后 tracked-clean 状态，避免在治理 HEAD 上代跑旧 revision Evidence。
 
 从仓库根目录运行：
 
@@ -13,6 +14,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate-audi
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1 -HistoryBase <merge-base-full-sha>
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.tests.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix 20260714-codex-plan-example
+& docs/tools/invoke-revision-evidence.ps1 -Revision HEAD -Command git -CommandArgs @('rev-parse', 'HEAD')
 ```
 
 CI 必须使用完整 Git 历史，并通过 `AUDIT_HISTORY_BASE` 或 `-HistoryBase` 传入 PR merge-base/push 前一 revision；否则只能检查当前工作树，不能证明终态 AUD/REM/IMP 在多提交分支中未被改写。

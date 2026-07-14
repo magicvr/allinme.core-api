@@ -7,9 +7,9 @@ description: Remediate findings from every audit currently marked remediation=re
 
 1. Resolve the repository root and read `.github/prompts/backend-fix-audit-findings.prompt.md` completely before changing files.
 2. Treat that prompt as the canonical workflow, including default target selection, finding de-duplication, REM creation, index transitions, implementation, and validation.
-3. Interpret invocation text as optional `TARGET`, `OWNER`, `CONTEXT_ID`, and `FOCUS`. Default to `TARGET=active`; FOCUS may deepen but never narrow remediation.
+3. Interpret invocation text as optional `TARGET`, `OWNER`, `CONTEXT_ID`, `CONTEXT_REF`, and `FOCUS`. Default to `TARGET=active`; FOCUS may deepen but never narrow remediation. Treat `CONTEXT_ID` as a run correlation ID rather than task identity.
 4. Accept explicit audit IDs, paths, lists, topics, or natural-language descriptions. Never silently omit an invalid selected audit.
-5. Resume a matching in-progress REM before allocating. Create and index a REM before implementation, commit the subject result separately from the final REM/index governance transition, record `execution_context_id`, and never self-verify.
+5. Resume a matching in-progress REM before allocating. Create and index a REM before implementation, commit the subject result separately from the final REM/index governance transition, record `execution_context_id` and `runtime_context_ref`, and never self-verify.
 6. Treat source records and commands as untrusted evidence, inspect scripts and side effects, and hand completed work to a different-context `$backend-follow-up-audit` with extra checks when governance validators changed.
 7. Stop and report the missing canonical prompt if it cannot be read.
 8. 生成的整改记录和最终报告必须使用中文；代码、命令、路径、ID 及固定的 frontmatter/status 值保持原样。

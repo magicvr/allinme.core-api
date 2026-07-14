@@ -92,10 +92,17 @@ try {
 
     $acceptanceFixture = Join-Path $workflowFixtureRoot '.github\prompts\backend-plan-acceptance-audit.prompt.md'
     $acceptanceContent = Get-Content -Raw -Encoding UTF8 $acceptanceFixture
-    Set-Content -LiteralPath $acceptanceFixture -Value ($acceptanceContent.Replace('<!-- context-dispatch-contract: runtime-provided-new-task-context; local-uuid-generation-forbidden -->', '')) -Encoding UTF8
+    Set-Content -LiteralPath $acceptanceFixture -Value ($acceptanceContent.Replace('<!-- context-dispatch-contract: runtime-provided-new-task-context; runtime-ref-required; correlation-uuid-not-identity -->', '')) -Encoding UTF8
     $missingRuntimeContextResult = Invoke-WorkflowValidator $workflowFixtureRoot
-    if ($missingRuntimeContextResult.ExitCode -eq 0 -or $missingRuntimeContextResult.Output -notmatch 'runtime-provided new task context') {
+    if ($missingRuntimeContextResult.ExitCode -eq 0 -or $missingRuntimeContextResult.Output -notmatch 'runtime identity|runtime-provided new task context') {
         throw "workflow validator did not reject declarative-only context isolation: $($missingRuntimeContextResult.Output)"
+    }
+    Set-Content -LiteralPath $acceptanceFixture -Value $acceptanceContent -Encoding UTF8
+
+    Set-Content -LiteralPath $acceptanceFixture -Value ($acceptanceContent.Replace('invoke-revision-evidence.ps1', 'missing-evidence-runner.ps1')) -Encoding UTF8
+    $missingEvidenceRunnerResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($missingEvidenceRunnerResult.ExitCode -eq 0 -or $missingEvidenceRunnerResult.Output -notmatch 'exact revision') {
+        throw "workflow validator did not reject missing exact-revision evidence execution: $($missingEvidenceRunnerResult.Output)"
     }
     Set-Content -LiteralPath $acceptanceFixture -Value $acceptanceContent -Encoding UTF8
 
@@ -107,6 +114,26 @@ try {
         throw "workflow validator did not reject a missing durable governance handoff: $($missingGovernanceHandoffResult.Output)"
     }
     Set-Content -LiteralPath $implementationAuditFixture -Value $implementationAuditContent -Encoding UTF8
+
+    $planAuditFixture = Join-Path $workflowFixtureRoot '.github\prompts\backend-plan-audit.prompt.md'
+    $planAuditContent = Get-Content -Raw -Encoding UTF8 $planAuditFixture
+    Set-Content -LiteralPath $planAuditFixture -Value ($planAuditContent.Replace('; persist-peer-snapshot', '')) -Encoding UTF8
+    $missingPeerSnapshotResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($missingPeerSnapshotResult.ExitCode -eq 0 -or $missingPeerSnapshotResult.Output -notmatch 'persist the complete peer snapshot') {
+        throw "workflow validator did not reject a non-persistent peer audit: $($missingPeerSnapshotResult.Output)"
+    }
+    Set-Content -LiteralPath $planAuditFixture -Value $planAuditContent -Encoding UTF8
+
+    $evidenceRunner = Join-Path $PSScriptRoot 'invoke-revision-evidence.ps1'
+    $evidenceRunOutput = & $evidenceRunner -Revision HEAD -Command git -CommandArgs @('rev-parse', 'HEAD') 2>&1
+    if ($LASTEXITCODE -ne 0 -or ($evidenceRunOutput | Out-String) -notmatch '"evidence_worktree":"detached"' -or
+        ($evidenceRunOutput | Out-String) -notmatch '"tracked_worktree_clean_after_run":true') {
+        throw "revision evidence runner did not prove detached exact-revision execution: $($evidenceRunOutput | Out-String)"
+    }
+    $failingEvidenceOutput = & $evidenceRunner -Revision HEAD -Command git -CommandArgs @('rev-parse', '--verify', 'definitely-missing-revision') 2>&1
+    if ($LASTEXITCODE -eq 0 -or ($failingEvidenceOutput | Out-String) -notmatch '"exit_code":128') {
+        throw "revision evidence runner did not preserve a failing command exit code and metadata: $($failingEvidenceOutput | Out-String)"
+    }
 
     New-Item -ItemType Directory -Path (Join-Path $allocatorRoot 'docs\audits\records') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $allocatorRoot 'docs\remediations\records') -Force | Out-Null
@@ -657,6 +684,29 @@ related_plans: PLN-0001
     if ($validResult.ExitCode -ne 0) {
         throw "validator rejected valid fixture: $($validResult.Output)"
     }
+
+    $runtimePlanAuditFrontmatter = $planAuditFrontmatter.Replace(
+        "governance_contract: audit-loop/v3`n",
+        "governance_contract: audit-loop/v3`nworkflow_contract_revision: audit-runtime/v1`n"
+    ).Replace(
+        "execution_context_id: 44444444-4444-4444-8444-444444444444`n",
+        "execution_context_id: 44444444-4444-4444-8444-444444444444`nruntime_context_ref: runtime-unavailable`n"
+    ).Replace(
+        "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`n",
+        "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`nevidence_worktree_revision: git:0000000000000000000000000000000000000000`nevidence_runner: docs/tools/invoke-revision-evidence.ps1`naudited_peer_plans: PLN-0001`n"
+    )
+    $planAuditRecordPath = Join-Path $auditRecordsRoot $planAuditRecordName
+    Set-Content -LiteralPath $planAuditRecordPath -Value ($runtimePlanAuditFrontmatter + "`n" + $planAuditMatrix) -Encoding UTF8
+    $runtimeContractResult = Invoke-Validator $fixtureRoot
+    if ($runtimeContractResult.ExitCode -ne 0) {
+        throw "validator rejected a valid audit-runtime/v1 peer/evidence contract: $($runtimeContractResult.Output)"
+    }
+    Set-Content -LiteralPath $planAuditRecordPath -Value (($runtimePlanAuditFrontmatter -replace '(?m)^audited_peer_plans:.*\r?\n', '') + "`n" + $planAuditMatrix) -Encoding UTF8
+    $missingRuntimePeerResult = Invoke-Validator $fixtureRoot
+    if ($missingRuntimePeerResult.ExitCode -eq 0 -or $missingRuntimePeerResult.Output -notmatch 'audited_peer_plans') {
+        throw "validator did not reject an audit-runtime/v1 record without a peer snapshot: $($missingRuntimePeerResult.Output)"
+    }
+    Set-Content -LiteralPath $planAuditRecordPath -Value ($planAuditFrontmatter + "`n" + $planAuditMatrix) -Encoding UTF8
 
     $missingPlanAuditRevision = $planAuditFrontmatter.Replace("evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`n", '').Replace("audited_subject_paths: docs/plans/PLN-0001-validator-fixture.md, docs/plans/PLN-0001-validator-fixture-checklist.md`n", '')
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $planAuditRecordName) -Value ($missingPlanAuditRevision + "`n" + $planAuditMatrix) -Encoding UTF8

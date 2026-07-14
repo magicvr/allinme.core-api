@@ -1,17 +1,22 @@
 ---
 status: open
 governance_contract: audit-loop/v3
+workflow_contract_revision: audit-runtime/v1
 audit_schema: implementation-audit/v2
 audit_id: AUD-NNNN
 auditor: auditor-name-and-version
 execution_context_id: 00000000-0000-4000-8000-000000000000
+runtime_context_ref: runtime-task-or-agent-ref
 source_context_ids: 00000000-0000-4000-8000-000000000000
+source_context_refs: runtime-source-ref
 audit_type: implementation
 independence_basis: separate-context
 scope: implementation:IMP-NNNN
 subject: implementation audit
 baseline: git:full-commit-sha; worktree:clean
 evidence_revision: git:full-commit-sha; worktree:clean
+evidence_worktree_revision: git:full-commit-sha
+evidence_runner: docs/tools/invoke-revision-evidence.ps1
 evidence_run_id: 00000000-0000-4000-8000-000000000000
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending

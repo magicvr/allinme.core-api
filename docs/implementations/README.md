@@ -21,7 +21,7 @@
 
 `completed`、`partial`、`blocked` 的 IMP 记录不可改写。针对已完成 IMP 的窄范围整改由 REM 记录新的 `result_revision` 并进入 effective revision 链；需要重新执行计划工作包、改变计划范围或无法由原 finding 限定的工作必须创建新的 IMP。不得通过改写历史 IMP 或遗漏 REM 伪造闭环完成。
 
-新实施记录固定使用 `governance_contract: audit-loop/v3`、`implementation_schema: implementation/v2`、`execution_context_id` 和 `plan_evidence_revision`。后者必须等于实施开始时引用的最新 ready 验收 subject revision。`baseline` 是包含 ready 验收记录的治理快照，`result_revision` 是不包含最终 IMP 状态回写的实际交付 subject commit；最终 IMP/索引状态由 terminal governance commit 固化，并以干净 `governance_revision` 交给实施审计。
+新实施记录固定使用 `governance_contract: audit-loop/v3`、`implementation_schema: implementation/v2`、`execution_context_id`、`runtime_context_ref` 和 `plan_evidence_revision`。ready 前置必须同时保持完整 peer 快照未漂移。实施期间只允许更新 checklist 的实际 Evidence；计划契约或范围变化必须关闭当前 IMP 并重新走计划审计/验收，不能在同一 IMP 中事后改变验收标准。
 
 若实施由失败完成验收的 `acceptance_next_action: implement` 触发，IMP 必须在 `trigger_audits` 记录该 AUD，并把源 AUD 索引流转为 `remediation=implemented-by:IMP-NNNN`。这表示路由动作已被新的实施尝试消费，不等于提前宣告新 IMP 完成。
 

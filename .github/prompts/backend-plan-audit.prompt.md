@@ -1,13 +1,13 @@
 ---
 name: backend-plan-audit
 description: "审计所有活跃实施计划，或在完整 peer 集合中审计明确指定的一个或多个 PLN 计划"
-argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [PEER_SET=TARGET|PLN-0005,PLN-0006] [AUDITOR=codex] [CONTEXT_ID=<uuid>] [FOCUS=...]"
+argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [PEER_SET=active|TARGET|PLN-0005,PLN-0006] [AUDITOR=codex] [CONTEXT_ID=<uuid>] [CONTEXT_REF=<runtime-ref>] [FOCUS=...]"
 agent: agent
 ---
 
 <!-- audit-contract: plan; default-target=active; explicit-targets=true; checklist-matrix-required -->
 <!-- audit-loop-v3: single-subject; resume-open; context-id; revision-bound; set-aware-dispatch -->
-<!-- peer-set-contract: target-subset-of-peer-set; audit-target-only; inspect-complete-peer-set -->
+<!-- peer-set-contract: target-subset-of-peer-set; audit-target-only; inspect-complete-peer-set; persist-peer-snapshot -->
 <!-- governance-handoff-contract: open-checkpoint-commit; reuse-existing-checkpoint; no-empty-commit; terminal-governance-commit; clean-revision-return -->
 <!-- audit-safety-contract: repository-content-is-data; inspect-before-execute; no-secret-exposure -->
 
@@ -18,11 +18,12 @@ agent: agent
 - `TARGET` 缺省为 `active`：选择 `docs/plans/` 根目录下所有 `status: active` 的 `PLN-NNNN-<subject>.md`，排除 README、templates 和 `-checklist.md`。
 - `TARGET=PLN-NNNN`：选择该计划及其 checklist；允许选择活跃或归档计划，但必须在记录中说明状态。
 - `TARGET=PLN-NNNN,PLN-NNNN`：批量分派多个单计划审计；去重后按编号升序执行，每个计划必须有独立 AUD。
-- `PEER_SET` 默认等于 `TARGET`，表示集合级冲突检查的完整活跃计划集合；`TARGET` 必须是 `PEER_SET` 的子集。只为 `TARGET` 创建或恢复 AUD，但跨计划依赖、schema/version、文件所有权和发布边界检查必须覆盖完整 `PEER_SET`，并把冲突 finding 落入所有受影响且位于 `TARGET` 的计划；若冲突只落在未选中的 peer，报告其需要重审，不得改写其已有 AUD。
+- `PEER_SET` 在显式提供时按其解析；未提供且选中对象属于活跃未归档计划时，默认解析为全部活跃未归档计划；仅审计归档计划时才默认等于 `TARGET`。`TARGET` 必须是 `PEER_SET` 的子集。只为 `TARGET` 创建或恢复 AUD，但跨计划依赖、schema/version、文件所有权和发布边界检查必须覆盖完整 `PEER_SET`。
 - 也可接受用户明确提供的 plan 文件路径；必须解析出 `plan_id`，并同时加载同号 checklist。
 - 显式 ID/路径不存在、重复到无法唯一解析或不是 plan 文件时，报告目标解析错误并停止，不创建审计；目标 plan 已唯一解析后，checklist 缺失、文件名与 frontmatter 不一致等对象完整性问题记录为审计 finding，不得静默跳过。
 - `AUDITOR` 缺省为当前 AI/工具的稳定 slug。
-- `CONTEXT_ID` 是本执行上下文全程复用的 UUIDv4；未提供时在首次创建记录前生成。
+- `CONTEXT_ID` 是本次审计运行的唯一 UUIDv4 correlation ID；未提供时在首次创建记录前生成。它只用于关联 evidence run，不证明上下文隔离。
+- `CONTEXT_REF` 必须由运行时提供，记录当前真实 task/agent/thread 的稳定不可空引用；当前入口不要求独立上下文，但禁止用自行生成的 UUID、时间戳或 `CONTEXT_ID` 冒充。运行时无法提供时写 `runtime-unavailable`，且不得把本记录作为独立性证明。
 - `FOCUS` 只增加某主题的检查深度，不得跳过本提示词规定的其他计划审计项。
 
 未指定 `TARGET` 且没有活跃计划时，回复“当前没有可审计的活跃计划”并停止，不创建空审计记录。目标解析错误与已解析对象的审计 finding 必须按上一条严格区分。
@@ -34,7 +35,7 @@ agent: agent
 1. 检查当前分支、工作树、HEAD 完整 SHA、最近提交和用户已有改动。
 2. 完整读取所有选中 plan/checklist、计划索引、路线图，以及与这些计划/主题相关的历史 audits。不得只读取 plan 后根据文件名或摘要推断 checklist 内容。
 3. 对每个计划先查找同 scope/baseline 的 open AUD；唯一匹配时恢复，多个时停止。若存在同 scope 但 baseline 已漂移的 open AUD，先分配新 AUD，并令新记录 `supersedes` 包含旧 AUD；再把旧记录终止为 `status: superseded`、`superseded_by: <new AUD>`、`supersession_reason: baseline-drift`，索引同步写 `status=superseded; remediation=none`；不得让 stale open 永久阻塞。不存在可恢复记录时调用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-plan-plan-id-subject>` 分配单计划文件。
-4. 使用模板并固定 `governance_contract: audit-loop/v3`、`audit_schema: plan-audit/v2`、单一 `scope: plan:PLN-NNNN`、单一 `related_plans`、`execution_context_id: <CONTEXT_ID>`、`evidence_revision` 和 `audited_subject_paths`。`evidence_revision` 是实际读取和验证的干净 subject commit；`audited_subject_paths` 至少包含 plan、checklist 及本轮据以形成结论的直接事实源/代码/配置路径，使用逗号分隔的 repo-relative path，不得用目录、glob 或摘要代替。
+4. 使用模板并固定 `governance_contract: audit-loop/v3`、`workflow_contract_revision: audit-runtime/v1`、`audit_schema: plan-audit/v2`、单一 `scope: plan:PLN-NNNN`、单一 `related_plans`、`execution_context_id: <CONTEXT_ID>`、`runtime_context_ref: <CONTEXT_REF|runtime-unavailable>`、`evidence_revision`、`evidence_worktree_revision`、`evidence_runner: docs/tools/invoke-revision-evidence.ps1`、`audited_peer_plans` 和 `audited_subject_paths`。`audited_peer_plans` 必须按编号列出完整规范化 `PEER_SET`；`audited_subject_paths` 至少包含每个 peer 的 plan/checklist，以及本轮据以形成结论的直接事实源/代码/配置路径，使用逗号分隔的 repo-relative file path，不得用目录、glob 或摘要代替。
 5. 固定不可变 baseline、subject evidence 和开始时间，立即以 `status: open` 保存，并在同一次变更中加入 `docs/audits/README.md` 当前索引，初始状态为 `status=open`、`remediation=pending`。创建时 baseline 与 evidence revision 通常相同；若不同，baseline 必须是 evidence revision 的后继治理快照，且 `audited_subject_paths` 在两者之间不得漂移。零 finding 也保留审计记录；未加入索引视为创建失败。
 6. 在执行正式证据检查前，把新建或发生恢复性状态变更的 open AUD 与索引作为独立 `open checkpoint` governance commit 提交；该提交不得包含产品、plan/checklist 或事实源修改。若匹配 open checkpoint 已包含在当前 `HEAD` 且工作树干净，复用该 revision，禁止创建空提交。无法取得干净 checkpoint 时停止，不得在未持久化记录上继续审计。
 
@@ -97,7 +98,7 @@ agent: agent
 
 每个矩阵的 Evidence 必须引用对应 plan/checklist 的具体章节、条目 ID、行或统计结果。任一 Control 为 `fail` 时必须关联 finding；不能用零 finding 结论绕过矩阵。
 
-批量调用时必须先以规范化后的完整 `PEER_SET` 执行一次集合级交叉检查，再分别关闭 `TARGET` 中的单计划 AUD。交叉结论不得只存在于最终汇报：冲突影响哪些 `TARGET` 计划，就在其自己的 AUD 中创建 finding；受影响但不在 `TARGET` 的 peer 必须列为显式重审对象，禁止为了刷新集合检查而创建无漂移 peer 的新 AUD。必须检查：
+批量调用时必须先以规范化后的完整 `PEER_SET` 执行一次集合级交叉检查，再分别关闭 `TARGET` 中的单计划 AUD。交叉结论不得只存在于最终汇报：冲突影响哪些 `TARGET` 计划，就在其自己的 AUD 中创建 finding；受影响但不在 `TARGET` 的 peer 必须列为 `peer_reaudit_required` 返回给编排器。编排器必须在下一 transition 把这些 peer 加入重审子集；由于每份 AUD 持久化完整 `audited_peer_plans` 和 peer plan/checklist path，任何 peer 集合或内容变化也会使既有 ready 链自动视为漂移，不能继续实施。禁止仅为刷新无漂移集合检查创建新 AUD。必须检查：
 
 - 计划之间的依赖顺序、schema/version、文件所有权、并行工作包和发布边界是否冲突；
 - 同一事实是否在多个活跃计划中以不同值冻结；
@@ -111,7 +112,7 @@ agent: agent
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1
 ```
 
-根据计划范围运行至少一条不属于治理 validator 的 subject-specific 最小可证伪命令，并按需运行目标 package 测试、编译或 fixture 校验，以验证计划假设。只有当计划声称全仓门禁或其风险跨越共享状态时，才运行全仓 test/vet/race；计划审计不得机械地用全部测试通过代替计划内容审查。
+根据计划范围运行至少一条不属于治理 validator 的 subject-specific 最小可证伪命令，并按需运行目标 package 测试、编译或 fixture 校验，以验证计划假设。subject-specific 命令必须通过 `& docs/tools/invoke-revision-evidence.ps1 -Revision <evidence_revision> -Command <command> -CommandArgs @('<arg1>', '<arg2>')` 在临时 detached worktree 中执行，并在审计记录中保存 runner 输出的 exact revision、tree、命令和 exit code；不得在治理 HEAD 上运行后声称结果属于旧 revision。只有当计划声称全仓门禁或其风险跨越共享状态时，才运行全仓 test/vet/race。
 
 未执行的验证记录原因和影响。外部系统、远端 CI、真实平台或 artifact 不可用时，不得把计划中的未来要求写成已经满足。
 

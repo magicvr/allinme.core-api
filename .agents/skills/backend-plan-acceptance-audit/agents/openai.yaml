@@ -1,6 +1,6 @@
 interface:
   display_name: "Backend Plan Acceptance Audit"
   short_description: "Independently verify plan implementation readiness"
-  default_prompt: "Create a new runtime task, then use $backend-plan-acceptance-audit there to verify each active plan's readiness."
+  default_prompt: "From a parent task, create a child and use $backend-plan-acceptance-audit there with its runtime CONTEXT_REF to verify readiness."
 policy:
   allow_implicit_invocation: false

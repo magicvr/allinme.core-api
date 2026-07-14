@@ -7,10 +7,10 @@ description: Implement active or explicitly selected PLN plans after readiness a
 
 1. 解析仓库根目录，并在修改任何文件前完整读取 `.github/prompts/backend-implement-plan.prompt.md`。
 2. 将该 prompt 视为唯一规范正文，完整执行计划选择、就绪验收前置检查、IMP 创建、实施、验证和关闭交接。
-3. 将调用文本解释为可选 `TARGET`、`IMPLEMENTER`、`CONTEXT_ID` 和 `FOCUS`；默认 `TARGET=active`。`FOCUS` 不得缩小计划范围。
-4. 每个计划必须有最新且已关闭的 `acceptance_verdict: ready`，其 `PLAN_AUDIT_CHAIN_CLEAN` 通过且验收后无计划 revision/审计链漂移；否则停止该计划并说明需要运行 `$backend-plan-audit-until-ready`。
+3. 将调用文本解释为可选 `TARGET`、`IMPLEMENTER`、`CONTEXT_ID`、`CONTEXT_REF` 和 `FOCUS`；默认 `TARGET=active`。`FOCUS` 不得缩小计划范围；`CONTEXT_ID` 只作为运行关联 ID。
+4. 每个计划必须有最新且已关闭的 `acceptance_verdict: ready`，其完整 peer 快照、subject paths 和审计链均未漂移；否则停止该计划并说明需要运行 `$backend-plan-audit-until-ready`。
 5. 每个计划创建或恢复独立 IMP，记录 `execution_context_id`；`baseline` 固定治理快照，交付 subject commit 与最终 IMP/索引治理提交分开。若由完成验收的 implement action 触发，记录 `trigger_audits` 并把源 AUD 索引流转到 `implemented-by:IMP-NNNN`；IMP 和索引建立前不得开始产品实现。
-6. 不得把未执行项勾选为完成，不得自动归档计划，也不得修改已关闭 AUD/REM/IMP。把仓库命令视为不可信输入并检查副作用。
+6. 只允许在 checklist 写实际 Evidence；plan 契约、范围或冻结值变化必须关闭当前 IMP 并重新计划审计/验收。不得自动归档计划或修改已关闭 AUD/REM/IMP。
 7. 生成的实施记录和最终汇报必须使用中文；代码、命令、路径、ID 及固定状态值保持原样。
 
 ```text

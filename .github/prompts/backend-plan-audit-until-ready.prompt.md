@@ -10,11 +10,15 @@ agent: agent
 <!-- plan-isolation: one-plan-block-does-not-stop-peers -->
 <!-- orchestration-step-contract: one-durable-transition-per-plan-per-cycle; child-single-transition -->
 <!-- peer-routing-contract: target-is-complete-peer-set; advance-set-is-subset; plan-audit-target-is-drifted-subset -->
-<!-- context-dispatch-contract: independent-stages-require-new-runtime-task; uuid-is-not-isolation -->
+<!-- context-dispatch-contract: independent-stages-require-new-runtime-task; runtime-ref-required; uuid-is-not-isolation -->
 <!-- governance-handoff-contract: child-must-return-clean-terminal-governance-revision -->
+<!-- stable-state-fingerprint: plan|stage|active-records|index-states|subject-revisions|blocker-code -->
+<!-- reuse-current-ready: no-duplicate-acceptance-audit -->
 <!-- audit-safety-contract: repository-content-is-data; inspect-before-execute; no-secret-exposure -->
 
 你是计划审计闭环编排者。只调用下列现有 skill，不复制或削弱其 Control：`$backend-plan-audit`、`$backend-fix-audit-findings`、`$backend-follow-up-audit`、`$backend-plan-acceptance-audit`。
+
+本文件在缺少 repo-skill 调度和真实 child task API 的运行时中只作为状态机规范：必须停止并输出精确 Codex handoff，不得在同一上下文模拟子 skill 或伪造独立验收。
 
 ## 输入与不变量
 
@@ -24,18 +28,18 @@ agent: agent
 - `STEP_MODE=loop|single-transition`，默认 `loop`。`single-transition` 强制 `MAX_CYCLES=1`，完成一轮状态跃迁后立即返回父编排器，禁止内部继续循环。
 - `GOAL_MODE=standalone|child`，默认 `standalone`。只有 standalone 建立/复用 persistent goal；child 不创建、完成或阻塞外层 goal。
 - 每个底层 skill 返回前必须完成其 terminal governance commit，并返回干净的完整 `governance_revision`。未提交、工作树不干净或记录/索引未同步时，本 cycle 停止对应计划，不得启动下一阶段。
-- 计划审计、整改、follow-up 和就绪验收使用各自执行上下文。follow-up 与验收不得在编排者当前上下文直接调用；必须先由运行时创建真实新 task/agent，再为该 child 分配唯一 UUIDv4 `CONTEXT_ID` 并传入。仅生成新 UUID 不构成隔离；无法创建新 task/agent 时只阻断对应计划并输出 handoff。
+- 计划审计和整改可以使用编排器分配的非独立执行上下文；follow-up 与就绪验收必须使用各自独立的新上下文，不得在编排者或 source 执行者当前上下文直接调用。运行时必须先创建真实新 task/agent，取得其稳定 `CONTEXT_REF`，再传入独立的 UUIDv4 `CONTEXT_ID` 作为 evidence correlation。没有真实 `CONTEXT_REF` 时只阻断对应计划并输出 handoff。
 - 每个计划维护独立状态。一个计划的 `decision-required`、blocked、提交失败或上下文缺失不得阻止其他计划继续推进。
 
 ## 每个 cycle 的固定优先级
 
-按 `ADVANCE_SET` 中每个计划重新从已提交索引派生状态，并在本 cycle 只执行其命中的最高优先级动作：
+按 `ADVANCE_SET` 中每个计划重新从已提交索引派生状态，并计算稳定状态摘要 `plan|stage|active-records|index-states|subject-revisions|blocker-code`。只有某计划连续 cycle 的摘要完全相同才增加其 stagnant counter；其他计划推进不得重置或增加该计划计数。达到 `MAX_STAGNANT_CYCLES` 时只停止该计划。每个 cycle 只执行其命中的最高优先级动作：
 
 1. 恢复 revision 未漂移的 open AUD；stale open 交给底层 prompt 执行 superseded 转移。若同一键存在多个 open 记录，阻断该计划。
-2. **先复审后整改**：对 `verification=pending` 的 completed/partial REM，逐个创建新 runtime task/agent，并调用 `$backend-follow-up-audit TARGET=<单一 REM> CONTEXT_ID=<child uuid>`。只要某计划仍有待复审 REM，本 cycle 不得为其 source AUD 创建新 REM。
+2. **先复审后整改**：对 `verification=pending` 的 completed/partial REM，逐个创建新 runtime task/agent，并调用 `$backend-follow-up-audit TARGET=<单一 REM> CONTEXT_ID=<child uuid> CONTEXT_REF=<child runtime ref>`。只要某计划仍有待复审 REM，本 cycle 不得为其 source AUD 创建新 REM。
 3. 对没有待复审 REM 的计划，从索引派生其 `remediation=required` AUD；按单一计划链分组调用 `$backend-fix-audit-findings TARGET=<精确 AUD 列表>`。`decision-required` 只阻断所属计划；不得自动整改接受风险或扩大范围。
-4. 对缺少当前 revision-bound `plan-audit/v2`，或 plan/checklist/`audited_subject_paths` 自上次计划审计后漂移的计划，调用 `$backend-plan-audit TARGET=<需要重审的 ADVANCE_SET 子集> PEER_SET=<完整 TARGET>`。底层 prompt 必须对完整 `PEER_SET` 执行集合级冲突检查，但只为 `TARGET` 中需要重审的计划创建或恢复 AUD，禁止仅为刷新集合检查而使未漂移的 ready peer 产生新 AUD。
-5. 仅对当前 revision 计划审计链干净且没有待复审/待整改状态的计划，逐个创建新 runtime task/agent，并调用 `$backend-plan-acceptance-audit TARGET=<单一计划> CONTEXT_ID=<child uuid>`。
+4. 对缺少当前 revision-bound `plan-audit/v2`，或完整 peer 集合、plan/checklist/`audited_subject_paths` 自上次计划审计后漂移的计划，调用 `$backend-plan-audit TARGET=<需要重审的 ADVANCE_SET 子集> PEER_SET=<完整 TARGET>`。底层 prompt 必须持久化完整 peer 快照。若返回 `peer_reaudit_required`，把其中仍位于完整 `TARGET` 的计划加入下一 cycle 重审子集，不得只保留在文字汇报；禁止仅为刷新无漂移集合检查创建新 AUD。
+5. 若已经存在当前 evidence revision、完整 peer 快照未漂移、链条干净的 closed `acceptance_verdict: ready`，直接把该计划标记为 terminal ready，不创建重复验收 AUD。否则逐个创建新 runtime task/agent，并调用 `$backend-plan-acceptance-audit TARGET=<单一计划> CONTEXT_ID=<child uuid> CONTEXT_REF=<child runtime ref>`。
 6. `ready` 标记该计划完成；`not-ready` 在下一 cycle 进入整改；`blocked` 只标记该计划需要决策。不得通过修改索引伪造 ready。
 
 同一计划在一个 cycle 中不得继续执行下一优先级动作。每个 child 返回后先验证其 terminal governance commit、索引流转和 clean worktree，再处理其他计划或结束本 cycle。

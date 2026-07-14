@@ -50,6 +50,6 @@ applies_to: implementation roadmap phase 6 pages
 
 ## 计划审计闭环与验收
 
-计划审计闭环使用 `$backend-plan-audit-until-ready`：`TARGET` 是完整 peer 集合，`ADVANCE_SET` 是本轮推进子集；计划审计通过 `PEER_SET` 保留集合级交叉检查，但只为缺失或漂移计划创建 AUD。整改按单一计划链分组，partial REM 必须先复审后重新整改；follow-up 和最终验收必须由运行时创建不同 task/agent。计划审计记录绑定 `evidence_revision` 与 `audited_subject_paths`。作为实施闭环子流程时固定使用 `GOAL_MODE=child STEP_MODE=single-transition MAX_CYCLES=1`，不得嵌套 persistent goal 或内部多 cycle。
+计划审计闭环使用 `$backend-plan-audit-until-ready`：`TARGET` 是完整 peer 集合，`ADVANCE_SET` 是本轮推进子集；计划审计持久化 `audited_peer_plans` 及全部 peer plan/checklist path，peer 增删或内容漂移会使旧 ready 自动失效。partial REM 必须先复审后重新整改；follow-up 和最终验收必须由运行时创建不同 task/agent 并提供真实 `CONTEXT_REF`。已有当前且未漂移的 ready 直接复用，不创建重复验收 AUD。
 
 计划验收审计不依赖闭环运行上下文，可单独执行，但必须独立重建并检查完整计划 AUD/REM/follow-up 链；无 `TARGET` 时选择所有活跃且未归档计划，但必须为每个计划分别创建一份 AUD 并给出 `ready`、`not-ready` 或 `blocked`，禁止用一个全局 verdict 混合多个计划。只有 `PLAN_AUDIT_CHAIN_CLEAN=pass` 且 verdict 为 `ready` 的计划才允许进入 `$backend-implement-plan`。
