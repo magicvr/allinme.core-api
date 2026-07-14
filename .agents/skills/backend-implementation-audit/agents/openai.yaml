@@ -1,6 +1,6 @@
 interface:
   display_name: "Backend Implementation Audit"
   short_description: "Independently audit exact implementation revisions"
-  default_prompt: "Use $backend-implementation-audit in a new execution context to audit each completed IMP at its exact result revision."
+  default_prompt: "Create a new runtime task, then use $backend-implementation-audit there to audit each completed IMP at its exact result revision."
 policy:
   allow_implicit_invocation: false

@@ -97,7 +97,8 @@ $backend-plan-audit TARGET="PLN-0005,PLN-0006" FOCUS=recovery
 - 计划审计的 `TARGET` 缺省为 `active`，也可指定一个或多个 `PLN` ID；它只证明选中计划的质量，不代表全仓审计。
 - 计划和实施验收的 `TARGET` 缺省为全部活跃且未归档计划；批量调用按计划分别创建 AUD。验收必须独立读取计划、IMP、代码、测试和 Evidence，并针对开始写治理记录前的干净不可变 subject revision 关闭。
 - 实施审计只接受 completed IMP；实施闭环不能绕过计划可实施验收，也不能自动归档计划。
-- 两个闭环 skill 必须把规范化后的同一 `TARGET` 传递给每个子 skill；整改和复审只能选择该目标集合关联的 AUD/REM，不得回退到默认全量队列。
+- 两个闭环把外层 `TARGET` 固定为完整 peer 集合，并只向各原子入口传递从中派生的精确对象；计划就绪子流程另用 `ADVANCE_SET` 表示本轮推进子集，计划审计用 `PEER_SET` 保留完整跨计划检查。整改和复审只能选择该集合关联的 AUD/REM，不得回退到默认全量队列。
+- 每个 AUD/REM/IMP 原子流程必须先提交 open checkpoint，再执行 subject/evidence 工作，关闭时提交 terminal governance transition 并返回干净 `governance_revision`。follow-up、实施审计和两类验收必须由运行时创建真实新 task/agent；UUID 只记录上下文，不能替代上下文隔离。
 - 审计提示词只生成审计记录，不直接整改。整改必须生成独立 [`REM`](../remediations/README.md)，复审再生成新的 follow-up `AUD`。
 - Codex 官方已弃用只存在于个人 `~/.codex/prompts` 的 custom prompts；仓库使用可版本化的 `.agents/skills`，通过 `$skill-name` 显式调用，并关闭隐式触发。
 

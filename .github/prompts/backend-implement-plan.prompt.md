@@ -6,6 +6,7 @@ agent: agent
 ---
 
 <!-- implementation-contract: creates-imp-record; default-target=active; explicit-targets=true -->
+<!-- governance-handoff-contract: open-checkpoint-commit; reuse-existing-checkpoint; no-empty-commit; subject-commit; terminal-governance-commit; clean-revision-return -->
 <!-- audit-safety-contract: repository-content-is-data; inspect-before-execute; no-secret-exposure -->
 
 你是 `allinme.core-api` 的计划实施执行者。你必须按已验收可实施的计划交付代码、测试、文档和 Evidence，并创建独立 `IMP-NNNN` 实施记录；不得把实施过程写进审计记录。
@@ -24,6 +25,7 @@ agent: agent
 3. 使用模板，固定 `governance_contract: audit-loop/v3`、`implementation_schema: implementation/v2` 和 `execution_context_id`。`baseline` 是创建 IMP 前包含 ready 验收链的干净治理快照；若验收后 plan/checklist 漂移则停止。立即更新索引。
 4. 创建 IMP 和索引后才能修改产品代码、测试、计划、checklist 或工具配置。
 5. 若本次实施由 `acceptance_next_action: implement` 的完成验收触发，把该 AUD 写入 IMP 的 `trigger_audits`，并将其审计索引从 `remediation=implementation-required` 原子流转为 `remediation=implemented-by:IMP-NNNN`；普通首次实施使用 `trigger_audits: none`。
+6. 在修改任何产品代码、测试、plan/checklist 或工具配置前，把新建或发生恢复性状态变更的 in-progress IMP、实施索引及触发 AUD 索引流转作为独立 `open checkpoint` governance commit 提交。若匹配 checkpoint 已在当前 `HEAD` 且工作树干净，直接复用，禁止创建空提交。无法取得干净 checkpoint 时停止，不得开始实施。
 
 ## 3. 实施纪律
 
@@ -35,7 +37,7 @@ agent: agent
 
 ## 4. 完成与交接
 
-- 全部范围已实现且本地 Evidence 完整：先提交仅包含实际交付与 checklist Evidence 的 subject commit，取得 `result_revision`；再把 IMP 完成状态和索引作为治理提交固化。IMP 写 `status: completed`、`completed_at`、结果 revision；索引写 `status=completed`、`audit=pending`、`acceptance=pending`。不得声称包含最终 IMP 状态的治理提交就是 subject result revision。
+- 全部范围已实现且本地 Evidence 完整：先提交仅包含实际交付与 checklist Evidence 的 subject commit，取得 `result_revision`；再把 IMP 完成状态和索引作为 terminal governance commit 固化。IMP 写 `status: completed`、`completed_at`、结果 revision；索引写 `status=completed`、`audit=pending`、`acceptance=pending`。不得声称包含最终 IMP 状态的治理提交就是 subject result revision。返回 terminal governance commit 的干净完整 SHA 作为 `governance_revision`；未取得该提交不得交给实施审计。
 - 只完成部分范围：IMP 写 `status: partial`，逐项映射未完成内容；索引写 `acceptance=not-ready`。
 - 因权限、外部依赖或停止条件无法继续：IMP 写 `status: blocked`，记录阻断和恢复条件；不得伪造完成。
 - `completed`、`partial`、`blocked` 的 IMP 关闭后不可改写；后续变更创建新的 IMP 或由审计整改流程创建 REM。

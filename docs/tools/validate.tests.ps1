@@ -4,8 +4,10 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $fixtureBase = Join-Path $repoRoot '.tmp'
 $fixtureRoot = Join-Path $fixtureBase ('.validate-fixture-' + [Guid]::NewGuid().ToString('N'))
 $allocatorRoot = Join-Path $fixtureBase ('.allocator-fixture-' + [Guid]::NewGuid().ToString('N'))
+$workflowFixtureRoot = Join-Path $fixtureBase ('.workflow-fixture-' + [Guid]::NewGuid().ToString('N'))
 $validator = Join-Path $PSScriptRoot 'validate.ps1'
 $allocator = Join-Path $PSScriptRoot 'reserve-governance-record.ps1'
+$workflowValidator = Join-Path $PSScriptRoot 'validate-audit-workflows.ps1'
 
 function Invoke-Validator([string]$DocsRoot) {
     $previousErrorAction = $ErrorActionPreference
@@ -24,9 +26,88 @@ function Invoke-Validator([string]$DocsRoot) {
     }
 }
 
+function Invoke-WorkflowValidator([string]$RepositoryRoot) {
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $workflowValidator -RepositoryRoot $RepositoryRoot 2>&1
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorAction
+    return @{
+        ExitCode = $exitCode
+        Output = ($output | Out-String).Trim()
+    }
+}
+
 try {
     New-Item -ItemType Directory -Path $fixtureBase -Force | Out-Null
     New-Item -ItemType Directory -Path $fixtureRoot | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $workflowFixtureRoot '.github\prompts') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $workflowFixtureRoot '.agents\skills') -Force | Out-Null
+    foreach ($prompt in Get-ChildItem (Join-Path $repoRoot '.github\prompts') -Filter 'backend-*.prompt.md') {
+        Copy-Item -LiteralPath $prompt.FullName -Destination (Join-Path $workflowFixtureRoot ".github\prompts\$($prompt.Name)")
+    }
+    foreach ($skillName in @(
+        'backend-plan-audit-until-ready',
+        'backend-implement-audit-until-complete',
+        'backend-plan-audit',
+        'backend-plan-acceptance-audit',
+        'backend-implementation-audit',
+        'backend-implementation-acceptance-audit',
+        'backend-follow-up-audit'
+    )) {
+        $skillTarget = Join-Path $workflowFixtureRoot ".agents\skills\$skillName"
+        New-Item -ItemType Directory -Path $skillTarget -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $repoRoot ".agents\skills\$skillName\SKILL.md") -Destination (Join-Path $skillTarget 'SKILL.md')
+    }
+
+    $validWorkflowResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($validWorkflowResult.ExitCode -ne 0) {
+        throw "workflow validator rejected the canonical audit workflow assets: $($validWorkflowResult.Output)"
+    }
+
+    $planLoopFixture = Join-Path $workflowFixtureRoot '.github\prompts\backend-plan-audit-until-ready.prompt.md'
+    $planLoopContent = Get-Content -Raw -Encoding UTF8 $planLoopFixture
+    Set-Content -LiteralPath $planLoopFixture -Value ($planLoopContent.Replace('[MAX_CYCLES=8]', '[MAX_CYCLES=3]').Replace('`MAX_CYCLES=8`', '`MAX_CYCLES=3`')) -Encoding UTF8
+    $shortPlanLoopResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($shortPlanLoopResult.ExitCode -eq 0 -or $shortPlanLoopResult.Output -notmatch 'default MAX_CYCLES') {
+        throw "workflow validator did not reject an undersized plan-loop cycle budget: $($shortPlanLoopResult.Output)"
+    }
+    Set-Content -LiteralPath $planLoopFixture -Value $planLoopContent -Encoding UTF8
+
+    $implementationLoopFixture = Join-Path $workflowFixtureRoot '.github\prompts\backend-implement-audit-until-complete.prompt.md'
+    $implementationLoopContent = Get-Content -Raw -Encoding UTF8 $implementationLoopFixture
+    Set-Content -LiteralPath $implementationLoopFixture -Value ($implementationLoopContent.Replace('GOAL_MODE=child STEP_MODE=single-transition MAX_CYCLES=1', 'GOAL_MODE=child')) -Encoding UTF8
+    $nestedLoopResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($nestedLoopResult.ExitCode -eq 0 -or $nestedLoopResult.Output -notmatch 'single-transition child') {
+        throw "workflow validator did not reject nested readiness cycles: $($nestedLoopResult.Output)"
+    }
+    Set-Content -LiteralPath $implementationLoopFixture -Value $implementationLoopContent -Encoding UTF8
+
+    Set-Content -LiteralPath $implementationLoopFixture -Value ($implementationLoopContent.Replace('<!-- peer-routing-contract: target-is-complete-peer-set; readiness-advance-set-is-subset -->', '')) -Encoding UTF8
+    $missingPeerRoutingResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($missingPeerRoutingResult.ExitCode -eq 0 -or $missingPeerRoutingResult.Output -notmatch 'complete peer set') {
+        throw "workflow validator did not reject missing peer/advance routing: $($missingPeerRoutingResult.Output)"
+    }
+    Set-Content -LiteralPath $implementationLoopFixture -Value $implementationLoopContent -Encoding UTF8
+
+    $acceptanceFixture = Join-Path $workflowFixtureRoot '.github\prompts\backend-plan-acceptance-audit.prompt.md'
+    $acceptanceContent = Get-Content -Raw -Encoding UTF8 $acceptanceFixture
+    Set-Content -LiteralPath $acceptanceFixture -Value ($acceptanceContent.Replace('<!-- context-dispatch-contract: runtime-provided-new-task-context; local-uuid-generation-forbidden -->', '')) -Encoding UTF8
+    $missingRuntimeContextResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($missingRuntimeContextResult.ExitCode -eq 0 -or $missingRuntimeContextResult.Output -notmatch 'runtime-provided new task context') {
+        throw "workflow validator did not reject declarative-only context isolation: $($missingRuntimeContextResult.Output)"
+    }
+    Set-Content -LiteralPath $acceptanceFixture -Value $acceptanceContent -Encoding UTF8
+
+    $implementationAuditFixture = Join-Path $workflowFixtureRoot '.github\prompts\backend-implementation-audit.prompt.md'
+    $implementationAuditContent = Get-Content -Raw -Encoding UTF8 $implementationAuditFixture
+    Set-Content -LiteralPath $implementationAuditFixture -Value ($implementationAuditContent.Replace('<!-- governance-handoff-contract: open-checkpoint-commit; reuse-existing-checkpoint; no-empty-commit; terminal-governance-commit; clean-revision-return -->', '')) -Encoding UTF8
+    $missingGovernanceHandoffResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($missingGovernanceHandoffResult.ExitCode -eq 0 -or $missingGovernanceHandoffResult.Output -notmatch 'governance handoff contract') {
+        throw "workflow validator did not reject a missing durable governance handoff: $($missingGovernanceHandoffResult.Output)"
+    }
+    Set-Content -LiteralPath $implementationAuditFixture -Value $implementationAuditContent -Encoding UTF8
+
     New-Item -ItemType Directory -Path (Join-Path $allocatorRoot 'docs\audits\records') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $allocatorRoot 'docs\remediations\records') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $allocatorRoot 'docs\implementations\records') -Force | Out-Null
@@ -1377,7 +1458,7 @@ related_plans: none
     }
 
     $global:LASTEXITCODE = 0
-    Write-Output 'Validator self-test passed: revision-bound plan audits, split governance/subject revisions, subject-specific acceptance reruns, verification-first partial REM routing, timestamp ordering, negative completion acceptance, implemented-by/audited-by routing, superseded stale work, independent implementation audit, and linear IMP/REM chains accepted; self-review contexts, stale or wrong evidence revisions, shared multi-plan AUDs, duplicate open work, governance-only acceptance evidence, placeholder evidence, blocked-state misrouting, disconnected revisions, forged transitions, dirty chains, and incomplete records rejected.'
+    Write-Output 'Validator self-test passed: durable audit workflow handoffs, runtime task isolation, adequate cycle budgets, single-transition child routing, peer/advance set separation, revision-bound plan audits, split governance/subject revisions, subject-specific acceptance reruns, verification-first partial REM routing, timestamp ordering, negative completion acceptance, implemented-by/audited-by routing, superseded stale work, independent implementation audit, and linear IMP/REM chains accepted; missing workflow contracts, self-review contexts, stale or wrong evidence revisions, shared multi-plan AUDs, duplicate open work, governance-only acceptance evidence, placeholder evidence, blocked-state misrouting, disconnected revisions, forged transitions, dirty chains, and incomplete records rejected.'
 } finally {
     if (Test-Path -LiteralPath $allocatorRoot) {
         $resolvedAllocatorRoot = (Resolve-Path $allocatorRoot).Path
@@ -1386,6 +1467,14 @@ related_plans: none
             throw "Refusing to remove unexpected allocator fixture path: $resolvedAllocatorRoot"
         }
         Remove-Item -LiteralPath $resolvedAllocatorRoot -Recurse -Force
+    }
+    if (Test-Path -LiteralPath $workflowFixtureRoot) {
+        $resolvedWorkflowRoot = (Resolve-Path $workflowFixtureRoot).Path
+        $allowedWorkflowPrefix = (Resolve-Path $fixtureBase).Path + [System.IO.Path]::DirectorySeparatorChar + '.workflow-fixture-'
+        if (-not $resolvedWorkflowRoot.StartsWith($allowedWorkflowPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove unexpected workflow fixture path: $resolvedWorkflowRoot"
+        }
+        Remove-Item -LiteralPath $resolvedWorkflowRoot -Recurse -Force
     }
     if (Test-Path -LiteralPath $fixtureRoot) {
         $resolvedFixtureRoot = (Resolve-Path $fixtureRoot).Path

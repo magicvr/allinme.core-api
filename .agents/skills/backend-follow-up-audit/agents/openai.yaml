@@ -1,6 +1,6 @@
 interface:
   display_name: "Follow-up Audit"
   short_description: "Verify each REM in a separate execution context"
-  default_prompt: "Use $backend-follow-up-audit in a new execution context to verify each pending remediation."
+  default_prompt: "Create a new runtime task, then use $backend-follow-up-audit there to verify each pending remediation."
 policy:
   allow_implicit_invocation: false

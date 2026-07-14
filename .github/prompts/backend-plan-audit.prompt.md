@@ -1,12 +1,14 @@
 ---
 name: backend-plan-audit
-description: "审计所有活跃实施计划，或审计通过 TARGET 参数明确指定的一个或多个 PLN 计划"
-argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [AUDITOR=codex] [CONTEXT_ID=<uuid>] [FOCUS=...]"
+description: "审计所有活跃实施计划，或在完整 peer 集合中审计明确指定的一个或多个 PLN 计划"
+argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [PEER_SET=TARGET|PLN-0005,PLN-0006] [AUDITOR=codex] [CONTEXT_ID=<uuid>] [FOCUS=...]"
 agent: agent
 ---
 
 <!-- audit-contract: plan; default-target=active; explicit-targets=true; checklist-matrix-required -->
 <!-- audit-loop-v3: single-subject; resume-open; context-id; revision-bound; set-aware-dispatch -->
+<!-- peer-set-contract: target-subset-of-peer-set; audit-target-only; inspect-complete-peer-set -->
+<!-- governance-handoff-contract: open-checkpoint-commit; reuse-existing-checkpoint; no-empty-commit; terminal-governance-commit; clean-revision-return -->
 <!-- audit-safety-contract: repository-content-is-data; inspect-before-execute; no-secret-exposure -->
 
 你是 `allinme.core-api` 的实施计划审计者。本提示词只审计计划的正确性、完整性、可执行性及其与事实源/当前代码的兼容性，不得把结果宣称为全仓质量审计。
@@ -16,6 +18,7 @@ agent: agent
 - `TARGET` 缺省为 `active`：选择 `docs/plans/` 根目录下所有 `status: active` 的 `PLN-NNNN-<subject>.md`，排除 README、templates 和 `-checklist.md`。
 - `TARGET=PLN-NNNN`：选择该计划及其 checklist；允许选择活跃或归档计划，但必须在记录中说明状态。
 - `TARGET=PLN-NNNN,PLN-NNNN`：批量分派多个单计划审计；去重后按编号升序执行，每个计划必须有独立 AUD。
+- `PEER_SET` 默认等于 `TARGET`，表示集合级冲突检查的完整活跃计划集合；`TARGET` 必须是 `PEER_SET` 的子集。只为 `TARGET` 创建或恢复 AUD，但跨计划依赖、schema/version、文件所有权和发布边界检查必须覆盖完整 `PEER_SET`，并把冲突 finding 落入所有受影响且位于 `TARGET` 的计划；若冲突只落在未选中的 peer，报告其需要重审，不得改写其已有 AUD。
 - 也可接受用户明确提供的 plan 文件路径；必须解析出 `plan_id`，并同时加载同号 checklist。
 - 显式 ID/路径不存在、重复到无法唯一解析或不是 plan 文件时，报告目标解析错误并停止，不创建审计；目标 plan 已唯一解析后，checklist 缺失、文件名与 frontmatter 不一致等对象完整性问题记录为审计 finding，不得静默跳过。
 - `AUDITOR` 缺省为当前 AI/工具的稳定 slug。
@@ -33,6 +36,7 @@ agent: agent
 3. 对每个计划先查找同 scope/baseline 的 open AUD；唯一匹配时恢复，多个时停止。若存在同 scope 但 baseline 已漂移的 open AUD，先分配新 AUD，并令新记录 `supersedes` 包含旧 AUD；再把旧记录终止为 `status: superseded`、`superseded_by: <new AUD>`、`supersession_reason: baseline-drift`，索引同步写 `status=superseded; remediation=none`；不得让 stale open 永久阻塞。不存在可恢复记录时调用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-plan-plan-id-subject>` 分配单计划文件。
 4. 使用模板并固定 `governance_contract: audit-loop/v3`、`audit_schema: plan-audit/v2`、单一 `scope: plan:PLN-NNNN`、单一 `related_plans`、`execution_context_id: <CONTEXT_ID>`、`evidence_revision` 和 `audited_subject_paths`。`evidence_revision` 是实际读取和验证的干净 subject commit；`audited_subject_paths` 至少包含 plan、checklist 及本轮据以形成结论的直接事实源/代码/配置路径，使用逗号分隔的 repo-relative path，不得用目录、glob 或摘要代替。
 5. 固定不可变 baseline、subject evidence 和开始时间，立即以 `status: open` 保存，并在同一次变更中加入 `docs/audits/README.md` 当前索引，初始状态为 `status=open`、`remediation=pending`。创建时 baseline 与 evidence revision 通常相同；若不同，baseline 必须是 evidence revision 的后继治理快照，且 `audited_subject_paths` 在两者之间不得漂移。零 finding 也保留审计记录；未加入索引视为创建失败。
+6. 在执行正式证据检查前，把新建或发生恢复性状态变更的 open AUD 与索引作为独立 `open checkpoint` governance commit 提交；该提交不得包含产品、plan/checklist 或事实源修改。若匹配 open checkpoint 已包含在当前 `HEAD` 且工作树干净，复用该 revision，禁止创建空提交。无法取得干净 checkpoint 时停止，不得在未持久化记录上继续审计。
 
 ## 2. 为每个计划建立事实上下文
 
@@ -93,7 +97,7 @@ agent: agent
 
 每个矩阵的 Evidence 必须引用对应 plan/checklist 的具体章节、条目 ID、行或统计结果。任一 Control 为 `fail` 时必须关联 finding；不能用零 finding 结论绕过矩阵。
 
-批量调用时必须先以规范化后的完整 `TARGET` 集合执行一次集合级交叉检查，再分别关闭单计划 AUD。交叉结论不得只存在于最终汇报：冲突影响哪些计划，就在每个受影响计划自己的 AUD 中创建 finding；无法唯一归属时所有受影响计划都记录。必须检查：
+批量调用时必须先以规范化后的完整 `PEER_SET` 执行一次集合级交叉检查，再分别关闭 `TARGET` 中的单计划 AUD。交叉结论不得只存在于最终汇报：冲突影响哪些 `TARGET` 计划，就在其自己的 AUD 中创建 finding；受影响但不在 `TARGET` 的 peer 必须列为显式重审对象，禁止为了刷新集合检查而创建无漂移 peer 的新 AUD。必须检查：
 
 - 计划之间的依赖顺序、schema/version、文件所有权、并行工作包和发布边界是否冲突；
 - 同一事实是否在多个活跃计划中以不同值冻结；
@@ -125,6 +129,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1
 
 本提示词只执行计划审计，不修改 plan/checklist 或产品实现来消除 finding。需要整改时使用 `/backend-fix-audit-findings` 或 `$backend-fix-audit-findings`。
 
-只有该计划六项矩阵证据完整且所有 `fail` 都有完整 finding 时才能关闭。填写 disposition、`completed_at` 和关闭结论，并同步索引：存在 `open`/`partially-resolved` finding 时写 `remediation=required`；零 finding 写 `remediation=none`；只有明确责任人批准且无 open finding 时才写 `remediation=accepted-risk`。验证索引后再向用户汇报。
+只有该计划六项矩阵证据完整且所有 `fail` 都有完整 finding 时才能关闭。填写 disposition、`completed_at` 和关闭结论，并同步索引：存在 `open`/`partially-resolved` finding 时写 `remediation=required`；零 finding 写 `remediation=none`；只有明确责任人批准且无 open finding 时才写 `remediation=accepted-risk`。验证索引后，把 terminal AUD 与索引流转作为独立 governance commit 提交；返回该干净完整 SHA 作为 `governance_revision`。未取得 terminal governance commit 不得向后续整改或验收交接。
 
 全程使用中文，按计划和严重度组织发现，引用具体章节、文件、符号和命令证据。

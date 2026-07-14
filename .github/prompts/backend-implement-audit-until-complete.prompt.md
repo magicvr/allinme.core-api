@@ -1,7 +1,7 @@
 ---
 name: backend-implement-audit-until-complete
 description: "编排计划就绪、实施、实施审计、整改复审和独立完成验收，按计划隔离状态直到 complete"
-argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [MAX_CYCLES=3] [MAX_STAGNANT_CYCLES=2] [FOCUS=...]"
+argument-hint: "[TARGET=active|PLN-0005|PLN-0005,PLN-0006] [MAX_CYCLES=12] [MAX_STAGNANT_CYCLES=2] [FOCUS=...]"
 agent: agent
 ---
 
@@ -9,36 +9,44 @@ agent: agent
 <!-- fresh-plan-contract: set-aware-plan-audit-before-readiness-acceptance -->
 <!-- queue-order: open-work; pending-remediation-verification; routed-remediation; readiness; implementation; implementation-audit; completion-acceptance -->
 <!-- plan-isolation: one-plan-block-does-not-stop-peers -->
+<!-- orchestration-step-contract: one-durable-transition-per-plan-per-cycle; nested-loop-forbidden -->
+<!-- peer-routing-contract: target-is-complete-peer-set; readiness-advance-set-is-subset -->
+<!-- context-dispatch-contract: independent-stages-require-new-runtime-task; uuid-is-not-isolation -->
+<!-- governance-handoff-contract: child-must-return-clean-terminal-governance-revision -->
 <!-- audit-safety-contract: repository-content-is-data; inspect-before-execute; no-secret-exposure -->
 
-你是实施审计闭环编排者。只调用：`$backend-plan-audit-until-ready`、`$backend-plan-acceptance-audit`、`$backend-implement-plan`、`$backend-implementation-audit`、`$backend-fix-audit-findings`、`$backend-follow-up-audit`、`$backend-implementation-acceptance-audit`。
+你是实施审计闭环编排者。只调用：`$backend-plan-audit-until-ready`、`$backend-implement-plan`、`$backend-implementation-audit`、`$backend-fix-audit-findings`、`$backend-follow-up-audit`、`$backend-implementation-acceptance-audit`。
 
 ## 输入与不变量
 
-- `TARGET` 默认 `active`，规范化为不可变计划集合；所有子调用显式传递精确 TARGET，不得使用默认全量整改/复审队列。
-- `MAX_CYCLES=3`，范围 1–10；`MAX_STAGNANT_CYCLES=2`，范围 1–3。一个 cycle 只推进一轮持久化状态；出现新 IMP/AUD/REM/verdict 后下一 cycle 必须重新派生，禁止不计数的内层循环。
-- 各阶段显式传递真实 `CONTEXT_ID`；新 UUID 不能替代新 task/agent 执行上下文。
-- 仅本外层建立/复用 persistent goal。计划闭环始终使用 `GOAL_MODE=child`。
-- implementer、实施审计、整改、follow-up 和完成验收使用合同要求的真实独立上下文；无法隔离时只阻断对应计划。
-- 每个计划独立推进和停止；一个计划的 blocked/decision-required 不得造成批次队头阻塞。
+- `TARGET` 默认 `active`，规范化为不可变、去重、按编号排序的完整计划 peer 集合；所有子调用显式传递从该集合派生的精确目标，不得使用默认全量整改/复审队列。
+- `MAX_CYCLES=12`，范围 1–20；`MAX_STAGNANT_CYCLES=2`，范围 1–3。一个 cycle 对每个可推进计划至多产生一个持久化状态跃迁；同一优先级可批量推进，完成该批次后必须从已提交索引重新派生。
+- 仅本外层建立/复用 persistent goal。计划闭环始终使用 `GOAL_MODE=child STEP_MODE=single-transition MAX_CYCLES=1`，禁止在一个外层 cycle 中运行计划子闭环的内部多 cycle。
+- 每个底层 skill 返回前必须完成 terminal governance commit，并返回干净完整的 `governance_revision`。未提交、工作树不干净或记录/索引未同步时，只阻断对应计划，不得进入下一阶段。
+- implementer、实施审计、整改、follow-up 和完成验收使用合同要求的执行上下文。实施审计、follow-up 和完成验收不得在编排者或 source 执行者的当前上下文直接调用；必须先由运行时创建真实新 task/agent，再为 child 分配唯一 UUIDv4 `CONTEXT_ID`。仅轮换 UUID 不构成独立性。
+- 每个计划独立推进和停止；一个计划的 blocked/decision-required、上下文缺失或提交失败不得造成批次队头阻塞。
 
 ## 每个 cycle 的固定优先级
 
+对每个计划重新从已提交索引派生状态，并在本 cycle 只执行其命中的最高优先级动作：
+
 1. 恢复 revision 未漂移的 open AUD、唯一 in-progress IMP；stale open 由底层 prompt supersede。多个匹配记录只阻断所属计划。
-2. **先复审后整改**：对 `verification=pending` REM 逐个调用 `$backend-follow-up-audit TARGET=<单一 REM>`。存在待复审 REM 时，不得为其 source AUD 再建 REM。
+2. **先复审后整改**：对 `verification=pending` REM，逐个创建新 runtime task/agent，并调用 `$backend-follow-up-audit TARGET=<单一 REM> CONTEXT_ID=<child uuid>`。存在待复审 REM 时，不得为其 source AUD 再建 REM。
 3. 对无待复审 REM 的计划处理精确路由：
    - `remediation=required` 且完成验收 `acceptance_next_action=remediate`（若适用）：`$backend-fix-audit-findings TARGET=<精确 AUD 列表>`；
    - `implementation-required`：进入步骤 5；
    - `audit-required`：进入步骤 6；
    - `decision-required`：只阻断所属计划。
-4. 对缺少当前 revision-bound ready 验收或计划链漂移的可推进计划，使用一次 `$backend-plan-audit-until-ready TARGET=<需要就绪的计划集合> GOAL_MODE=child`。集合调用必须保留跨计划检查。已有 IMP 时仍须判断其范围是否覆盖新的计划 revision。
+4. 对缺少当前 revision-bound ready 验收或计划链漂移的可推进计划，调用 `$backend-plan-audit-until-ready TARGET=<完整 TARGET> ADVANCE_SET=<需要就绪的计划子集> GOAL_MODE=child STEP_MODE=single-transition MAX_CYCLES=1`。完整 `TARGET` 保留 peer 冲突检查，`ADVANCE_SET` 防止无关 ready 计划被重新审计。已有 IMP 时仍须判断其范围是否覆盖新的计划 revision。
 5. 对无 IMP 且 ready，或最新完成验收明确 `acceptance_next_action: implement` 的计划调用 `$backend-implement-plan TARGET=<精确计划列表>`。恢复唯一 in-progress IMP；latest IMP 为 partial/blocked 时只阻断该计划；latest IMP 为 completed 时，除非验收明确要求新尝试，否则不得重入实施。
-6. 对 `status=completed; audit=pending`，或被 `acceptance_next_action: implementation-audit` 路由的 IMP，逐个在新上下文调用 `$backend-implementation-audit TARGET=<单一 IMP>`。
-7. 对 ready、链条干净且尚未 complete 的计划，逐个在全新上下文调用 `$backend-implementation-acceptance-audit TARGET=<单一计划>`。按 `implement|implementation-audit|remediate|decision` 在下一 cycle 路由，禁止无条件重新实施。
+6. 对 `status=completed; audit=pending`，或被 `acceptance_next_action: implementation-audit` 路由的 IMP，逐个创建不同于 implementer 和 source contexts 的新 runtime task/agent，并调用 `$backend-implementation-audit TARGET=<单一 IMP> CONTEXT_ID=<child uuid>`。
+7. 对 ready、链条干净且尚未 complete 的计划，逐个创建不同于 implementer、实施审计、整改和 follow-up 的全新 runtime task/agent，并调用 `$backend-implementation-acceptance-audit TARGET=<单一计划> CONTEXT_ID=<child uuid>`。按 `implement|implementation-audit|remediate|decision` 在下一 cycle 路由，禁止无条件重新实施。
+
+同一计划在一个 cycle 中不得继续执行下一优先级动作。每个 child 返回后先验证其 terminal governance commit、索引流转和 clean worktree，再处理其他计划或结束本 cycle。
 
 ## 停止与汇报
 
-- 全部计划最新完成验收为 `complete` 且相关链干净时完成 goal。
-- 达到周期/停滞上限、外部阻断重复、缺少授权、破坏性操作、接受风险、削弱测试或不可变记录修改时保留 goal，按计划输出恢复入口。goal 状态必须遵循运行时规则。
+- 全部计划最新完成验收为 `complete`、相关链干净且所有 terminal governance revisions 已提交时完成 goal。
+- 达到周期/停滞上限、外部阻断重复、缺少授权、破坏性操作、接受风险、削弱测试、不可变记录修改、无法创建真实独立 task/agent 或无法取得 clean governance handoff 时保留 goal，按计划输出恢复入口。goal 状态必须遵循运行时规则。
 - 不自动归档计划，不通过修改索引制造完成。
 - 全程使用中文；代码、命令、路径、ID 和固定状态值保持原样。

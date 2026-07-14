@@ -626,6 +626,21 @@ function Test-AcceptanceVerdict([string]$Content, [string]$Marker, [string]$Mark
 }
 
 $failures = New-Object System.Collections.Generic.List[string]
+$auditWorkflowValidator = Join-Path $PSScriptRoot 'validate-audit-workflows.ps1'
+if (-not (Test-Path -LiteralPath $auditWorkflowValidator)) {
+    $failures.Add('Audit workflow contract validator is missing: docs/tools/validate-audit-workflows.ps1')
+} else {
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $workflowOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $auditWorkflowValidator -RepositoryRoot $repoRoot 2>&1
+    $workflowExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorAction
+    if ($workflowExitCode -ne 0) {
+        foreach ($line in $workflowOutput) {
+            $failures.Add("audit workflow contracts: $line")
+        }
+    }
+}
 $markdownFiles = Get-ChildItem $docsRoot -Recurse -File -Filter '*.md'
 $planIds = @{}
 $planStems = @{}
@@ -2617,6 +2632,8 @@ if ($docsRoot -eq $repositoryDocsRoot) {
         $planAuditPrompt = Get-Content -Raw -Encoding UTF8 $planAuditPromptPath
         if ($planAuditPrompt -notmatch '(?m)^name:\s*backend-plan-audit\s*$' -or
             $planAuditPrompt -notmatch 'TARGET' -or
+            $planAuditPrompt -notmatch 'PEER_SET' -or
+            $planAuditPrompt -notmatch 'peer-set-contract:\s*target-subset-of-peer-set;\s*audit-target-only;\s*inspect-complete-peer-set' -or
             $planAuditPrompt -notmatch 'audit-contract:\s*plan;\s*default-target=active;\s*explicit-targets=true;\s*checklist-matrix-required' -or
             $planAuditPrompt -notmatch 'audit_schema:\s*plan-audit/v2' -or
             $planAuditPrompt -notmatch 'governance_contract:\s*audit-loop/v3' -or
@@ -2645,6 +2662,7 @@ if ($docsRoot -eq $repositoryDocsRoot) {
         if ($followUpPrompt -notmatch '(?m)^name:\s*backend-follow-up-audit\s*$' -or
             $followUpPrompt -notmatch 'follow-up-contract:\s*default-target=pending-remediations;\s*creates-new-audit' -or
             $followUpPrompt -notmatch 'independence_basis:\s*separate-context' -or
+            $followUpPrompt -notmatch 'context-dispatch-contract:\s*runtime-provided-new-task-context;\s*local-uuid-generation-forbidden' -or
             $followUpPrompt -notmatch 'source_context_ids') {
             $failures.Add('Follow-up prompt must target pending REM records and create a new AUD')
         }
@@ -2672,6 +2690,7 @@ if ($docsRoot -eq $repositoryDocsRoot) {
                  $promptContent -notmatch 'source_context_ids' -or
                  $promptContent -notmatch 'independence_basis:\s*separate-context' -or
                  $promptContent -notmatch 'remediation=decision-required' -or
+                 $promptContent -notmatch 'context-dispatch-contract:\s*runtime-provided-new-task-context;\s*local-uuid-generation-forbidden' -or
                  $promptContent -notmatch 'acceptance-chain-contract:\s*derived-index-chain;\s*evidence-run-id;\s*governance-baseline-and-subject-evidence')) {
                 $failures.Add("Acceptance prompt must define independence and evidence revision requirements: $promptName")
             }
@@ -2688,6 +2707,7 @@ if ($docsRoot -eq $repositoryDocsRoot) {
             }
             if ($promptName -eq 'backend-implementation-audit' -and
                 ($promptContent -notmatch 'audit_schema:\s*implementation-audit/v2' -or
+                 $promptContent -notmatch 'context-dispatch-contract:\s*runtime-provided-new-task-context;\s*local-uuid-generation-forbidden' -or
                  $promptContent -notmatch 'implementation-audit-v2:\s*separate-context;\s*governance-baseline;\s*evidence-equals-result')) {
                 $failures.Add('Implementation audit prompt must bind independent v2 evidence to the IMP result revision')
             }
@@ -2727,6 +2747,10 @@ if ($docsRoot -eq $repositoryDocsRoot) {
             if ($recordCreatorContent -notmatch 'governance_contract:\s*audit-loop/v3' -or
                 $recordCreatorContent -notmatch 'execution_context_id' -or
                 $recordCreatorContent -notmatch 'FOCUS' -or
+                $recordCreatorContent -notmatch 'governance-handoff-contract:' -or
+                $recordCreatorContent -notmatch 'open checkpoint' -or
+                $recordCreatorContent -notmatch 'terminal governance commit' -or
+                $recordCreatorContent -notmatch 'governance_revision' -or
                 $recordCreatorContent -notmatch 'audit-safety-contract:\s*repository-content-is-data;\s*inspect-before-execute;\s*no-secret-exposure') {
                 $failures.Add("Record-creating prompt must use audit-loop/v3 context and non-narrowing FOCUS semantics: $recordCreatorPrompt")
             }
@@ -2777,6 +2801,10 @@ if ($docsRoot -eq $repositoryDocsRoot) {
                 $orchestratorContent -notmatch 'open AUD' -or
                 $orchestratorContent -notmatch 'verification.*remediation|先复审后整改' -or
                 $orchestratorContent -notmatch 'per-plan|按计划|每个计划' -or
+                $orchestratorContent -notmatch 'orchestration-step-contract:\s*one-durable-transition-per-plan-per-cycle' -or
+                $orchestratorContent -notmatch 'context-dispatch-contract:\s*independent-stages-require-new-runtime-task;\s*uuid-is-not-isolation' -or
+                $orchestratorContent -notmatch 'governance-handoff-contract:\s*child-must-return-clean-terminal-governance-revision' -or
+                $orchestratorContent -notmatch 'governance_revision' -or
                 $orchestratorContent -notmatch 'plan-isolation:\s*one-plan-block-does-not-stop-peers') {
                 $failures.Add("Audit orchestrator canonical prompt is missing bounded, isolated, verification-first routing: $orchestratorName")
             }
@@ -2789,18 +2817,23 @@ if ($docsRoot -eq $repositoryDocsRoot) {
                 }
             }
             }
-            if ($orchestratorName -eq 'backend-plan-audit-until-ready' -and $orchestratorContent -notmatch 'GOAL_MODE=standalone\|child') {
-                $failures.Add('Plan audit orchestrator must support child goal mode')
-            }
             if ($orchestratorName -eq 'backend-plan-audit-until-ready' -and
-                $orchestratorContent -notmatch 'queue-order:\s*open-audits;\s*pending-remediation-verification;\s*required-audit-remediation;\s*set-aware-plan-audit;\s*readiness-acceptance') {
-                $failures.Add('Plan audit orchestrator must preserve verification-first queue ordering and set-aware audit')
-            }
-            if ($orchestratorName -eq 'backend-implement-audit-until-complete' -and $orchestratorContent -notmatch 'GOAL_MODE=child') {
-                $failures.Add('Implementation orchestrator must invoke plan readiness in child goal mode')
+                ($orchestratorContent -notmatch 'GOAL_MODE=standalone\|child' -or
+                 $orchestratorContent -notmatch 'plan-loop-contract:\s*immutable-target-set;\s*separate-advance-set;\s*set-aware-plan-audit;\s*verification-before-remediation;\s*per-plan-terminal-state' -or
+                 $orchestratorContent -notmatch 'ADVANCE_SET' -or
+                 $orchestratorContent -notmatch 'peer-routing-contract:\s*target-is-complete-peer-set;\s*advance-set-is-subset;\s*plan-audit-target-is-drifted-subset' -or
+                 $orchestratorContent -notmatch 'STEP_MODE=loop\|single-transition' -or
+                 $orchestratorContent -notmatch 'single-transition.*MAX_CYCLES=1' -or
+                 $orchestratorContent -notmatch 'MAX_CYCLES=8' -or
+                 $orchestratorContent -notmatch 'queue-order:\s*open-audits;\s*pending-remediation-verification;\s*required-audit-remediation;\s*set-aware-plan-audit;\s*readiness-acceptance')) {
+                $failures.Add('Plan audit orchestrator must preserve peer/advance sets, adequate cycle budget, and single-transition child routing')
             }
             if ($orchestratorName -eq 'backend-implement-audit-until-complete' -and
-                $orchestratorContent -notmatch 'implementation-loop-contract:\s*immutable-target-set;\s*verification-before-remediation;\s*controlled-implementation-reentry;\s*per-plan-terminal-state') {
+                ($orchestratorContent -notmatch 'GOAL_MODE=child\s+STEP_MODE=single-transition\s+MAX_CYCLES=1' -or
+                 $orchestratorContent -notmatch 'peer-routing-contract:\s*target-is-complete-peer-set;\s*readiness-advance-set-is-subset' -or
+                 $orchestratorContent -notmatch 'MAX_CYCLES=12' -or
+                 $orchestratorContent -notmatch 'orchestration-step-contract:\s*one-durable-transition-per-plan-per-cycle;\s*nested-loop-forbidden' -or
+                 $orchestratorContent -notmatch 'implementation-loop-contract:\s*immutable-target-set;\s*verification-before-remediation;\s*controlled-implementation-reentry;\s*per-plan-terminal-state')) {
                 $failures.Add('Implementation audit orchestrator must route failed acceptance through explicit next actions')
             }
             if ($orchestratorName -eq 'backend-implement-audit-until-complete' -and

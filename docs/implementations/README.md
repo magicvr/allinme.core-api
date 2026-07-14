@@ -12,7 +12,7 @@
 ## 生命周期与索引
 
 1. 实施前必须存在已关闭的独立计划验收 AUD，且最新 `acceptance_verdict: ready`、`PLAN_AUDIT_CHAIN_CLEAN=pass`，验收后没有计划 revision 或审计链漂移。
-2. 修改代码、测试、文档或 checklist 前先创建 IMP 并加入本索引。
+2. 修改代码、测试、文档或 checklist 前先创建 IMP、加入本索引并提交独立 open checkpoint governance commit；未取得干净 checkpoint 不得开始实施。
 3. `status=in-progress`：正在实施；`audit=not-ready`；`acceptance=not-ready`。
 4. `status=completed`：计划范围已实施且本地 Evidence 齐全；`audit=pending`；`acceptance=pending`。
 5. `status=partial` 或 `status=blocked`：必须逐项记录未完成内容、阻断原因和恢复条件；不得进入完成验收。
@@ -21,7 +21,7 @@
 
 `completed`、`partial`、`blocked` 的 IMP 记录不可改写。针对已完成 IMP 的窄范围整改由 REM 记录新的 `result_revision` 并进入 effective revision 链；需要重新执行计划工作包、改变计划范围或无法由原 finding 限定的工作必须创建新的 IMP。不得通过改写历史 IMP 或遗漏 REM 伪造闭环完成。
 
-新实施记录固定使用 `governance_contract: audit-loop/v3`、`implementation_schema: implementation/v2`、`execution_context_id` 和 `plan_evidence_revision`。后者必须等于实施开始时引用的最新 ready 验收 subject revision。`baseline` 是包含 ready 验收记录的治理快照，`result_revision` 是不包含最终 IMP 状态回写的实际交付 subject commit；两者由后续治理提交连接。
+新实施记录固定使用 `governance_contract: audit-loop/v3`、`implementation_schema: implementation/v2`、`execution_context_id` 和 `plan_evidence_revision`。后者必须等于实施开始时引用的最新 ready 验收 subject revision。`baseline` 是包含 ready 验收记录的治理快照，`result_revision` 是不包含最终 IMP 状态回写的实际交付 subject commit；最终 IMP/索引状态由 terminal governance commit 固化，并以干净 `governance_revision` 交给实施审计。
 
 若实施由失败完成验收的 `acceptance_next_action: implement` 触发，IMP 必须在 `trigger_audits` 记录该 AUD，并把源 AUD 索引流转为 `remediation=implemented-by:IMP-NNNN`。这表示路由动作已被新的实施尝试消费，不等于提前宣告新 IMP 完成。
 

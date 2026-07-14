@@ -47,7 +47,7 @@ related_plans: PLN-0005
 
 1. source audits/findings 与当前 baseline；
 2. finding 到 root cause、修改、测试和结果的逐项映射；
-3. 实际代码/文档/计划/CI 变更及完整 `result_revision`；该 revision 是纯 subject commit，最终 REM 状态与索引流转由后续治理提交固化；
+3. 修改 subject 前提交 in-progress REM/索引的 open checkpoint；实际代码/文档/计划/CI 变更形成完整 `result_revision` 纯 subject commit；最终 REM 状态与索引流转由 terminal governance commit 固化，并以干净 `governance_revision` 交给 follow-up；
 4. 命令、Evidence、未执行项、失败和剩余风险；
 5. 是否影响已有 IMP、关联哪些 implementation，以及是否已具备 follow-up audit 条件。
 
