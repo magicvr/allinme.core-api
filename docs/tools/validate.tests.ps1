@@ -61,7 +61,7 @@ forbidden_p0_live_evidence: release-binary,supervisor-run,cleanup-schedule-run,w
 
 | Work package | P0 items | owner / reviewer | Inputs | Timebox | Evidence |
 |---|---|---|---|---:|---|
-| WP-Facts | P0-1 | owner / reviewer | plan revision | 1 day | facts |
+| WP-Facts | P0-1 | owner / reviewer | plan revision | 1 day | docs/01-architecture.md, docs/05-domain-model.md, docs/03-http-api-target.md, docs/06-implementation-roadmap.md, docs/04-validation.md, plan/checklist diffs |
 | WP-Schema-Recovery | P0-2 | owner / reviewer | WP-Facts | 1 day | schema |
 | WP-HTTP-Order | P0-3 | owner / reviewer | WP-Facts | 1 day | http |
 | WP-Lock | P0-4 | owner / reviewer | WP-Facts | 1 day | lock |
@@ -104,11 +104,59 @@ P0 dependency DAG: WP-Facts precedes Schema-Recovery, HTTP-Order, Lock, and Base
     Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
     Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFiveChecklist) -Encoding UTF8
 
-    $contradictoryDagPlan = $phaseFivePlan + "`nWP-Baseline-Evidence may run before WP-Facts and does not depend on it."
-    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $contradictoryDagPlan) -Encoding UTF8
-    $contradictoryDagResult = Invoke-Validator $fixtureRoot
-    if ($contradictoryDagResult.ExitCode -eq 0 -or $contradictoryDagResult.Output -notmatch 'dependency ordering contradicts|denies a tracked edge') {
-        throw "validator did not reject an additive phase-five DAG contradiction: $($contradictoryDagResult.Output)"
+    $missingFactSourcePlan = $phaseFivePlan.Replace('docs/01-architecture.md, ', '')
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $missingFactSourcePlan) -Encoding UTF8
+    $missingFactSourceResult = Invoke-Validator $fixtureRoot
+    if ($missingFactSourceResult.ExitCode -eq 0 -or $missingFactSourceResult.Output -notmatch 'WP-Facts output is missing required fact source: docs/01-architecture.md') {
+        throw "validator did not reject a missing WP-Facts source: $($missingFactSourceResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
+
+    $negativePronounDagPlan = $phaseFivePlan + "`nWP-Baseline-Evidence can consume WP-Facts metadata but does not depend on it."
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $negativePronounDagPlan) -Encoding UTF8
+    $negativePronounDagResult = Invoke-Validator $fixtureRoot
+    if ($negativePronounDagResult.ExitCode -eq 0 -or $negativePronounDagResult.Output -notmatch 'denies a tracked edge') {
+        throw "validator did not reject a pronoun phase-five DAG negation: $($negativePronounDagResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
+
+    $conjoinedDagPlan = $phaseFivePlan + "`nWP-Release depends on WP-Facts and WP-Unknown."
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $conjoinedDagPlan) -Encoding UTF8
+    $conjoinedDagResult = Invoke-Validator $fixtureRoot
+    if ($conjoinedDagResult.ExitCode -eq 0 -or $conjoinedDagResult.Output -notmatch 'WP-Release depends on WP-Unknown') {
+        throw "validator did not reject a conjoined unknown phase-five dependency: $($conjoinedDagResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
+
+    $reverseAfterDagPlan = $phaseFivePlan + "`nWP-Facts runs after WP-Baseline-Evidence."
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $reverseAfterDagPlan) -Encoding UTF8
+    $reverseAfterDagResult = Invoke-Validator $fixtureRoot
+    if ($reverseAfterDagResult.ExitCode -eq 0 -or $reverseAfterDagResult.Output -notmatch 'dependency ordering contradicts') {
+        throw "validator did not reject a reverse after phase-five dependency: $($reverseAfterDagResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
+
+    $rejectionContaminationDagPlan = $phaseFivePlan + "`nThe validator must reject malformed dependency prose, but WP-Release depends on WP-Unknown."
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $rejectionContaminationDagPlan) -Encoding UTF8
+    $rejectionContaminationDagResult = Invoke-Validator $fixtureRoot
+    if ($rejectionContaminationDagResult.ExitCode -eq 0 -or $rejectionContaminationDagResult.Output -notmatch 'WP-Release depends on WP-Unknown') {
+        throw "validator let a dependency hide behind rejection prose on the same line: $($rejectionContaminationDagResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
+
+    $dependsUponDagPlan = $phaseFivePlan + "`nWP-Release depends upon WP-Unknown."
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $dependsUponDagPlan) -Encoding UTF8
+    $dependsUponDagResult = Invoke-Validator $fixtureRoot
+    if ($dependsUponDagResult.ExitCode -eq 0 -or $dependsUponDagResult.Output -notmatch 'WP-Release depends on WP-Unknown') {
+        throw "validator did not reject a depends-upon phase-five dependency: $($dependsUponDagResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
+
+    $unknownConnectorDagPlan = $phaseFivePlan + "`nWP-Release relies on WP-Unknown."
+    Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $unknownConnectorDagPlan) -Encoding UTF8
+    $unknownConnectorDagResult = Invoke-Validator $fixtureRoot
+    if ($unknownConnectorDagResult.ExitCode -eq 0 -or $unknownConnectorDagResult.Output -notmatch 'dependency statement could not be fully parsed') {
+        throw "validator did not fail closed on an unknown multi-package connector: $($unknownConnectorDagResult.Output)"
     }
     Set-Content -LiteralPath $phaseFivePlanPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFivePlan) -Encoding UTF8
 
@@ -117,6 +165,38 @@ P0 dependency DAG: WP-Facts precedes Schema-Recovery, HTTP-Order, Lock, and Base
     $contradictoryProfileResult = Invoke-Validator $fixtureRoot
     if ($contradictoryProfileResult.ExitCode -eq 0 -or $contradictoryProfileResult.Output -notmatch 'P0 deployment evidence clause must stop at contract fixtures') {
         throw "validator did not reject an additive phase-five P0 deployment gate: $($contradictoryProfileResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFiveChecklist) -Encoding UTF8
+
+    $deferralThenObligationChecklist = $phaseFiveChecklist.Replace('Produce `artifactKind=contract-fixture`; live validation belongs to 5A-D-2 or 5B-4.', 'Produce `artifactKind=contract-fixture`; live validation belongs to 5A-D-2 or 5B-4. P0 completion requires a real supervisor run, cleanup schedule, watchdog/recovery, ENOSPC evidence, and a live deployment profile.')
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $deferralThenObligationChecklist) -Encoding UTF8
+    $deferralThenObligationResult = Invoke-Validator $fixtureRoot
+    if ($deferralThenObligationResult.ExitCode -eq 0 -or $deferralThenObligationResult.Output -notmatch 'P0 deployment evidence clause must stop at contract fixtures') {
+        throw "validator let a live obligation hide behind a P0 deferral: $($deferralThenObligationResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFiveChecklist) -Encoding UTF8
+
+    $sameClauseDeferralMaskChecklist = $phaseFiveChecklist.Replace('Produce `artifactKind=contract-fixture`; live validation belongs to 5A-D-2 or 5B-4.', 'P0 does not require an ENOSPC run，但是 P0 completion requires a real supervisor run, cleanup schedule, watchdog/recovery, ENOSPC evidence, and a live deployment profile.')
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $sameClauseDeferralMaskChecklist) -Encoding UTF8
+    $sameClauseDeferralMaskResult = Invoke-Validator $fixtureRoot
+    if ($sameClauseDeferralMaskResult.ExitCode -eq 0 -or $sameClauseDeferralMaskResult.Output -notmatch 'P0 deployment evidence clause must stop at contract fixtures') {
+        throw "validator let a same-clause live obligation hide behind a Chinese transition: $($sameClauseDeferralMaskResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFiveChecklist) -Encoding UTF8
+
+    $obligationThenDeferralChecklist = $phaseFiveChecklist.Replace('Produce `artifactKind=contract-fixture`; live validation belongs to 5A-D-2 or 5B-4.', 'P0 completion requires a real supervisor run, but live profile validation belongs to 5B-4.')
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $obligationThenDeferralChecklist) -Encoding UTF8
+    $obligationThenDeferralResult = Invoke-Validator $fixtureRoot
+    if ($obligationThenDeferralResult.ExitCode -eq 0 -or $obligationThenDeferralResult.Output -notmatch 'P0 deployment evidence clause must stop at contract fixtures') {
+        throw "validator let a P0 obligation hide before a later deferral: $($obligationThenDeferralResult.Output)"
+    }
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFiveChecklist) -Encoding UTF8
+
+    $continuationProfileChecklist = $phaseFiveChecklist.Replace('- [ ] P0-20. Fixture.', "- [ ] P0-20. Fixture.`n  Completion requires a real supervisor run, cleanup schedule, watchdog/recovery, ENOSPC evidence, and a live deployment profile.")
+    Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $continuationProfileChecklist) -Encoding UTF8
+    $continuationProfileResult = Invoke-Validator $fixtureRoot
+    if ($continuationProfileResult.ExitCode -eq 0 -or $continuationProfileResult.Output -notmatch 'P0 deployment evidence clause must stop at contract fixtures') {
+        throw "validator did not reject a multiline phase-five P0 deployment gate: $($continuationProfileResult.Output)"
     }
     Set-Content -LiteralPath $phaseFiveChecklistPath -Value ($phaseFiveFrontmatter + "`n" + $phaseFiveChecklist) -Encoding UTF8
 
@@ -285,7 +365,7 @@ related_plans: none
     }
 
     $global:LASTEXITCODE = 0
-    Write-Output 'Validator self-test passed: valid governance accepted; phase-five DAG/profile removals and additive contradictions, incomplete checklist matrices, unindexed audits, missing links, orphan plans, and incomplete closed audits rejected.'
+    Write-Output 'Validator self-test passed: valid governance accepted; phase-five DAG/profile removals, clause continuations, pronoun/conjoined/reverse dependency contradictions, incomplete checklist matrices, unindexed audits, missing links, orphan plans, and incomplete closed audits rejected.'
 } finally {
     if (Test-Path -LiteralPath $fixtureRoot) {
         $resolvedFixtureRoot = (Resolve-Path $fixtureRoot).Path
