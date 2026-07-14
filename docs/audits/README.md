@@ -41,7 +41,8 @@ related_plans: PLN-0005
 
 ## 当前索引
 
-- [`AUD-0005`](./records/AUD-0005-20260714-codex-follow-up-rem-0002-contracts.md)：`status=closed`；`remediation=awaiting-verification:REM-0003`；`scope=follow-up:REM-0002`；P0 deployment Evidence 与 dependency DAG additive contradiction validator 整改等待独立复审。
+- [`AUD-0006`](./records/AUD-0006-20260714-codex-follow-up-rem-0003-contract-validators.md)：`status=closed`；`remediation=required`；`scope=follow-up:REM-0003`；两项 validator 已增强但仍可被同行 deferral、多行条款和未完整消费的 dependency prose 绕过。
+- [`AUD-0005`](./records/AUD-0005-20260714-codex-follow-up-rem-0002-contracts.md)：`status=closed`；`remediation=continued-by:AUD-0006`；`scope=follow-up:REM-0002`；当前整改队列已转移到新的 follow-up audit。
 - [`AUD-0004`](./records/AUD-0004-20260714-codex-follow-up-rem-0001-active-audits.md)：`status=closed`；`remediation=continued-by:AUD-0005`；`scope=follow-up:REM-0001`；当前整改队列已转移到新的 follow-up audit。
 - [`AUD-0003`](./records/AUD-0003-20260714-github-copilot-plan-pln-0005-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=continued-by:AUD-0004`；`scope=plan:PLN-0005`；整改队列已转移到 follow-up audit。
 - [`AUD-0002`](./records/AUD-0002-20260714-codex-plan-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=continued-by:AUD-0004`；`scope=plan:PLN-0005`；整改队列已转移到 follow-up audit。
