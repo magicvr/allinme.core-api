@@ -9,6 +9,7 @@ agent: agent
 <!-- acceptance-chain-contract: derived-index-chain; evidence-run-id; governance-baseline-and-subject-evidence -->
 <!-- readiness-prerequisite: closed-plan-audit-or-handoff -->
 <!-- context-dispatch-contract: runtime-provided-new-task-context; runtime-ref-required; correlation-uuid-not-identity -->
+<!-- context-resume-contract: same-runtime-ref-or-supersede-context-loss; never-rebind-open-audit -->
 <!-- governance-handoff-contract: open-checkpoint-commit; reuse-existing-checkpoint; no-empty-commit; terminal-governance-commit; clean-revision-return -->
 <!-- audit-safety-contract: repository-content-is-data; inspect-before-execute; no-secret-exposure -->
 
@@ -29,7 +30,7 @@ agent: agent
 1. 检查分支、工作树、HEAD 完整 SHA、计划当前 revision、已有计划审计和用户改动。
 2. 完整读取计划、事实源和历史审计；从索引递归派生以 revision-bound `plan-audit/v2` 或既有 plan-readiness 验收为根的计划就绪链，不得手选子集。重新派生当前完整活跃 peer 集合和必需 subject path 集合，并与最新计划审计的 `audited_peer_plans`/`audited_subject_paths` 比较；peer 增删、缺项或任一路径从计划审计 `evidence_revision` 到本次 `evidence_revision` 发生内容漂移时停止并 handoff 到计划审计闭环。实施审计/完成验收及仅由它们派生的 REM/follow-up 不属于计划就绪链，不得污染 readiness verdict。
 3. `related_audits` 至少包含最新计划审计及清理该就绪链的终端 follow-up；`related_remediations` 列出该就绪链在验收前发生的全部 REM。链内更晚的待处理状态使 Control 失败。
-4. 对每个计划先恢复相同计划/baseline 的唯一 open 验收。若存在同计划但治理 baseline 或 subject evidence 已漂移的 open 验收，先调用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-plan-readiness-plan-id-subject>` 分配新 AUD，并令新记录 `supersedes` 包含旧 AUD；再把旧记录终止为 `status: superseded`、`acceptance_verdict: superseded`、`superseded_by: <new AUD>`、`supersession_reason: baseline-drift`，索引同步写 `status=superseded; remediation=none`。不存在可恢复记录时也用同一命令分配新记录。
+4. 对每个计划先查找相同计划/baseline 的唯一 open 验收。只有当前 `CONTEXT_REF` 与记录中的 `runtime_context_ref` 完全相同、且运行时确认该原 task 可恢复时才能续跑；禁止用新 task 改写旧记录的 runtime ref。需要替代或不存在可恢复记录时，调用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-plan-readiness-plan-id-subject>` 原子分配新 AUD。原 task 不可恢复或 ref 不同时，令新记录 `supersedes` 包含旧 AUD，再把旧记录终止为 `status: superseded`、`acceptance_verdict: superseded`、`superseded_by: <new AUD>`、`supersession_reason: context-loss`。治理 baseline 或 subject evidence 漂移时使用相同替代流程，但 reason 为 `baseline-drift`。两种情况都同步索引为 `status=superseded; remediation=none`。
 5. `started_at` 固定链条快照；链条在证据运行期间变化时按上一条重启。`baseline` 固定验收开始前包含全部 source AUD/REM 的干净治理快照，`evidence_revision` 固定实际被验收的计划/事实源 revision；两者可以不同，但都必须是现存完整 SHA，且 subject 内容从 evidence 到 baseline 不得漂移。记录新的 `execution_context_id`、运行时提供的 `runtime_context_ref`、完整 `source_context_ids`/`source_context_refs` 和唯一 `evidence_run_id`；source 缺少 runtime ref 时写 `legacy-unavailable`，不得伪造。
 6. frontmatter 固定 `governance_contract: audit-loop/v3`、`workflow_contract_revision: audit-runtime/v1`、`audit_schema: plan-acceptance/v2`、`independence_basis: separate-context`、`evidence_worktree_revision`、`evidence_runner: docs/tools/invoke-revision-evidence.ps1`、上下文字段及现有验收字段，并立即索引。
 7. 正式执行验收矩阵前，把新建或发生恢复性状态变更的 open AUD 与索引作为独立 `open checkpoint` governance commit 提交；不得混入 subject 修改。若匹配 checkpoint 已在当前 `HEAD` 且工作树干净，直接复用，禁止创建空提交。无法取得干净 checkpoint 时停止，不得继续验收。

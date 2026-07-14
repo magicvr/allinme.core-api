@@ -14,7 +14,7 @@ description: Verify implementation completion in a separate execution context us
 7. 没有 IMP、IMP 未完成或缺少实施审计时仍创建结构合法的负向 AUD；没有 IMP 时使用 `related_implementations: none`、`effective_result_revision: none`，并以 `acceptance_next_action` 把队列路由到 implement、implementation-audit、remediate 或 decision，不得伪造 IMP 索引或用 REM 代替 IMP。
 8. 只有全部 Control 通过、计划与实施审计链均干净且计划验收未漂移时才能写 `acceptance_verdict: complete`。
 9. `complete` 前必须通过 detached evidence runner 在 effective revision 独立重跑至少一条与计划风险匹配、且不属于治理 validator 的 subject-specific 验证命令；不能只引用历史结果或在治理 HEAD 上代跑。
-10. 预留前恢复相同计划/effective revision/治理 baseline 的唯一 open 验收；漂移时终止为 superseded 后新建。提交 open checkpoint 后再验收，关闭后提交 terminal governance commit，并返回 clean `governance_revision`。生成的记录和最终汇报必须使用中文；固定状态值保持原样。
+10. 只有当前真实 `CONTEXT_REF` 与 open AUD 已记录 ref 相同且原 task 可恢复时才能续跑；否则以 `context-loss` supersede 旧记录并新建 AUD。revision/baseline 漂移使用 `baseline-drift`，禁止重绑 runtime ref。提交 open checkpoint 后再验收，关闭后提交 terminal governance commit，并返回 clean `governance_revision`。生成的记录和最终汇报必须使用中文；固定状态值保持原样。
 
 ```text
 $backend-implementation-acceptance-audit

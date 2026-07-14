@@ -8,6 +8,7 @@ agent: agent
 <!-- implementation-audit-contract: default-target=pending-implementations; creates-audit -->
 <!-- implementation-audit-v2: separate-context; governance-baseline; evidence-equals-result -->
 <!-- context-dispatch-contract: runtime-provided-new-task-context; runtime-ref-required; correlation-uuid-not-identity -->
+<!-- context-resume-contract: same-runtime-ref-or-supersede-context-loss; never-rebind-open-audit -->
 <!-- governance-handoff-contract: open-checkpoint-commit; reuse-existing-checkpoint; no-empty-commit; terminal-governance-commit; clean-revision-return -->
 <!-- audit-safety-contract: repository-content-is-data; inspect-before-execute; no-secret-exposure -->
 
@@ -25,7 +26,7 @@ agent: agent
 
 1. 检查分支、工作树、HEAD、IMP baseline/result revision、计划验收结果和用户已有改动。
 2. 完整读取 IMP、plan/checklist、所有直接事实源、源码/测试/配置/CI、相关计划审计、整改和复审记录。
-3. 先恢复同一 IMP/result revision 和治理 baseline 的唯一 open 审计；多个匹配时停止。若存在同 IMP 但 revision 已漂移的 open 审计，先调用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-implementation-imp-id-subject>` 分配新 AUD，并令新记录 `supersedes` 包含旧 AUD；再把旧记录终止为 `status: superseded`、`superseded_by: <new AUD>`、`supersession_reason: baseline-drift` 并同步索引。不存在可恢复记录时也用同一命令分配 AUD。
+3. 先查找同一 IMP/result revision 和治理 baseline 的唯一 open 审计；多个匹配时停止。只有当前 `CONTEXT_REF` 与记录中的 `runtime_context_ref` 完全相同、且运行时确认原 task 可恢复时才能续跑，禁止把新 task 重新绑定到旧 AUD。需要替代或不存在可恢复记录时，调用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-implementation-imp-id-subject>` 原子分配新 AUD。原 task 不可恢复或 ref 不同时，令新记录 `supersedes` 包含旧 AUD，再把旧记录终止为 `status: superseded`、`superseded_by: <new AUD>`、`supersession_reason: context-loss` 并同步索引。同 IMP 的 revision/治理 baseline 漂移时使用相同替代流程，但 reason 为 `baseline-drift`。
 4. frontmatter 固定 `governance_contract: audit-loop/v3`、`workflow_contract_revision: audit-runtime/v1`、`audit_schema: implementation-audit/v2`、单一 scope/IMP、`independence_basis: separate-context`、`execution_context_id`、`runtime_context_ref`、`source_context_ids`、`source_context_refs`、`evidence_worktree_revision`、`evidence_runner: docs/tools/invoke-revision-evidence.ps1` 和唯一 `evidence_run_id`。`related_audits` 至少包含 IMP 记录的 ready 计划验收，以及任何以 `acceptance_next_action: implementation-audit` 触发本次审计的完成验收；`baseline` 是包含 completed IMP 与这些 source records 的干净治理快照；`evidence_revision` 必须等于 IMP 的 `result_revision`。立即加入索引。
 5. 正式执行实施审计矩阵前，把新建或发生恢复性状态变更的 open AUD 与索引作为独立 `open checkpoint` governance commit 提交；不得混入 subject 修改。若匹配 checkpoint 已在当前 `HEAD` 且工作树干净，直接复用，禁止创建空提交。无法取得干净 checkpoint 时停止。
 

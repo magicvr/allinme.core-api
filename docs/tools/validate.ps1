@@ -843,8 +843,8 @@ foreach ($file in $markdownFiles) {
             }
             if ($auditStatus -eq 'superseded') {
                 if ((Get-FrontmatterValue $frontmatter 'superseded_by') -notmatch '^AUD-\d{4}$' -or
-                    (Get-FrontmatterValue $frontmatter 'supersession_reason') -ne 'baseline-drift') {
-                    $failures.Add("Superseded audit must identify its replacement and baseline-drift reason: $relativePath")
+                    (Get-FrontmatterValue $frontmatter 'supersession_reason') -notin @('baseline-drift', 'context-loss')) {
+                    $failures.Add("Superseded audit must identify its replacement and a valid supersession reason: $relativePath")
                 }
             }
             $startedAt = Get-FrontmatterValue $frontmatter 'started_at'
@@ -1339,6 +1339,7 @@ foreach ($file in $markdownFiles) {
             $remediationSchema = Get-FrontmatterValue $frontmatter 'remediation_schema'
             $remediationContract = Get-FrontmatterValue $frontmatter 'governance_contract'
             $remediationExecutionContextId = Get-FrontmatterValue $frontmatter 'execution_context_id'
+            $remediationRuntimeContextRef = Get-FrontmatterValue $frontmatter 'runtime_context_ref'
             $remediationResultRevision = Get-FrontmatterValue $frontmatter 'result_revision'
             $parentResultRevision = Get-FrontmatterValue $frontmatter 'parent_result_revision'
             $affectsImplementation = Get-FrontmatterValue $frontmatter 'affects_implementation'
@@ -1400,6 +1401,7 @@ foreach ($file in $markdownFiles) {
                 ParentResultRevision = $parentResultRevision
                 GovernanceContract = $remediationContract
                 ExecutionContextId = $remediationExecutionContextId
+                RuntimeContextRef = $remediationRuntimeContextRef
                 AffectsImplementation = $affectsImplementation -eq 'true'
                 SourceAudits = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'source_audits'))
                 SourceFindings = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'source_findings'))
@@ -1485,6 +1487,7 @@ foreach ($file in $markdownFiles) {
             $implementationSchema = Get-FrontmatterValue $frontmatter 'implementation_schema'
             $implementationContract = Get-FrontmatterValue $frontmatter 'governance_contract'
             $implementationExecutionContextId = Get-FrontmatterValue $frontmatter 'execution_context_id'
+            $implementationRuntimeContextRef = Get-FrontmatterValue $frontmatter 'runtime_context_ref'
             if ($implementationSchema -ne 'implementation/v2') {
                 $failures.Add("Implementation must use implementation_schema implementation/v2: $relativePath")
             }
@@ -1524,6 +1527,7 @@ foreach ($file in $markdownFiles) {
                 ResultRevision = $resultRevision
                 GovernanceContract = $implementationContract
                 ExecutionContextId = $implementationExecutionContextId
+                RuntimeContextRef = $implementationRuntimeContextRef
             }
             $implementationRecords[$file.Name] = $implementationStatus
         }
@@ -1574,6 +1578,33 @@ foreach ($auditEntry in $auditMetadata.GetEnumerator()) {
     }
     if ($auditMetadata[$replacementId].Supersedes -notcontains $auditEntry.Key) {
         $failures.Add("Replacement audit must list the superseded audit: $($auditInfo.Path) ($replacementId)")
+    }
+    $replacement = $auditMetadata[$replacementId]
+    if ($replacement.Schema -ne $auditInfo.Schema -or $replacement.AuditType -ne $auditInfo.AuditType -or $replacement.Scope -ne $auditInfo.Scope) {
+        $failures.Add("Replacement audit must preserve audit type, schema, and scope: $($auditInfo.Path) ($replacementId)")
+    }
+    if ($auditInfo.SupersessionReason -eq 'baseline-drift' -and
+        $replacement.Baseline -eq $auditInfo.Baseline -and
+        $replacement.EvidenceRevision -eq $auditInfo.EvidenceRevision) {
+        $failures.Add("baseline-drift replacement must change baseline or evidence revision: $($auditInfo.Path) ($replacementId)")
+    }
+    if ($auditInfo.SupersessionReason -eq 'context-loss') {
+        $isIndependentAudit = $auditInfo.WorkflowContractRevision -eq 'audit-runtime/v1' -and
+            ($auditInfo.Schema -in @('plan-acceptance/v2', 'implementation-audit/v2', 'implementation-acceptance/v2') -or $auditInfo.AuditType -eq 'follow-up')
+        if (-not $isIndependentAudit) {
+            $failures.Add("context-loss supersession is only valid for independent audit-runtime/v1 audits: $($auditInfo.Path)")
+        }
+        if ([string]::IsNullOrWhiteSpace($auditInfo.RuntimeContextRef) -or $auditInfo.RuntimeContextRef -eq 'runtime-unavailable') {
+            $failures.Add("context-loss supersession requires a real lost runtime_context_ref: $($auditInfo.Path)")
+        }
+        if ($replacement.Baseline -ne $auditInfo.Baseline -or $replacement.EvidenceRevision -ne $auditInfo.EvidenceRevision) {
+            $failures.Add("context-loss replacement must preserve baseline and evidence revision: $($auditInfo.Path) ($replacementId)")
+        }
+        if ([string]::IsNullOrWhiteSpace($replacement.RuntimeContextRef) -or
+            $replacement.RuntimeContextRef -eq 'runtime-unavailable' -or
+            $replacement.RuntimeContextRef -eq $auditInfo.RuntimeContextRef) {
+            $failures.Add("context-loss replacement must use a different real runtime_context_ref: $($auditInfo.Path) ($replacementId)")
+        }
     }
 }
 
@@ -1841,28 +1872,39 @@ foreach ($auditInfo in $auditMetadata.Values) {
         continue
     }
     $expectedSourceContexts = New-Object System.Collections.Generic.List[string]
+    $expectedSourceContextRefs = New-Object System.Collections.Generic.List[string]
     $hasLegacySource = $false
+    $hasLegacySourceRef = $false
     foreach ($relatedAudit in @($auditInfo.RelatedAudits)) {
         if (-not $auditMetadata.ContainsKey($relatedAudit)) { continue }
         $context = $auditMetadata[$relatedAudit].ExecutionContextId
         if (Test-UuidV4 $context) { $expectedSourceContexts.Add($context) } else { $hasLegacySource = $true }
+        $contextRef = $auditMetadata[$relatedAudit].RuntimeContextRef
+        if ([string]::IsNullOrWhiteSpace($contextRef) -or $contextRef -eq 'runtime-unavailable') { $hasLegacySourceRef = $true } else { $expectedSourceContextRefs.Add($contextRef) }
     }
     foreach ($supersededAudit in @($auditInfo.Supersedes)) {
         if (-not $auditMetadata.ContainsKey($supersededAudit)) { continue }
         $context = $auditMetadata[$supersededAudit].ExecutionContextId
         if (Test-UuidV4 $context) { $expectedSourceContexts.Add($context) } else { $hasLegacySource = $true }
+        $contextRef = $auditMetadata[$supersededAudit].RuntimeContextRef
+        if ([string]::IsNullOrWhiteSpace($contextRef) -or $contextRef -eq 'runtime-unavailable') { $hasLegacySourceRef = $true } else { $expectedSourceContextRefs.Add($contextRef) }
     }
     foreach ($relatedRemediation in @($auditInfo.RelatedRemediations)) {
         if (-not $remediationMetadata.ContainsKey($relatedRemediation)) { continue }
         $context = $remediationMetadata[$relatedRemediation].ExecutionContextId
         if (Test-UuidV4 $context) { $expectedSourceContexts.Add($context) } else { $hasLegacySource = $true }
+        $contextRef = $remediationMetadata[$relatedRemediation].RuntimeContextRef
+        if ([string]::IsNullOrWhiteSpace($contextRef) -or $contextRef -eq 'runtime-unavailable') { $hasLegacySourceRef = $true } else { $expectedSourceContextRefs.Add($contextRef) }
     }
     foreach ($relatedImplementation in @($auditInfo.RelatedImplementations)) {
         if (-not $implementationMetadata.ContainsKey($relatedImplementation)) { continue }
         $context = $implementationMetadata[$relatedImplementation].ExecutionContextId
         if (Test-UuidV4 $context) { $expectedSourceContexts.Add($context) } else { $hasLegacySource = $true }
+        $contextRef = $implementationMetadata[$relatedImplementation].RuntimeContextRef
+        if ([string]::IsNullOrWhiteSpace($contextRef) -or $contextRef -eq 'runtime-unavailable') { $hasLegacySourceRef = $true } else { $expectedSourceContextRefs.Add($contextRef) }
     }
     $expectedSourceContexts = @($expectedSourceContexts | Select-Object -Unique)
+    $expectedSourceContextRefs = @($expectedSourceContextRefs | Select-Object -Unique)
     foreach ($expectedContext in $expectedSourceContexts) {
         if ($auditInfo.SourceContextIds -notcontains $expectedContext) {
             $failures.Add("Independent audit must include every available source execution context: $($auditInfo.Path) ($expectedContext)")
@@ -1877,6 +1919,24 @@ foreach ($auditInfo in $auditMetadata.Values) {
     foreach ($sourceContext in @($auditInfo.SourceContextIds | Where-Object { $_ -ne 'legacy-unavailable' })) {
         if ($expectedSourceContexts -notcontains $sourceContext) {
             $failures.Add("Independent audit lists an unrelated source_context_id: $($auditInfo.Path) ($sourceContext)")
+        }
+    }
+    if ($auditInfo.WorkflowContractRevision -eq 'audit-runtime/v1') {
+        foreach ($expectedContextRef in $expectedSourceContextRefs) {
+            if ($auditInfo.SourceContextRefs -notcontains $expectedContextRef) {
+                $failures.Add("Independent audit must include every available source runtime context ref: $($auditInfo.Path) ($expectedContextRef)")
+            }
+        }
+        if ($hasLegacySourceRef -and $auditInfo.SourceContextRefs -notcontains 'legacy-unavailable') {
+            $failures.Add("Independent audit with legacy runtime sources must record legacy-unavailable: $($auditInfo.Path)")
+        }
+        if (-not $hasLegacySourceRef -and $auditInfo.SourceContextRefs -contains 'legacy-unavailable') {
+            $failures.Add("Independent audit must not claim legacy-unavailable when all source runtime refs exist: $($auditInfo.Path)")
+        }
+        foreach ($sourceContextRef in @($auditInfo.SourceContextRefs | Where-Object { $_ -ne 'legacy-unavailable' })) {
+            if ($expectedSourceContextRefs -notcontains $sourceContextRef) {
+                $failures.Add("Independent audit lists an unrelated source_context_ref: $($auditInfo.Path) ($sourceContextRef)")
+            }
         }
     }
 

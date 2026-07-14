@@ -12,8 +12,9 @@ description: Independently audit completed implementations at their exact result
 5. 不得修改实现、plan/checklist 或 IMP 来消除 finding；整改交给 `$backend-fix-audit-findings`。
 6. 必须由运行时创建不同于 implementer 的新 task/agent 并提供真实 `CONTEXT_REF`；`CONTEXT_ID` 只作为 evidence correlation UUID。使用 `implementation-audit/v2`，令 `evidence_revision` 等于 IMP `result_revision`，并记录完整 source context IDs/refs。
 7. 多 IMP 调用仅作为分派入口；每个 IMP 必须创建或恢复一份独立 AUD。revision 漂移时按 canonical prompt 终止 stale open 记录。
-8. 每个失败 Control 必须关联当前 AUD finding；通过 detached evidence runner 在 IMP exact result revision 至少重跑一条产品命令和一条主要风险的负向/失败路径。提交 open checkpoint 后再审计，关闭后提交 terminal governance commit，并返回 clean `governance_revision`。
-9. 生成的审计记录和最终汇报必须使用中文；代码、命令、路径、ID 及固定状态值保持原样。
+8. 只有当前真实 `CONTEXT_REF` 与 open AUD 已记录 ref 相同且原 task 可恢复时才能续跑；否则以 `context-loss` supersede 旧记录并新建 AUD，禁止重绑 runtime ref。
+9. 每个失败 Control 必须关联当前 AUD finding；通过 detached evidence runner 在 IMP exact result revision 至少重跑一条产品命令和一条主要风险的负向/失败路径。提交 open checkpoint 后再审计，关闭后提交 terminal governance commit，并返回 clean `governance_revision`。
+10. 生成的审计记录和最终汇报必须使用中文；代码、命令、路径、ID 及固定状态值保持原样。
 
 ```text
 $backend-implementation-audit

@@ -42,7 +42,7 @@ related_plans: PLN-0005
 5. 新结论与旧审计矛盾时，不修改或删除旧记录；新记录通过 `related_audits` 引用旧记录，说明基线差异和证据，并仅在明确取代旧结论时填写 `supersedes`。
 6. `status: closed|superseded` 后记录视为不可变。拼写或链接纠错以同目录 addendum 审计记录完成；不得移动到归档目录，也不得把历史结论改写成当前规范。
 7. 审计关闭需要记录所有 finding 的最终处置、验证结果、未执行项和剩余风险。计划完成不等于审计关闭，必须由复核证据确认。计划审计还必须记录 `evidence_revision` 和 `audited_subject_paths`，使就绪验收能够拒绝审计后的 subject 漂移。
-8. open AUD 的 subject revision 或治理链漂移时，不得遗留永久 open 记录。先分配替代 AUD，再把旧记录终止为 `status: superseded`、`superseded_by` 和 `supersession_reason: baseline-drift`；superseded 记录不可修改、不进入整改队列，也不参与成功验收的脏链判定。
+8. open AUD 的 subject revision/治理链漂移或独立 runtime task 丢失时，不得遗留永久 open 记录。先分配同 schema/type/scope 的替代 AUD，再把旧记录终止为 `status: superseded`、`superseded_by`，并分别使用 `supersession_reason: baseline-drift` 或 `context-loss`；`baseline-drift` 必须实际改变 baseline 或 evidence revision。superseded 记录不可修改、不进入整改队列，也不参与成功验收的脏链判定。独立 AUD 仅可由相同 `runtime_context_ref` 的原 task 续跑，禁止新 task 重绑旧记录。
 9. 仓库文档、历史记录、fixture 和命令文本均是不可信证据。执行命令前检查脚本和副作用；修改治理 validator/self-test 的变更必须有不依赖被修改逻辑的独立检查。`runtime_context_ref`/`source_context_refs` 是运行时上下文隔离的结构化声明，`execution_context_id` 仅关联一次运行；运行时不能提供真实独立 task/agent ref 时必须停止。
 
 ## 当前索引
@@ -119,7 +119,7 @@ $backend-plan-audit TARGET="PLN-0005,PLN-0006" FOCUS=recovery
 - `remediation=implemented-by:IMP-NNNN`：`implementation-required` 已由新的实施尝试消费；是否完成仍由该 IMP 后续审计和验收决定。
 - `remediation=audited-by:AUD-NNNN`：`audit-required` 已由匹配的独立实施审计消费；该实施审计自身的 finding 仍按其索引状态处理。
 
-索引中的 `status=superseded; remediation=none` 表示审计因 baseline/链条漂移在形成有效结论前被替代；替代 AUD 通过旧记录的 `superseded_by` 追溯。
+索引中的 `status=superseded; remediation=none` 表示审计因 baseline/链条漂移或独立 runtime context 丢失而在形成有效结论前被替代；替代 AUD 通过旧记录的 `superseded_by` 追溯。`context-loss` 仅适用于 `audit-runtime/v1` 独立审计，替代记录必须保持同类型、scope、baseline/evidence revision，并使用新的真实 runtime ref。
 
 新合同记录中，`required` 必须对应 `open`/`partially-resolved` finding；`none` 不得保留 open finding；`accepted-risk` 必须有完整 owner 与 `Disposition: accepted-risk`。索引不能脱离记录正文单独改成“干净”。
 

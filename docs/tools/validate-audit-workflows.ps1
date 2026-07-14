@@ -55,6 +55,7 @@ foreach ($name in @(
     $content = Read-WorkflowAsset ".github/prompts/$name.prompt.md"
     Require-Pattern $content 'context-dispatch-contract:\s*runtime-provided-new-task-context;\s*runtime-ref-required;\s*correlation-uuid-not-identity' "$name must distinguish runtime identity from correlation UUIDs"
     Require-Pattern $content 'CONTEXT_REF' "$name must bind the runtime-provided context reference"
+    Require-Pattern $content 'context-resume-contract:\s*same-runtime-ref-or-supersede-context-loss;\s*never-rebind-open-audit' "$name must prevent a new task from rebinding an open independent audit"
     Require-Pattern $content 'invoke-revision-evidence\.ps1' "$name must execute subject evidence at the exact revision"
 }
 
@@ -65,31 +66,39 @@ Require-Pattern $planAudit 'audited_peer_plans' 'backend-plan-audit must record 
 Require-Pattern $planAudit 'invoke-revision-evidence\.ps1' 'backend-plan-audit must run evidence at the exact revision'
 
 $planLoop = Read-WorkflowAsset '.github/prompts/backend-plan-audit-until-ready.prompt.md'
-Require-Pattern $planLoop 'plan-loop-contract:\s*immutable-target-set;\s*separate-advance-set;\s*set-aware-plan-audit;\s*verification-before-remediation;\s*per-plan-terminal-state' 'plan loop must separate peer and advance sets'
+Require-Pattern $planLoop 'plan-loop-contract:\s*immutable-target-set;\s*separate-peer-set;\s*separate-advance-set;\s*set-aware-plan-audit;\s*verification-before-remediation;\s*per-plan-terminal-state' 'plan loop must separate goal, peer and advance sets'
 Require-Pattern $planLoop 'argument-hint:.*MAX_CYCLES=8' 'plan loop default MAX_CYCLES must cover the normal audit/remediation/follow-up/acceptance path'
 Require-Pattern $planLoop 'STEP_MODE=loop\|single-transition' 'plan loop must expose single-transition child mode'
 Require-Pattern $planLoop 'single-transition.*MAX_CYCLES=1' 'plan loop single-transition mode must force one cycle'
-Require-Pattern $planLoop 'peer-routing-contract:\s*target-is-complete-peer-set;\s*advance-set-is-subset;\s*plan-audit-target-is-drifted-subset' 'plan loop must preserve complete peers while auditing only the drifted subset'
+Require-Pattern $planLoop 'peer-routing-contract:\s*peer-set-is-complete-active-set;\s*target-is-goal-set;\s*advance-set-is-subset;\s*plan-audit-target-is-drifted-subset' 'plan loop must preserve complete peers without expanding the goal set'
+Require-Pattern $planLoop 'peer-drift-contract:\s*active-peer-set-change-requires-safe-restart;\s*no-stale-peer-progress' 'plan loop must safely restart when the active peer set changes'
 Require-Pattern $planLoop 'ADVANCE_SET' 'plan loop must use an explicit advance subset'
+Require-Pattern $planLoop 'PEER_SET' 'plan loop must use an explicit complete peer set'
 Require-Pattern $planLoop 'context-dispatch-contract:\s*independent-stages-require-new-runtime-task;\s*runtime-ref-required;\s*uuid-is-not-isolation' 'plan loop must require real runtime task isolation'
 Require-Pattern $planLoop 'governance-handoff-contract:\s*child-must-return-clean-terminal-governance-revision' 'plan loop must require clean child governance handoff'
 Require-Pattern $planLoop 'stable-state-fingerprint' 'plan loop must define deterministic per-plan stagnation state'
+Require-Pattern $planLoop 'terminal-reentry-contract:\s*blocked-rem-requires-changed-recovery-evidence;\s*no-automatic-retry-storm' 'plan loop must not automatically retry blocked remediation'
 Require-Pattern $planLoop 'reuse-current-ready' 'plan loop must reuse a current closed ready acceptance'
 Require-Pattern $planLoop 'peer_reaudit_required' 'plan loop must persistently route affected peers back to audit'
+Require-Pattern $planLoop 'context-loss' 'plan loop must safely replace independent open audits whose runtime task is lost'
 
 $implementationLoop = Read-WorkflowAsset '.github/prompts/backend-implement-audit-until-complete.prompt.md'
 Require-Pattern $implementationLoop 'argument-hint:.*MAX_CYCLES=12' 'implementation loop default MAX_CYCLES must cover readiness, implementation, audit and acceptance'
 Require-Pattern $implementationLoop 'orchestration-step-contract:\s*one-durable-transition-per-plan-per-cycle;\s*nested-loop-forbidden' 'implementation loop must forbid nested multi-cycle execution'
 Require-Pattern $implementationLoop 'GOAL_MODE=child\s+STEP_MODE=single-transition\s+MAX_CYCLES=1' 'implementation loop must call readiness as a single-transition child'
-Require-Pattern $implementationLoop 'peer-routing-contract:\s*target-is-complete-peer-set;\s*readiness-advance-set-is-subset' 'implementation loop must preserve the complete peer set while advancing a readiness subset'
+Require-Pattern $implementationLoop 'peer-routing-contract:\s*peer-set-is-complete-active-set;\s*target-is-goal-set;\s*readiness-advance-set-is-subset' 'implementation loop must preserve complete peers without expanding implementation scope'
+Require-Pattern $implementationLoop 'peer-drift-contract:\s*active-peer-set-change-requires-safe-restart;\s*no-stale-peer-progress' 'implementation loop must safely restart when the active peer set changes'
+Require-Pattern $implementationLoop 'PEER_SET' 'implementation loop must pass the complete peer set to readiness'
 Require-Pattern $implementationLoop 'context-dispatch-contract:\s*independent-stages-require-new-runtime-task;\s*runtime-ref-required;\s*uuid-is-not-isolation' 'implementation loop must require real runtime task isolation'
 Require-Pattern $implementationLoop 'governance-handoff-contract:\s*child-must-return-clean-terminal-governance-revision' 'implementation loop must require clean child governance handoff'
 Require-Pattern $implementationLoop 'stable-state-fingerprint' 'implementation loop must define deterministic per-plan stagnation state'
+Require-Pattern $implementationLoop 'terminal-reentry-contract:\s*blocked-rem-requires-changed-recovery-evidence;\s*partial-or-blocked-imp-requires-new-ready-revision;\s*no-automatic-retry-storm' 'implementation loop must safely re-enter terminal REM and IMP work'
 Require-Pattern $implementationLoop 'CONTEXT_REF=<child runtime ref>' 'implementation loop must propagate runtime context references to independent children'
+Require-Pattern $implementationLoop 'context-loss' 'implementation loop must safely replace independent open audits whose runtime task is lost'
 
 $skillRequirements = @{
     'backend-plan-audit-until-ready' = @('ADVANCE_SET', 'PEER_SET', 'STEP_MODE=single-transition', 'CONTEXT_REF', 'governance_revision')
-    'backend-implement-audit-until-complete' = @('ADVANCE_SET', 'STEP_MODE=single-transition', 'CONTEXT_REF', 'governance_revision')
+    'backend-implement-audit-until-complete' = @('PEER_SET', 'ADVANCE_SET', 'STEP_MODE=single-transition', 'CONTEXT_REF', 'governance_revision')
     'backend-plan-audit' = @('PEER_SET', 'persist the peer set', 'invoke-revision-evidence.ps1', 'terminal governance')
     'backend-plan-acceptance-audit' = @('task/agent', 'CONTEXT_REF', 'detached evidence runner', 'governance_revision')
     'backend-implementation-audit' = @('task/agent', 'CONTEXT_REF', 'detached evidence runner', 'governance_revision')

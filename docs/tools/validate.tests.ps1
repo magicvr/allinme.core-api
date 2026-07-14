@@ -83,10 +83,31 @@ try {
     }
     Set-Content -LiteralPath $implementationLoopFixture -Value $implementationLoopContent -Encoding UTF8
 
-    Set-Content -LiteralPath $implementationLoopFixture -Value ($implementationLoopContent.Replace('<!-- peer-routing-contract: target-is-complete-peer-set; readiness-advance-set-is-subset -->', '')) -Encoding UTF8
+    Set-Content -LiteralPath $implementationLoopFixture -Value ($implementationLoopContent.Replace('<!-- terminal-reentry-contract: blocked-rem-requires-changed-recovery-evidence; partial-or-blocked-imp-requires-new-ready-revision; no-automatic-retry-storm -->', '')) -Encoding UTF8
+    $missingTerminalReentryResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($missingTerminalReentryResult.ExitCode -eq 0 -or $missingTerminalReentryResult.Output -notmatch 'safely re-enter terminal REM and IMP work') {
+        throw "workflow validator did not reject unsafe terminal work re-entry: $($missingTerminalReentryResult.Output)"
+    }
+    Set-Content -LiteralPath $implementationLoopFixture -Value $implementationLoopContent -Encoding UTF8
+
+    Set-Content -LiteralPath $implementationLoopFixture -Value ($implementationLoopContent.Replace('<!-- peer-drift-contract: active-peer-set-change-requires-safe-restart; no-stale-peer-progress -->', '')) -Encoding UTF8
+    $missingPeerDriftResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($missingPeerDriftResult.ExitCode -eq 0 -or $missingPeerDriftResult.Output -notmatch 'active peer set changes') {
+        throw "workflow validator did not reject stale-peer implementation routing: $($missingPeerDriftResult.Output)"
+    }
+    Set-Content -LiteralPath $implementationLoopFixture -Value $implementationLoopContent -Encoding UTF8
+
+    Set-Content -LiteralPath $implementationLoopFixture -Value ($implementationLoopContent.Replace('<!-- peer-routing-contract: peer-set-is-complete-active-set; target-is-goal-set; readiness-advance-set-is-subset -->', '')) -Encoding UTF8
     $missingPeerRoutingResult = Invoke-WorkflowValidator $workflowFixtureRoot
-    if ($missingPeerRoutingResult.ExitCode -eq 0 -or $missingPeerRoutingResult.Output -notmatch 'complete peer set') {
+    if ($missingPeerRoutingResult.ExitCode -eq 0 -or $missingPeerRoutingResult.Output -notmatch 'complete peers') {
         throw "workflow validator did not reject missing peer/advance routing: $($missingPeerRoutingResult.Output)"
+    }
+    Set-Content -LiteralPath $implementationLoopFixture -Value $implementationLoopContent -Encoding UTF8
+
+    Set-Content -LiteralPath $implementationLoopFixture -Value ($implementationLoopContent.Replace('; target-is-goal-set', '')) -Encoding UTF8
+    $expandedTargetResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($expandedTargetResult.ExitCode -eq 0 -or $expandedTargetResult.Output -notmatch 'without expanding implementation scope') {
+        throw "workflow validator did not reject conflated target and peer sets: $($expandedTargetResult.Output)"
     }
     Set-Content -LiteralPath $implementationLoopFixture -Value $implementationLoopContent -Encoding UTF8
 
@@ -96,6 +117,13 @@ try {
     $missingRuntimeContextResult = Invoke-WorkflowValidator $workflowFixtureRoot
     if ($missingRuntimeContextResult.ExitCode -eq 0 -or $missingRuntimeContextResult.Output -notmatch 'runtime identity|runtime-provided new task context') {
         throw "workflow validator did not reject declarative-only context isolation: $($missingRuntimeContextResult.Output)"
+    }
+    Set-Content -LiteralPath $acceptanceFixture -Value $acceptanceContent -Encoding UTF8
+
+    Set-Content -LiteralPath $acceptanceFixture -Value ($acceptanceContent.Replace('<!-- context-resume-contract: same-runtime-ref-or-supersede-context-loss; never-rebind-open-audit -->', '')) -Encoding UTF8
+    $missingContextResumeResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($missingContextResumeResult.ExitCode -eq 0 -or $missingContextResumeResult.Output -notmatch 'rebinding an open independent audit') {
+        throw "workflow validator did not reject unsafe independent audit resumption: $($missingContextResumeResult.Output)"
     }
     Set-Content -LiteralPath $acceptanceFixture -Value $acceptanceContent -Encoding UTF8
 
@@ -749,6 +777,32 @@ related_plans: PLN-0001
     if ($sameContextPlanAcceptanceResult.ExitCode -eq 0 -or $sameContextPlanAcceptanceResult.Output -notmatch 'execution context must differ') {
         throw "validator accepted self-approved plan acceptance context: $($sameContextPlanAcceptanceResult.Output)"
     }
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($acceptancePlanAuditFrontmatter + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+
+    $runtimeSourcePlanAudit = $runtimePlanAuditFrontmatter.Replace('runtime_context_ref: runtime-unavailable', 'runtime_context_ref: runtime-plan-audit')
+    $runtimePlanAcceptance = $acceptancePlanAuditFrontmatter.Replace(
+        "governance_contract: audit-loop/v3`n",
+        "governance_contract: audit-loop/v3`nworkflow_contract_revision: audit-runtime/v1`n"
+    ).Replace(
+        "execution_context_id: 55555555-5555-4555-8555-555555555555`n",
+        "execution_context_id: 55555555-5555-4555-8555-555555555555`nruntime_context_ref: runtime-plan-acceptance`nsource_context_refs: runtime-plan-audit`n"
+    ).Replace(
+        "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`n",
+        "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`nevidence_worktree_revision: git:0000000000000000000000000000000000000000`nevidence_runner: docs/tools/invoke-revision-evidence.ps1`n"
+    )
+    Set-Content -LiteralPath $planAuditRecordPath -Value ($runtimeSourcePlanAudit + "`n" + $planAuditMatrix) -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($runtimePlanAcceptance + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+    $runtimeSourceRefsResult = Invoke-Validator $fixtureRoot
+    if ($runtimeSourceRefsResult.ExitCode -ne 0) {
+        throw "validator rejected exact runtime source refs: $($runtimeSourceRefsResult.Output)"
+    }
+    $forgedRuntimeSourceRef = $runtimePlanAcceptance.Replace('source_context_refs: runtime-plan-audit', 'source_context_refs: forged-runtime-ref')
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($forgedRuntimeSourceRef + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+    $forgedRuntimeSourceRefResult = Invoke-Validator $fixtureRoot
+    if ($forgedRuntimeSourceRefResult.ExitCode -eq 0 -or $forgedRuntimeSourceRefResult.Output -notmatch 'source runtime context ref|unrelated source_context_ref') {
+        throw "validator accepted a forged runtime source ref: $($forgedRuntimeSourceRefResult.Output)"
+    }
+    Set-Content -LiteralPath $planAuditRecordPath -Value ($planAuditFrontmatter + "`n" + $planAuditMatrix) -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($acceptancePlanAuditFrontmatter + "`n" + $acceptancePlanMatrix) -Encoding UTF8
 
     $placeholderPlanAcceptance = $acceptancePlanMatrix.Replace('| READY_SCOPE | fixture scope | pass | none |', '| READY_SCOPE | 具体证据 | pass | none |')
@@ -1462,6 +1516,111 @@ related_plans: none
     $supersededAuditResult = Invoke-Validator $fixtureRoot
     if ($supersededAuditResult.ExitCode -ne 0) {
         throw "validator rejected a valid stale-open supersession transition: $($supersededAuditResult.Output)"
+    }
+
+    $unrelatedReplacement = $replacementAudit.Replace('scope: feature:superseded-fixture', 'scope: feature:unrelated-fixture')
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $replacementAuditName) -Value ($unrelatedReplacement + "`n# Replacement") -Encoding UTF8
+    $unrelatedReplacementResult = Invoke-Validator $fixtureRoot
+    if ($unrelatedReplacementResult.ExitCode -eq 0 -or $unrelatedReplacementResult.Output -notmatch 'preserve audit type, schema, and scope') {
+        throw "validator accepted an unrelated supersession replacement: $($unrelatedReplacementResult.Output)"
+    }
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $replacementAuditName) -Value ($replacementAudit + "`n# Replacement") -Encoding UTF8
+
+    $unchangedReplacement = $replacementAudit.Replace('baseline: git:2222222222222222222222222222222222222222; worktree:clean', 'baseline: git:1111111111111111111111111111111111111111; worktree:clean')
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $replacementAuditName) -Value ($unchangedReplacement + "`n# Replacement") -Encoding UTF8
+    $unchangedReplacementResult = Invoke-Validator $fixtureRoot
+    if ($unchangedReplacementResult.ExitCode -eq 0 -or $unchangedReplacementResult.Output -notmatch 'must change baseline or evidence revision') {
+        throw "validator accepted baseline-drift without actual drift: $($unchangedReplacementResult.Output)"
+    }
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $replacementAuditName) -Value ($replacementAudit + "`n# Replacement") -Encoding UTF8
+    Remove-Item -LiteralPath (Join-Path $auditRecordsRoot $supersededAuditName), (Join-Path $auditRecordsRoot $replacementAuditName)
+    Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8
+
+    $runtimeSourcePlanAuditForContextLoss = $runtimePlanAuditFrontmatter.Replace('runtime_context_ref: runtime-unavailable', 'runtime_context_ref: runtime-plan-audit')
+    Set-Content -LiteralPath $planAuditRecordPath -Value ($runtimeSourcePlanAuditForContextLoss + "`n" + $planAuditMatrix) -Encoding UTF8
+    $contextLossOldName = 'AUD-0018-20260714-validator-plan-context-loss-old.md'
+    $contextLossNewName = 'AUD-0019-20260714-validator-plan-context-loss-new.md'
+    $contextLossOld = $acceptancePlanAuditFrontmatter.Replace(
+        'status: closed',
+        'status: superseded'
+    ).Replace(
+        "governance_contract: audit-loop/v3`n",
+        "governance_contract: audit-loop/v3`nworkflow_contract_revision: audit-runtime/v1`n"
+    ).Replace(
+        'audit_id: AUD-0005',
+        'audit_id: AUD-0018'
+    ).Replace(
+        "execution_context_id: 55555555-5555-4555-8555-555555555555`n",
+        "execution_context_id: 18181818-1818-4818-8818-181818181818`nruntime_context_ref: runtime-lost-task`nsource_context_refs: runtime-plan-audit`n"
+    ).Replace(
+        'acceptance_verdict: ready',
+        'acceptance_verdict: superseded'
+    ).Replace(
+        'evidence_run_id: 11111111-1111-4111-8111-111111111111',
+        'evidence_run_id: 18181818-1818-4818-9818-181818181818'
+    ).Replace(
+        'started_at: 2026-07-14T03:00:00+08:00',
+        'started_at: 2026-07-14T05:30:00+08:00'
+    ).Replace(
+        'completed_at: 2026-07-14T03:15:00+08:00',
+        'completed_at: 2026-07-14T05:45:00+08:00'
+    ).Replace(
+        "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`n",
+        "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`nevidence_worktree_revision: git:0000000000000000000000000000000000000000`nevidence_runner: docs/tools/invoke-revision-evidence.ps1`n"
+    ).Replace(
+        "supersedes: none`n",
+        "supersedes: none`nsuperseded_by: AUD-0019`nsupersession_reason: context-loss`n"
+    )
+    $contextLossNew = $acceptancePlanAuditFrontmatter.Replace(
+        'status: closed',
+        'status: open'
+    ).Replace(
+        "governance_contract: audit-loop/v3`n",
+        "governance_contract: audit-loop/v3`nworkflow_contract_revision: audit-runtime/v1`n"
+    ).Replace(
+        'audit_id: AUD-0005',
+        'audit_id: AUD-0019'
+    ).Replace(
+        "execution_context_id: 55555555-5555-4555-8555-555555555555`nsource_context_ids: 44444444-4444-4444-8444-444444444444`n",
+        "execution_context_id: 19191919-1919-4919-8919-191919191919`nruntime_context_ref: runtime-new-task`nsource_context_ids: 44444444-4444-4444-8444-444444444444, 18181818-1818-4818-8818-181818181818`nsource_context_refs: runtime-plan-audit, runtime-lost-task`n"
+    ).Replace(
+        'acceptance_verdict: ready',
+        'acceptance_verdict: pending'
+    ).Replace(
+        'evidence_run_id: 11111111-1111-4111-8111-111111111111',
+        'evidence_run_id: 19191919-1919-4919-9919-191919191919'
+    ).Replace(
+        "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`n",
+        "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`nevidence_worktree_revision: git:0000000000000000000000000000000000000000`nevidence_runner: docs/tools/invoke-revision-evidence.ps1`n"
+    ).Replace(
+        'completed_at: 2026-07-14T03:15:00+08:00',
+        'completed_at: pending'
+    ).Replace(
+        'started_at: 2026-07-14T03:00:00+08:00',
+        'started_at: 2026-07-14T06:00:00+08:00'
+    ).Replace(
+        "supersedes: none`n",
+        "supersedes: AUD-0018`n"
+    )
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $contextLossOldName) -Value ($contextLossOld + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $contextLossNewName) -Value ($contextLossNew + "`n" + $acceptancePlanMatrix) -Encoding UTF8
+    $contextLossIndex = $auditIndexContent + "`n- [AUD-0018](./records/$contextLossOldName): ``status=superseded``; ``remediation=none``; context loss fixture.`n- [AUD-0019](./records/$contextLossNewName): ``status=open``; ``remediation=pending``; context loss replacement fixture."
+    Set-Content -LiteralPath $auditIndexPath -Value $contextLossIndex -Encoding UTF8
+    $validContextLossResult = Invoke-Validator $fixtureRoot
+    if ($validContextLossResult.ExitCode -ne 0) {
+        throw "validator rejected a valid independent context-loss replacement: $($validContextLossResult.Output)"
+    }
+    Remove-Item -LiteralPath (Join-Path $auditRecordsRoot $contextLossOldName), (Join-Path $auditRecordsRoot $contextLossNewName)
+    Set-Content -LiteralPath $planAuditRecordPath -Value ($planAuditFrontmatter + "`n" + $planAuditMatrix) -Encoding UTF8
+    Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8
+
+    $contextLossSupersededAudit = $supersededAudit.Replace('supersession_reason: baseline-drift', 'supersession_reason: context-loss')
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $supersededAuditName) -Value ($contextLossSupersededAudit + "`n# Superseded") -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $auditRecordsRoot $replacementAuditName) -Value ($replacementAudit + "`n# Replacement") -Encoding UTF8
+    Set-Content -LiteralPath $auditIndexPath -Value $supersededAuditIndex -Encoding UTF8
+    $contextLossSupersessionResult = Invoke-Validator $fixtureRoot
+    if ($contextLossSupersessionResult.ExitCode -eq 0 -or $contextLossSupersessionResult.Output -notmatch 'only valid for independent audit-runtime/v1 audits') {
+        throw "validator accepted context-loss on a non-independent audit: $($contextLossSupersessionResult.Output)"
     }
     Remove-Item -LiteralPath (Join-Path $auditRecordsRoot $supersededAuditName), (Join-Path $auditRecordsRoot $replacementAuditName)
     Set-Content -LiteralPath $auditIndexPath -Value $auditIndexContent -Encoding UTF8

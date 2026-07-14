@@ -13,7 +13,8 @@ description: Verify plan readiness in a separate execution context, creating one
 6. 必须递归派生以当前 revision-bound、`governance_contract: audit-loop/v3` 的计划审计/计划就绪验收为根的 AUD/REM/follow-up 链；重新派生完整 active peer 集合并检查 `audited_peer_plans` 与全部 peer plan/checklist path 漂移；排除纯实施审计链。缺少当前有效 `plan-audit/v2` 时 handoff 到 `$backend-plan-audit-until-ready`。
 7. 只有所有强制 Control 通过且 `PLAN_AUDIT_CHAIN_CLEAN` 通过时才能写 `acceptance_verdict: ready`。
 8. `ready` 前必须通过 detached evidence runner 在 `evidence_revision` 独立执行至少一条不属于治理 validator 的 subject-specific 验证命令；仅复述历史 Evidence 或在治理 HEAD 上代跑不得通过。
-9. `baseline` 固定包含 source records 的治理快照，`evidence_revision` 固定被验收 subject；提交 open checkpoint 后再验收，关闭后提交 terminal governance commit，并返回 clean `governance_revision`。生成的记录和最终汇报必须使用中文；固定状态值保持原样。
+9. 只有当前真实 `CONTEXT_REF` 与 open AUD 已记录 ref 相同且原 task 可恢复时才能续跑；否则以 `context-loss` supersede 旧记录并新建 AUD，禁止重绑 runtime ref。
+10. `baseline` 固定包含 source records 的治理快照，`evidence_revision` 固定被验收 subject；提交 open checkpoint 后再验收，关闭后提交 terminal governance commit，并返回 clean `governance_revision`。生成的记录和最终汇报必须使用中文；固定状态值保持原样。
 
 ```text
 $backend-plan-acceptance-audit
