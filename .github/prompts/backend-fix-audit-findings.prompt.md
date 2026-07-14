@@ -24,7 +24,7 @@ agent: agent
 3. 使用 `docs/tools/reserve-governance-record.ps1 -Kind REM -Suffix <YYYYMMDD-owner-scope-subject>` 原子分配 ID 并预留记录，必须采用命令返回的 `REM-NNNN` 和路径：
    - 单审计：`REM-NNNN-YYYYMMDD-<owner>-audit-<audit-id-subject>.md`；
    - 多审计：`REM-NNNN-YYYYMMDD-<owner>-audit-active-audits.md` 或 `...-selected-audits.md`。
-4. frontmatter 至少记录 `status: in-progress`、`remediation_id`、`implementer`、`scope`、`source_audits`、`source_findings`、`baseline`、`started_at`、`last_updated` 和 `related_plans`。
+4. frontmatter 固定 `remediation_schema: remediation/v2`，并至少记录 `status: in-progress`、`remediation_id`、`implementer`、`scope`、`source_audits`、`source_findings`、`baseline`、`result_revision: pending`、`affects_implementation`、`related_implementations`、`started_at`、`last_updated` 和 `related_plans`。若 source AUD 涉及 IMP，必须把对应 IMP 写入 `related_implementations`。
 5. 在同一次文件变更中把 REM 加入 `docs/remediations/README.md` 索引，初始写为 `status=in-progress`、`verification=not-ready`。没有索引的整改记录视为创建失败。
 
 ## 3. 制定 finding 映射
@@ -46,11 +46,12 @@ agent: agent
 3. 不得把“代码已改”“测试曾通过”或原审计建议本身当作验证证据。
 4. 保留实际 revision、命令、结果、Evidence 位置、未执行原因和剩余风险。
 5. 不修改任何 `status: closed` 的 AUD，也不把 finding 的 disposition 回写为 resolved；只有 follow-up audit 可以给出复核结论。
+6. 修改产品代码、测试、migration、运行配置或发布 artifact 时写 `affects_implementation: true`；只修改计划、审计治理文本或不影响交付结果的说明时写 `false`。对 completed IMP 的窄范围修复由 REM 作为不可变的后续实施 revision；若工作超出 source finding、需要重跑计划工作包或改变范围，停止本 REM 并创建新的 IMP。
 
 ## 5. 完成整改记录与索引
 
-- 所有选中 finding 都有实现和本地证据：REM 写 `status: completed`，填写 `completed_at`；REM 索引写 `verification=pending`；对应 AUD 索引写 `remediation=awaiting-verification:REM-NNNN`。
-- 只完成部分 finding：REM 写 `status: partial`，明确已完成和未完成映射；REM 索引仍写 `verification=pending`；未完成 finding 对应的 AUD 索引保持 `remediation=required` 并引用该 REM。
+- 所有选中 finding 都有实现和本地证据：先把整改结果固化到完整 SHA 的 subject commit，REM 写 `status: completed`、`result_revision: git:<full-sha>` 并填写 `completed_at`；REM 索引写 `verification=pending`；对应 AUD 索引写 `remediation=awaiting-verification:REM-NNNN`。
+- 只完成部分 finding：REM 写 `status: partial`、完整 SHA 的 `result_revision`，明确已完成和未完成映射；REM 索引仍写 `verification=pending`；未完成 finding 对应的 AUD 索引保持 `remediation=required` 并引用该 REM。
 - 因权限、外部依赖或阻断条件无法实施：REM 写 `status: blocked`；索引写 `verification=not-ready`；AUD 保持 `remediation=required`。
 - `completed`、`partial` 或 `blocked` 的 REM 关闭后不得改写；后续追加整改创建新的 REM。
 

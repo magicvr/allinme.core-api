@@ -1,11 +1,12 @@
 ---
 status: open
-audit_schema: plan-acceptance/v1
+audit_schema: plan-acceptance/v2
 audit_id: AUD-NNNN
 auditor: auditor-name-and-version
 audit_type: acceptance
 acceptance_type: plan-readiness
 acceptance_verdict: pending
+plan_status_at_acceptance: active
 independence_basis: separate-auditor
 scope: plan:PLN-NNNN
 subject: plan readiness acceptance

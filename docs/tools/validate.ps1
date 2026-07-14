@@ -68,6 +68,43 @@ function Get-AuditNumber([string]$AuditId) {
     return [int]$Matches['number']
 }
 
+function Get-ImplementationNumber([string]$ImplementationId) {
+    if ($ImplementationId -notmatch '^IMP-(?<number>\d{4})$') {
+        return -1
+    }
+    return [int]$Matches['number']
+}
+
+function Get-RemediationNumber([string]$RemediationId) {
+    if ($RemediationId -notmatch '^REM-(?<number>\d{4})$') {
+        return -1
+    }
+    return [int]$Matches['number']
+}
+
+function Get-GitRevision([string]$Value) {
+    if ($Value -match '^git:(?<sha>[0-9a-fA-F]{40})(?:;\s*worktree:clean)?$') {
+        return $Matches['sha'].ToLowerInvariant()
+    }
+    return $null
+}
+
+function ConvertTo-DateTimeOffsetOrNull([string]$Value) {
+    $parsed = [DateTimeOffset]::MinValue
+    if (-not [string]::IsNullOrWhiteSpace($Value) -and [DateTimeOffset]::TryParse($Value, [ref]$parsed)) {
+        return $parsed
+    }
+    return $null
+}
+
+function Test-GitCommitExists([string]$Revision) {
+    if ([string]::IsNullOrWhiteSpace($Revision)) {
+        return $false
+    }
+    & git -C $repoRoot cat-file -e "$Revision`^{commit}" 2>$null
+    return $LASTEXITCODE -eq 0
+}
+
 function Test-PhaseFiveEdge([hashtable]$Dag, [string]$Prerequisite, [string]$Dependent) {
     return $Dag.ContainsKey($Dependent) -and @($Dag[$Dependent]) -contains $Prerequisite
 }
@@ -498,6 +535,7 @@ $acceptanceEvidenceRunIds = @{}
 $remediationIds = @{}
 $remediationRecords = @{}
 $remediationMetadata = @{}
+$remediationVerificationStates = @{}
 $implementationIds = @{}
 $implementationRecords = @{}
 $implementationMetadata = @{}
@@ -543,9 +581,12 @@ foreach ($file in $markdownFiles) {
             }
             if ($docsRelativePath.StartsWith('remediations/records/')) {
                 $requiredFields = @('status', 'remediation_id', 'implementer', 'scope', 'source_audits', 'source_findings', 'baseline', 'started_at', 'last_updated')
+                if ((Get-FrontmatterValue $frontmatter 'remediation_schema') -eq 'remediation/v2') {
+                    $requiredFields += @('result_revision', 'affects_implementation', 'related_implementations')
+                }
             }
             if ($docsRelativePath.StartsWith('implementations/records/')) {
-                $requiredFields = @('status', 'implementation_id', 'implementer', 'scope', 'related_plans', 'plan_acceptance_audits', 'baseline', 'result_revision', 'started_at', 'last_updated')
+                $requiredFields = @('status', 'implementation_schema', 'implementation_id', 'implementer', 'scope', 'related_plans', 'plan_acceptance_audits', 'plan_evidence_revision', 'baseline', 'result_revision', 'started_at', 'last_updated')
             }
             foreach ($field in $requiredFields) {
                 if ($frontmatter -notmatch "(?m)^${field}:\s*\S.*$") {
@@ -564,10 +605,13 @@ foreach ($file in $markdownFiles) {
         if ($declaredPlanId -ne $planId) {
             $failures.Add("Plan ID does not match filename: $relativePath ($declaredPlanId != $planId)")
         }
-        $expectedStatus = if ($Matches['archived']) { 'archived' } else { 'active' }
         $declaredStatus = Get-FrontmatterValue $frontmatter 'status'
-        if ($declaredStatus -ne $expectedStatus) {
-            $failures.Add("Plan status does not match directory: $relativePath ($declaredStatus != $expectedStatus)")
+        if ($Matches['archived']) {
+            if ($declaredStatus -ne 'archived') {
+                $failures.Add("Legacy archived plan directory only allows status=archived: $relativePath ($declaredStatus)")
+            }
+        } elseif ($declaredStatus -notin @('active', 'archived')) {
+            $failures.Add("Stable plan path requires status active or archived: $relativePath ($declaredStatus)")
         }
         $stem = $Matches['stem']
         $planMetadata[$planId] = @{ Path = $relativePath; Status = $declaredStatus; Stem = $stem }
@@ -651,19 +695,28 @@ foreach ($file in $markdownFiles) {
                         $failures.Add("Legacy plan audit must not claim v2 checklist evidence: $relativePath")
                     }
                 } else {
-                    $relatedPlans = Get-ListValues (Get-FrontmatterValue $frontmatter 'related_plans')
-                    if ($auditSchema -in @('plan-acceptance/v1', 'implementation-acceptance/v1')) {
-                        if ($relatedPlans.Count -eq 0) {
-                            $failures.Add("Acceptance audit must list related_plans: $relativePath")
+                    $relatedPlans = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'related_plans'))
+                    if ($auditSchema -in @('plan-acceptance/v2', 'implementation-acceptance/v2')) {
+                        if ($relatedPlans.Count -ne 1) {
+                            $failures.Add("Acceptance audit must identify exactly one related plan: $relativePath")
                         }
                         $acceptanceType = Get-FrontmatterValue $frontmatter 'acceptance_type'
-                        $expectedAcceptanceType = if ($auditSchema -eq 'plan-acceptance/v1') { 'plan-readiness' } else { 'implementation-completion' }
+                        $expectedAcceptanceType = if ($auditSchema -eq 'plan-acceptance/v2') { 'plan-readiness' } else { 'implementation-completion' }
                         if ($acceptanceType -ne $expectedAcceptanceType) {
                             $failures.Add("Acceptance audit has incorrect acceptance_type: $relativePath")
                         }
                         $acceptanceVerdict = Get-FrontmatterValue $frontmatter 'acceptance_verdict'
-                        if ($acceptanceVerdict -notin @('pending', 'ready', 'not-ready', 'blocked', 'complete', 'incomplete')) {
+                        $validAcceptanceVerdicts = if ($auditSchema -eq 'plan-acceptance/v2') {
+                            @('pending', 'ready', 'not-ready', 'blocked')
+                        } else {
+                            @('pending', 'complete', 'incomplete', 'blocked')
+                        }
+                        if ($acceptanceVerdict -notin $validAcceptanceVerdicts) {
                             $failures.Add("Acceptance audit has invalid acceptance_verdict: $relativePath ($acceptanceVerdict)")
+                        }
+                        $planStatusAtAcceptance = Get-FrontmatterValue $frontmatter 'plan_status_at_acceptance'
+                        if ($planStatusAtAcceptance -ne 'active') {
+                            $failures.Add("Acceptance audit must record plan_status_at_acceptance=active: $relativePath")
                         }
                         $independenceBasis = Get-FrontmatterValue $frontmatter 'independence_basis'
                         if ($independenceBasis -notin @('separate-auditor', 'fresh-context-independent-rerun')) {
@@ -681,6 +734,12 @@ foreach ($file in $markdownFiles) {
                         if ($acceptanceBaseline -ne $evidenceRevision) {
                             $failures.Add("Acceptance audit evidence_revision must match baseline: $relativePath")
                         }
+                        $acceptanceRevisionSha = Get-GitRevision $acceptanceBaseline
+                        if ($docsRoot -eq (Join-Path $repoRoot 'docs') -and
+                            $null -ne $acceptanceRevisionSha -and
+                            -not (Test-GitCommitExists $acceptanceRevisionSha)) {
+                            $failures.Add("Acceptance audit subject revision must reference an existing commit: $relativePath ($acceptanceRevisionSha)")
+                        }
                         if ($evidenceRunId -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$') {
                             $failures.Add("Acceptance audit must record a valid UUIDv4 evidence_run_id: $relativePath")
                         } elseif ($acceptanceEvidenceRunIds.ContainsKey($evidenceRunId.ToLowerInvariant())) {
@@ -688,8 +747,12 @@ foreach ($file in $markdownFiles) {
                         } else {
                             $acceptanceEvidenceRunIds[$evidenceRunId.ToLowerInvariant()] = $auditId
                         }
-                        $markerPrefix = if ($auditSchema -eq 'plan-acceptance/v1') { 'plan-acceptance-audit' } else { 'implementation-acceptance-audit' }
-                        $controls = if ($auditSchema -eq 'plan-acceptance/v1') {
+                        $markerPrefix = if ($auditSchema -eq 'plan-acceptance/v2') { 'plan-acceptance-audit' } else { 'implementation-acceptance-audit' }
+                        $acceptanceMarkers = [regex]::Matches($content, "<!--\s*$markerPrefix`:\s*PLN-\d{4}\s*-->")
+                        if ($acceptanceMarkers.Count -ne 1) {
+                            $failures.Add("Acceptance audit v2 must contain exactly one plan matrix: $relativePath")
+                        }
+                        $controls = if ($auditSchema -eq 'plan-acceptance/v2') {
                             @('READY_IDENTITY', 'READY_SCOPE', 'READY_FACTS', 'READY_DEPENDENCIES', 'READY_DESIGN', 'READY_EVIDENCE', 'READY_GATES', 'PLAN_AUDIT_CHAIN_CLEAN')
                         } else {
                             @('IMP_PRESENT', 'SCOPE_COMPLETE', 'CHECKLIST_COMPLETE', 'VALIDATION_GATES', 'AUDIT_CHAIN_CLEAN', 'RESIDUAL_RISK', 'ARCHIVE_READY')
@@ -701,11 +764,20 @@ foreach ($file in $markdownFiles) {
                             }
                             Test-AuditMatrix $content "<!-- $markerPrefix`: $relatedPlan -->" $controls $auditId $failures 'Acceptance audit matrix'
                         }
+                        if ($relatedPlans.Count -eq 1 -and $declaredScope -ne "plan:$($relatedPlans[0])") {
+                            $failures.Add("Acceptance audit scope must match its single related plan: $relativePath")
+                        }
                         Test-AcceptanceVerdict $content $null $null $controls $acceptanceVerdict $auditStatus $auditId 'acceptance audit' $failures
-                        if ($auditSchema -eq 'implementation-acceptance/v1') {
-                            $relatedImplementations = Get-ListValues (Get-FrontmatterValue $frontmatter 'related_implementations')
-                            if ($relatedImplementations.Count -eq 0) {
-                                $failures.Add("Implementation acceptance audit must list related_implementations: $relativePath")
+                        if ($auditSchema -eq 'implementation-acceptance/v2') {
+                            $relatedImplementations = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'related_implementations'))
+                            if ($relatedImplementations.Count -ne 1) {
+                                $failures.Add("Implementation acceptance audit must identify exactly one related implementation: $relativePath")
+                            }
+                            $effectiveResultRevision = Get-FrontmatterValue $frontmatter 'effective_result_revision'
+                            if ($effectiveResultRevision -notmatch '^git:[0-9a-fA-F]{40}$') {
+                                $failures.Add("Implementation acceptance must record a full effective_result_revision: $relativePath")
+                            } elseif ((Get-GitRevision $effectiveResultRevision) -ne (Get-GitRevision $evidenceRevision)) {
+                                $failures.Add("Implementation acceptance effective_result_revision must match evidence_revision: $relativePath")
                             }
                         }
                     } elseif ($auditSchema -ne 'plan-audit/v2') {
@@ -774,10 +846,14 @@ foreach ($file in $markdownFiles) {
                 AuditType = Get-FrontmatterValue $frontmatter 'audit_type'
                 Schema = Get-FrontmatterValue $frontmatter 'audit_schema'
                 Verdict = Get-FrontmatterValue $frontmatter 'acceptance_verdict'
+                PlanStatusAtAcceptance = Get-FrontmatterValue $frontmatter 'plan_status_at_acceptance'
                 IndependenceBasis = Get-FrontmatterValue $frontmatter 'independence_basis'
                 Baseline = Get-FrontmatterValue $frontmatter 'baseline'
                 EvidenceRevision = Get-FrontmatterValue $frontmatter 'evidence_revision'
                 EvidenceRunId = Get-FrontmatterValue $frontmatter 'evidence_run_id'
+                EffectiveResultRevision = Get-FrontmatterValue $frontmatter 'effective_result_revision'
+                StartedAt = Get-FrontmatterValue $frontmatter 'started_at'
+                CompletedAt = Get-FrontmatterValue $frontmatter 'completed_at'
                 RelatedAudits = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'related_audits'))
                 RelatedPlans = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'related_plans'))
                 RelatedImplementations = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'related_implementations'))
@@ -823,11 +899,41 @@ foreach ($file in $markdownFiles) {
             if ($declaredRemediationScope -notlike "${remediationScopeKind}:*") {
                 $failures.Add("Remediation scope does not match filename scope kind: $relativePath")
             }
+            $remediationSchema = Get-FrontmatterValue $frontmatter 'remediation_schema'
+            $remediationResultRevision = Get-FrontmatterValue $frontmatter 'result_revision'
+            $affectsImplementation = Get-FrontmatterValue $frontmatter 'affects_implementation'
+            $remediationRelatedImplementations = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'related_implementations'))
+            if (-not [string]::IsNullOrWhiteSpace($remediationSchema)) {
+                if ($remediationSchema -ne 'remediation/v2') {
+                    $failures.Add("Invalid remediation_schema: $relativePath ($remediationSchema)")
+                }
+                if ($affectsImplementation -notin @('true', 'false')) {
+                    $failures.Add("remediation/v2 must record affects_implementation as true or false: $relativePath")
+                }
+                if ($remediationStatus -in @('completed', 'partial') -and $remediationResultRevision -notmatch '^git:[0-9a-fA-F]{40}$') {
+                    $failures.Add("Completed or partial remediation/v2 must record a full result_revision: $relativePath")
+                }
+                $remediationRevisionSha = Get-GitRevision $remediationResultRevision
+                if ($remediationStatus -in @('completed', 'partial') -and
+                    $docsRoot -eq (Join-Path $repoRoot 'docs') -and
+                    $null -ne $remediationRevisionSha -and
+                    -not (Test-GitCommitExists $remediationRevisionSha)) {
+                    $failures.Add("remediation/v2 result_revision must reference an existing commit: $relativePath ($remediationRevisionSha)")
+                }
+                if ($affectsImplementation -eq 'true' -and $remediationRelatedImplementations.Count -eq 0) {
+                    $failures.Add("Implementation-affecting remediation must list related_implementations: $relativePath")
+                }
+            }
             $remediationMetadata[$remediationId] = @{
                 Path = $relativePath
                 Status = $remediationStatus
+                Schema = $remediationSchema
+                Implementer = Get-FrontmatterValue $frontmatter 'implementer'
+                ResultRevision = $remediationResultRevision
+                AffectsImplementation = $affectsImplementation -eq 'true'
                 SourceAudits = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'source_audits'))
                 RelatedPlans = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'related_plans'))
+                RelatedImplementations = $remediationRelatedImplementations
             }
             $remediationRecords[$file.Name] = $remediationStatus
         }
@@ -875,8 +981,8 @@ foreach ($file in $markdownFiles) {
                 $failures.Add("Implementation related plan does not match filename: $relativePath ($($relatedPlans[0]) != $filenamePlanId)")
             }
             $planAcceptanceAudits = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'plan_acceptance_audits'))
-            if ($planAcceptanceAudits.Count -eq 0) {
-                $failures.Add("Implementation must reference at least one plan acceptance audit: $relativePath")
+            if ($planAcceptanceAudits.Count -ne 1) {
+                $failures.Add("implementation/v2 must reference exactly one plan acceptance audit: $relativePath")
             }
             foreach ($planAcceptanceAudit in $planAcceptanceAudits) {
                 if ($planAcceptanceAudit -notmatch '^AUD-\d{4}$') {
@@ -887,12 +993,36 @@ foreach ($file in $markdownFiles) {
             if ($implementationStatus -eq 'completed' -and $resultRevision -notmatch '^git:[0-9a-fA-F]{40}$') {
                 $failures.Add("Completed implementation must record a full git result_revision: $relativePath")
             }
+            $implementationSchema = Get-FrontmatterValue $frontmatter 'implementation_schema'
+            if ($implementationSchema -ne 'implementation/v2') {
+                $failures.Add("Implementation must use implementation_schema implementation/v2: $relativePath")
+            }
+            $planEvidenceRevision = Get-FrontmatterValue $frontmatter 'plan_evidence_revision'
+            if ($planEvidenceRevision -notmatch '^git:[0-9a-fA-F]{40}$') {
+                $failures.Add("Implementation must record a full plan_evidence_revision: $relativePath")
+            }
+            $implementationBaseline = Get-FrontmatterValue $frontmatter 'baseline'
+            if ($implementationBaseline -notmatch '^git:[0-9a-fA-F]{40};\s*worktree:clean$') {
+                $failures.Add("implementation/v2 baseline must be a full git SHA on a clean worktree: $relativePath")
+            }
+            if ($docsRoot -eq (Join-Path $repoRoot 'docs')) {
+                foreach ($revisionField in @($planEvidenceRevision, $implementationBaseline, $resultRevision)) {
+                    $revisionSha = Get-GitRevision $revisionField
+                    if ($null -ne $revisionSha -and -not (Test-GitCommitExists $revisionSha)) {
+                        $failures.Add("Implementation revision must reference an existing commit: $relativePath ($revisionSha)")
+                    }
+                }
+            }
             $implementationMetadata[$implementationId] = @{
                 Path = $relativePath
+                Schema = $implementationSchema
                 Status = $implementationStatus
                 Implementer = Get-FrontmatterValue $frontmatter 'implementer'
                 PlanId = if ($relatedPlans.Count -eq 1) { $relatedPlans[0] } else { $filenamePlanId }
                 PlanAcceptanceAudits = $planAcceptanceAudits
+                PlanEvidenceRevision = $planEvidenceRevision
+                Baseline = $implementationBaseline
+                StartedAt = $implementationStartedAt
                 ResultRevision = $resultRevision
             }
             $implementationRecords[$file.Name] = $implementationStatus
@@ -940,14 +1070,27 @@ foreach ($auditInfo in $auditMetadata.Values) {
         if (-not $auditMetadata.ContainsKey($relatedAudit)) {
             $failures.Add("Audit references a missing related audit: $($auditInfo.Path) ($relatedAudit)")
         }
-        if ($auditInfo.Schema -in @('plan-acceptance/v1', 'implementation-acceptance/v1')) {
+        if ($auditInfo.Schema -in @('plan-acceptance/v2', 'implementation-acceptance/v2')) {
             $currentAuditId = [regex]::Match($auditInfo.Path, '(AUD-\d{4})').Groups[1].Value
             if ((Get-AuditNumber $relatedAudit) -ge (Get-AuditNumber $currentAuditId)) {
                 $failures.Add("Acceptance audit cannot reference a future or same-number audit: $($auditInfo.Path) ($relatedAudit)")
             }
         }
     }
-    if ($auditInfo.Schema -eq 'plan-acceptance/v1') {
+    foreach ($relatedRemediation in @($auditInfo.RelatedRemediations)) {
+        if (-not $remediationMetadata.ContainsKey($relatedRemediation)) {
+            $failures.Add("Audit references a missing related remediation: $($auditInfo.Path) ($relatedRemediation)")
+        }
+    }
+    if ($auditInfo.AuditType -eq 'follow-up') {
+        if ($auditInfo.RelatedAudits.Count -eq 0) {
+            $failures.Add("Follow-up audit must list source related_audits: $($auditInfo.Path)")
+        }
+        if ($auditInfo.RelatedRemediations.Count -eq 0) {
+            $failures.Add("Follow-up audit must list related_remediations: $($auditInfo.Path)")
+        }
+    }
+    if ($auditInfo.Schema -eq 'plan-acceptance/v2') {
         foreach ($relatedPlan in @($auditInfo.RelatedPlans)) {
             $currentAuditId = [regex]::Match($auditInfo.Path, '(AUD-\d{4})').Groups[1].Value
             $currentAuditNumber = Get-AuditNumber $currentAuditId
@@ -978,9 +1121,16 @@ foreach ($auditInfo in $auditMetadata.Values) {
             if ($matchingFollowUps.Count -gt 0 -and $auditInfo.RelatedAudits -notcontains $matchingFollowUps[-1].Key) {
                 $failures.Add("Plan acceptance must reference the latest related follow-up audit: $($auditInfo.Path) ($relatedPlan=$($matchingFollowUps[-1].Key))")
             }
+            foreach ($relatedRemediation in @($auditInfo.RelatedRemediations)) {
+                if ($remediationMetadata.ContainsKey($relatedRemediation) -and
+                    $auditInfo.IndependenceBasis -eq 'separate-auditor' -and
+                    $auditInfo.Auditor -eq $remediationMetadata[$relatedRemediation].Implementer) {
+                    $failures.Add("Separate-auditor plan acceptance must differ from related remediation implementers: $($auditInfo.Path) ($relatedRemediation)")
+                }
+            }
         }
     }
-    if ($auditInfo.Schema -eq 'implementation-acceptance/v1') {
+    if ($auditInfo.Schema -eq 'implementation-acceptance/v2') {
         foreach ($relatedImplementation in @($auditInfo.RelatedImplementations)) {
             $currentAuditId = [regex]::Match($auditInfo.Path, '(AUD-\d{4})').Groups[1].Value
             $currentAuditNumber = Get-AuditNumber $currentAuditId
@@ -1013,28 +1163,32 @@ foreach ($auditInfo in $auditMetadata.Values) {
                 }
             }
         }
-        $uniqueRelatedPlans = @($auditInfo.RelatedPlans | Select-Object -Unique)
-        $uniqueRelatedImplementations = @($auditInfo.RelatedImplementations | Select-Object -Unique)
-        if ($auditInfo.RelatedPlans.Count -eq 0 -or
-            $uniqueRelatedPlans.Count -ne $auditInfo.RelatedPlans.Count -or
-            $uniqueRelatedImplementations.Count -ne $auditInfo.RelatedImplementations.Count -or
-            $auditInfo.RelatedImplementations.Count -ne $auditInfo.RelatedPlans.Count) {
-            $failures.Add("Implementation acceptance must map exactly one IMP to each related plan: $($auditInfo.Path)")
-        } else {
-            foreach ($relatedPlan in @($auditInfo.RelatedPlans)) {
-                $matchingImplementations = @($auditInfo.RelatedImplementations | Where-Object {
-                    $implementationMetadata.ContainsKey($_) -and $implementationMetadata[$_].PlanId -eq $relatedPlan
-                })
-                if ($matchingImplementations.Count -ne 1) {
-                    $failures.Add("Implementation acceptance must map one unique IMP to plan: $($auditInfo.Path) ($relatedPlan)")
-                }
+        if ($auditInfo.RelatedPlans.Count -eq 1 -and $auditInfo.RelatedImplementations.Count -eq 1) {
+            $relatedPlan = $auditInfo.RelatedPlans[0]
+            $relatedImplementation = $auditInfo.RelatedImplementations[0]
+            if (-not $implementationMetadata.ContainsKey($relatedImplementation) -or
+                $implementationMetadata[$relatedImplementation].PlanId -ne $relatedPlan) {
+                $failures.Add("Implementation acceptance must map its IMP to its single related plan: $($auditInfo.Path) ($relatedPlan/$relatedImplementation)")
+            }
+            $planImplementations = @($implementationMetadata.GetEnumerator() | Where-Object {
+                $_.Value.PlanId -eq $relatedPlan
+            } | Sort-Object { Get-ImplementationNumber $_.Key })
+            if ($planImplementations.Count -gt 0 -and $planImplementations[-1].Key -ne $relatedImplementation) {
+                $failures.Add("Implementation acceptance must target the latest IMP for the plan: $($auditInfo.Path) ($relatedPlan=$($planImplementations[-1].Key), selected=$relatedImplementation)")
+            }
+        }
+        foreach ($relatedRemediation in @($auditInfo.RelatedRemediations)) {
+            if ($remediationMetadata.ContainsKey($relatedRemediation) -and
+                $auditInfo.IndependenceBasis -eq 'separate-auditor' -and
+                $auditInfo.Auditor -eq $remediationMetadata[$relatedRemediation].Implementer) {
+                $failures.Add("Separate-auditor implementation acceptance must differ from related remediation implementers: $($auditInfo.Path) ($relatedRemediation)")
             }
         }
         foreach ($relatedPlan in @($auditInfo.RelatedPlans)) {
             $currentAuditId = [regex]::Match($auditInfo.Path, '(AUD-\d{4})').Groups[1].Value
             $currentAuditNumber = Get-AuditNumber $currentAuditId
             $matchingPlanAcceptances = @($auditMetadata.GetEnumerator() | Where-Object {
-                $_.Value.Schema -eq 'plan-acceptance/v1' -and
+                $_.Value.Schema -eq 'plan-acceptance/v2' -and
                 $_.Value.Status -eq 'closed' -and
                 $_.Value.RelatedPlans -contains $relatedPlan -and
                 (Get-AuditNumber $_.Key) -lt $currentAuditNumber
@@ -1081,10 +1235,46 @@ foreach ($implementationInfo in $implementationMetadata.Values) {
             continue
         }
         $acceptanceInfo = $auditMetadata[$planAcceptanceAudit]
-        if ($acceptanceInfo.Schema -ne 'plan-acceptance/v1' -or
+        if ($acceptanceInfo.Schema -ne 'plan-acceptance/v2' -or
+            $acceptanceInfo.Status -ne 'closed' -or
             $acceptanceInfo.Verdict -ne 'ready' -or
             $acceptanceInfo.RelatedPlans -notcontains $implementationInfo.PlanId) {
             $failures.Add("Implementation plan acceptance audit is not the matching ready audit: $($implementationInfo.Path) ($planAcceptanceAudit)")
+        }
+        if ((Get-GitRevision $implementationInfo.PlanEvidenceRevision) -ne (Get-GitRevision $acceptanceInfo.EvidenceRevision)) {
+            $failures.Add("Implementation plan_evidence_revision must match its plan acceptance evidence_revision: $($implementationInfo.Path) ($planAcceptanceAudit)")
+        }
+        if ($docsRoot -eq (Join-Path $repoRoot 'docs') -and $planMetadata.ContainsKey($implementationInfo.PlanId)) {
+            $planEvidenceSha = Get-GitRevision $implementationInfo.PlanEvidenceRevision
+            $implementationBaselineSha = Get-GitRevision $implementationInfo.Baseline
+            if ($null -ne $planEvidenceSha -and $null -ne $implementationBaselineSha -and
+                (Test-GitCommitExists $planEvidenceSha) -and (Test-GitCommitExists $implementationBaselineSha)) {
+                $planInfo = $planMetadata[$implementationInfo.PlanId]
+                $planPath = "docs/plans/$($planInfo.Stem).md"
+                $checklistPath = "docs/plans/$($planInfo.Stem)-checklist.md"
+                & git -C $repoRoot diff --quiet $planEvidenceSha $implementationBaselineSha -- $planPath $checklistPath
+                if ($LASTEXITCODE -eq 1) {
+                    $failures.Add("Implementation plan/checklist drifted after readiness acceptance: $($implementationInfo.Path) ($planAcceptanceAudit)")
+                } elseif ($LASTEXITCODE -ne 0) {
+                    $failures.Add("Implementation plan drift comparison failed: $($implementationInfo.Path) ($planAcceptanceAudit)")
+                }
+            }
+        }
+        $implementationStartedAt = ConvertTo-DateTimeOffsetOrNull $implementationInfo.StartedAt
+        if ($null -eq $implementationStartedAt) {
+            $failures.Add("Implementation must record a parseable started_at: $($implementationInfo.Path)")
+        } else {
+            $eligiblePlanAcceptances = @($auditMetadata.GetEnumerator() | Where-Object {
+                $_.Value.Schema -eq 'plan-acceptance/v2' -and
+                $_.Value.Status -eq 'closed' -and
+                $_.Value.RelatedPlans -contains $implementationInfo.PlanId -and
+                $null -ne (ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt) -and
+                (ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt) -le $implementationStartedAt
+            } | Sort-Object { ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt }, { Get-AuditNumber $_.Key })
+            if ($eligiblePlanAcceptances.Count -eq 0 -or $eligiblePlanAcceptances[-1].Key -ne $planAcceptanceAudit) {
+                $latestEligible = if ($eligiblePlanAcceptances.Count -gt 0) { $eligiblePlanAcceptances[-1].Key } else { 'none' }
+                $failures.Add("Implementation must reference the latest plan acceptance available when it started: $($implementationInfo.Path) (expected=$latestEligible, found=$planAcceptanceAudit)")
+            }
         }
     }
 }
@@ -1093,6 +1283,11 @@ foreach ($remediationInfo in $remediationMetadata.Values) {
     foreach ($sourceAudit in @($remediationInfo.SourceAudits)) {
         if (-not $auditMetadata.ContainsKey($sourceAudit)) {
             $failures.Add("Remediation references a missing source audit: $($remediationInfo.Path) ($sourceAudit)")
+        }
+    }
+    foreach ($relatedImplementation in @($remediationInfo.RelatedImplementations)) {
+        if (-not $implementationMetadata.ContainsKey($relatedImplementation)) {
+            $failures.Add("Remediation references a missing implementation: $($remediationInfo.Path) ($relatedImplementation)")
         }
     }
 }
@@ -1191,7 +1386,7 @@ if ($auditRecords.Count -gt 0) {
                 $failures.Add("Audit index status is missing or inconsistent: $($entry.Key)")
             } else {
                 $auditInfo = $auditMetadata[$auditIdForEntry]
-                if ($null -ne $auditInfo -and $auditInfo.Schema -in @('plan-acceptance/v1', 'implementation-acceptance/v1')) {
+                if ($null -ne $auditInfo -and $auditInfo.Schema -in @('plan-acceptance/v2', 'implementation-acceptance/v2')) {
                     $expectedRemediation = if ($auditInfo.Verdict -eq 'pending') { 'pending' } elseif ($auditInfo.Verdict -in @('ready', 'complete')) { 'none' } else { 'required' }
                     if ($indexLine -notmatch ('remediation=' + [regex]::Escape($expectedRemediation) + '\b')) {
                         $failures.Add("Acceptance audit index remediation does not match verdict: $($entry.Key) (expected $expectedRemediation)")
@@ -1216,6 +1411,11 @@ if ($remediationRecords.Count -gt 0) {
                 continue
             }
             $indexLine = $indexLines[0].Value
+            $remediationIdForEntry = [regex]::Match($entry.Key, '^(REM-\d{4})-').Groups[1].Value
+            $verificationStateMatch = [regex]::Match($indexLine, 'verification=(?<state>not-ready|pending|verified-by:AUD-\d{4}|partial-by:AUD-\d{4}|failed-by:AUD-\d{4})')
+            if ($verificationStateMatch.Success) {
+                $remediationVerificationStates[$remediationIdForEntry] = $verificationStateMatch.Groups['state'].Value
+            }
             if ($indexLine -notmatch ('status=' + [regex]::Escape($entry.Value)) -or
                 $indexLine -notmatch 'verification=(not-ready|pending|verified-by:AUD-\d{4}|partial-by:AUD-\d{4}|failed-by:AUD-\d{4})') {
                 $failures.Add("Remediation index status is missing or inconsistent: $($entry.Key)")
@@ -1252,6 +1452,13 @@ if ($implementationRecords.Count -gt 0) {
                         $auditMetadata[$implementationAuditId].RelatedImplementations -notcontains $implementationIdForEntry) {
                         $failures.Add("Implementation audit index references a non-matching audit: $($entry.Key) ($implementationAuditId)")
                     }
+                    $matchingImplementationAudits = @($auditMetadata.GetEnumerator() | Where-Object {
+                        $_.Value.Schema -eq 'implementation-audit/v1' -and
+                        $_.Value.RelatedImplementations -contains $implementationIdForEntry
+                    } | Sort-Object { Get-AuditNumber $_.Key })
+                    if ($matchingImplementationAudits.Count -gt 0 -and $matchingImplementationAudits[-1].Key -ne $implementationAuditId) {
+                        $failures.Add("Implementation index must reference the latest implementation audit: $($entry.Key) (expected=$($matchingImplementationAudits[-1].Key))")
+                    }
                 }
                 $acceptanceMatch = [regex]::Match($indexLine, 'acceptance=(?<state>accepted-by|rejected-by):(?<audit>AUD-\d{4})')
                 if ($acceptanceMatch.Success) {
@@ -1260,13 +1467,20 @@ if ($implementationRecords.Count -gt 0) {
                     }
                     $acceptanceAuditId = $acceptanceMatch.Groups['audit'].Value
                     if (-not $auditMetadata.ContainsKey($acceptanceAuditId) -or
-                        $auditMetadata[$acceptanceAuditId].Schema -ne 'implementation-acceptance/v1' -or
+                        $auditMetadata[$acceptanceAuditId].Schema -ne 'implementation-acceptance/v2' -or
                         $auditMetadata[$acceptanceAuditId].RelatedImplementations -notcontains $implementationIdForEntry) {
                         $failures.Add("Implementation acceptance index references a non-matching audit: $($entry.Key) ($acceptanceAuditId)")
                     } else {
                         $expectedState = if ($auditMetadata[$acceptanceAuditId].Verdict -eq 'complete') { 'accepted-by' } else { 'rejected-by' }
                         if ($acceptanceMatch.Groups['state'].Value -ne $expectedState) {
                             $failures.Add("Implementation acceptance index state does not match audit verdict: $($entry.Key)")
+                        }
+                        $matchingImplementationAcceptances = @($auditMetadata.GetEnumerator() | Where-Object {
+                            $_.Value.Schema -eq 'implementation-acceptance/v2' -and
+                            $_.Value.RelatedImplementations -contains $implementationIdForEntry
+                        } | Sort-Object { Get-AuditNumber $_.Key })
+                        if ($matchingImplementationAcceptances.Count -gt 0 -and $matchingImplementationAcceptances[-1].Key -ne $acceptanceAuditId) {
+                            $failures.Add("Implementation index must reference the latest completion acceptance: $($entry.Key) (expected=$($matchingImplementationAcceptances[-1].Key))")
                         }
                     }
                 }
@@ -1275,8 +1489,161 @@ if ($implementationRecords.Count -gt 0) {
     }
 }
 
+foreach ($auditStateEntry in $auditRemediationStates.GetEnumerator()) {
+    $sourceAuditId = $auditStateEntry.Key
+    $state = $auditStateEntry.Value
+    if ($state -match '^awaiting-verification:(?<remediation>REM-\d{4})$') {
+        $targetRemediation = $Matches['remediation']
+        if (-not $remediationMetadata.ContainsKey($targetRemediation)) {
+            $failures.Add("Audit remediation state references a missing remediation: $sourceAuditId ($targetRemediation)")
+            continue
+        }
+        if ($remediationMetadata[$targetRemediation].SourceAudits -notcontains $sourceAuditId) {
+            $failures.Add("Audit awaiting-verification target does not reference its source audit: $sourceAuditId ($targetRemediation)")
+        }
+        if (-not $remediationVerificationStates.ContainsKey($targetRemediation) -or
+            $remediationVerificationStates[$targetRemediation] -ne 'pending') {
+            $failures.Add("Audit awaiting-verification target must be pending verification: $sourceAuditId ($targetRemediation)")
+        }
+        continue
+    }
+    if ($state -match '^(?<transition>verified-by|continued-by):(?<audit>AUD-\d{4})$') {
+        $targetAuditId = $Matches['audit']
+        if (-not $auditMetadata.ContainsKey($targetAuditId)) {
+            $failures.Add("Audit remediation state references a missing follow-up audit: $sourceAuditId ($targetAuditId)")
+            continue
+        }
+        $targetAudit = $auditMetadata[$targetAuditId]
+        if ($targetAudit.AuditType -ne 'follow-up' -or $targetAudit.Status -ne 'closed') {
+            $failures.Add("Audit remediation transition must target a closed follow-up audit: $sourceAuditId ($targetAuditId)")
+        }
+        if ($targetAudit.RelatedAudits -notcontains $sourceAuditId) {
+            $failures.Add("Audit remediation transition target does not reference its source audit: $sourceAuditId ($targetAuditId)")
+        }
+        if ((Get-AuditNumber $targetAuditId) -le (Get-AuditNumber $sourceAuditId)) {
+            $failures.Add("Audit remediation transition must point to a newer audit: $sourceAuditId ($targetAuditId)")
+        }
+    }
+}
+
+foreach ($remediationStateEntry in $remediationVerificationStates.GetEnumerator()) {
+    $remediationId = $remediationStateEntry.Key
+    $state = $remediationStateEntry.Value
+    if (-not $remediationMetadata.ContainsKey($remediationId)) { continue }
+    $remediationInfo = $remediationMetadata[$remediationId]
+    if ($state -eq 'pending') {
+        if ($remediationInfo.Status -notin @('completed', 'partial')) {
+            $failures.Add("Pending remediation verification requires completed or partial status: $remediationId")
+        }
+        foreach ($sourceAudit in @($remediationInfo.SourceAudits)) {
+            $allowedSourceStates = if ($remediationInfo.Status -eq 'completed') {
+                @("awaiting-verification:$remediationId")
+            } else {
+                @("awaiting-verification:$remediationId", 'required')
+            }
+            if (-not $auditRemediationStates.ContainsKey($sourceAudit) -or
+                $auditRemediationStates[$sourceAudit] -notin $allowedSourceStates) {
+                $failures.Add("Pending remediation must remain attached to its source audit queue: $remediationId ($sourceAudit)")
+            }
+        }
+        continue
+    }
+    if ($state -match '^(?<verdict>verified-by|partial-by|failed-by):(?<audit>AUD-\d{4})$') {
+        $targetAuditId = $Matches['audit']
+        if (-not $auditMetadata.ContainsKey($targetAuditId)) {
+            $failures.Add("Remediation verification state references a missing follow-up audit: $remediationId ($targetAuditId)")
+            continue
+        }
+        $targetAudit = $auditMetadata[$targetAuditId]
+        if ($targetAudit.AuditType -ne 'follow-up' -or $targetAudit.Status -ne 'closed' -or
+            $targetAudit.RelatedRemediations -notcontains $remediationId) {
+            $failures.Add("Remediation verification transition must target its matching closed follow-up audit: $remediationId ($targetAuditId)")
+        }
+        if ($remediationInfo.Schema -eq 'remediation/v2' -and
+            (Get-GitRevision $targetAudit.Baseline) -ne (Get-GitRevision $remediationInfo.ResultRevision)) {
+            $failures.Add("Follow-up audit baseline must match remediation/v2 result_revision: $remediationId ($targetAuditId)")
+        }
+        if ($remediationInfo.AffectsImplementation) {
+            foreach ($relatedImplementation in @($remediationInfo.RelatedImplementations)) {
+                if ($targetAudit.RelatedImplementations -notcontains $relatedImplementation) {
+                    $failures.Add("Implementation remediation follow-up must preserve related_implementations: $remediationId ($targetAuditId/$relatedImplementation)")
+                }
+            }
+        }
+        foreach ($sourceAudit in @($remediationInfo.SourceAudits)) {
+            if (-not $auditRemediationStates.ContainsKey($sourceAudit) -or
+                $auditRemediationStates[$sourceAudit] -notin @("verified-by:$targetAuditId", "continued-by:$targetAuditId")) {
+                $failures.Add("Verified remediation source audit must transition through the same follow-up: $remediationId ($sourceAudit/$targetAuditId)")
+            }
+        }
+    }
+}
+
+foreach ($auditEntry in $auditMetadata.GetEnumerator()) {
+    $auditInfo = $auditEntry.Value
+    if ($auditInfo.Schema -ne 'implementation-acceptance/v2' -or
+        $auditInfo.RelatedImplementations.Count -ne 1) {
+        continue
+    }
+    $relatedImplementation = $auditInfo.RelatedImplementations[0]
+    if (-not $implementationMetadata.ContainsKey($relatedImplementation)) { continue }
+    $currentAcceptanceAuditId = $auditEntry.Key
+    $verifiedImplementationRemediations = @($remediationMetadata.GetEnumerator() | Where-Object {
+        $verificationState = if ($remediationVerificationStates.ContainsKey($_.Key)) { $remediationVerificationStates[$_.Key] } else { $null }
+        $verificationAuditId = if ($verificationState -match '^verified-by:(AUD-\d{4})$') { $Matches[1] } else { $null }
+        $_.Value.Schema -eq 'remediation/v2' -and
+        $_.Value.AffectsImplementation -and
+        $_.Value.RelatedImplementations -contains $relatedImplementation -and
+        $null -ne $verificationAuditId -and
+        (Get-AuditNumber $verificationAuditId) -lt (Get-AuditNumber $currentAcceptanceAuditId)
+    } | Sort-Object { Get-RemediationNumber $_.Key })
+    foreach ($verifiedRemediation in $verifiedImplementationRemediations) {
+        if ($auditInfo.RelatedRemediations -notcontains $verifiedRemediation.Key) {
+            $failures.Add("Implementation acceptance must include every verified implementation remediation: $($auditInfo.Path) ($($verifiedRemediation.Key))")
+        }
+        $verificationState = $remediationVerificationStates[$verifiedRemediation.Key]
+        $verificationAuditId = [regex]::Match($verificationState, 'AUD-\d{4}').Value
+        if ($auditInfo.RelatedAudits -notcontains $verificationAuditId) {
+            $failures.Add("Implementation acceptance must include each effective remediation follow-up audit: $($auditInfo.Path) ($verificationAuditId)")
+        }
+    }
+    $expectedEffectiveRevision = if ($verifiedImplementationRemediations.Count -gt 0) {
+        $verifiedImplementationRemediations[-1].Value.ResultRevision
+    } else {
+        $implementationMetadata[$relatedImplementation].ResultRevision
+    }
+    if ((Get-GitRevision $auditInfo.EffectiveResultRevision) -ne (Get-GitRevision $expectedEffectiveRevision)) {
+        $failures.Add("Implementation acceptance effective_result_revision does not match the IMP/REM chain: $($auditInfo.Path) (expected=$expectedEffectiveRevision)")
+    }
+}
+
+foreach ($auditEntry in $auditMetadata.GetEnumerator()) {
+    $auditInfo = $auditEntry.Value
+    if ($auditInfo.Schema -notin @('plan-acceptance/v2', 'implementation-acceptance/v2')) {
+        continue
+    }
+    $currentAuditNumber = Get-AuditNumber $auditEntry.Key
+    foreach ($remediationEntry in $remediationMetadata.GetEnumerator()) {
+        if (-not $remediationVerificationStates.ContainsKey($remediationEntry.Key)) { continue }
+        $verificationAuditId = [regex]::Match($remediationVerificationStates[$remediationEntry.Key], 'AUD-\d{4}').Value
+        if ([string]::IsNullOrWhiteSpace($verificationAuditId) -or
+            (Get-AuditNumber $verificationAuditId) -ge $currentAuditNumber) {
+            continue
+        }
+        $planRelated = @($remediationEntry.Value.RelatedPlans | Where-Object { $auditInfo.RelatedPlans -contains $_ }).Count -gt 0
+        $implementationRelated = @($remediationEntry.Value.RelatedImplementations | Where-Object { $auditInfo.RelatedImplementations -contains $_ }).Count -gt 0
+        if (-not $planRelated -and -not $implementationRelated) { continue }
+        if ($auditInfo.RelatedRemediations -notcontains $remediationEntry.Key) {
+            $failures.Add("Acceptance audit must include every prior related remediation: $($auditInfo.Path) ($($remediationEntry.Key))")
+        }
+        if ($auditInfo.IndependenceBasis -eq 'separate-auditor' -and $auditInfo.Auditor -eq $remediationEntry.Value.Implementer) {
+            $failures.Add("Separate-auditor acceptance must differ from prior remediation implementers: $($auditInfo.Path) ($($remediationEntry.Key))")
+        }
+    }
+}
+
 foreach ($auditInfo in $auditMetadata.Values) {
-    if ($auditInfo.Schema -notin @('plan-acceptance/v1', 'implementation-acceptance/v1') -or
+    if ($auditInfo.Schema -notin @('plan-acceptance/v2', 'implementation-acceptance/v2') -or
         $auditInfo.Verdict -notin @('ready', 'complete')) {
         continue
     }
@@ -1293,20 +1660,21 @@ foreach ($auditInfo in $auditMetadata.Values) {
         if ($relatedRemediationState -in @('pending', 'required') -or $relatedRemediationState -like 'awaiting-verification:*') {
             $failures.Add("Successful acceptance requires a clean related audit chain: $($auditInfo.Path) ($relatedAudit=$relatedRemediationState)")
         }
+        if ($relatedRemediationState -match '^(?:verified-by|continued-by):(?<audit>AUD-\d{4})$') {
+            $acceptanceAuditId = [regex]::Match($auditInfo.Path, '(AUD-\d{4})').Groups[1].Value
+            if ((Get-AuditNumber $Matches['audit']) -ge (Get-AuditNumber $acceptanceAuditId)) {
+                $failures.Add("Successful acceptance cannot rely on a later audit transition: $($auditInfo.Path) ($relatedAudit=$relatedRemediationState)")
+            }
+        }
     }
 }
 
 foreach ($auditEntry in $auditMetadata.GetEnumerator()) {
     $auditId = $auditEntry.Key
     $auditInfo = $auditEntry.Value
-    if ($auditInfo.Schema -notin @('plan-acceptance/v1', 'implementation-acceptance/v1') -or
+    if ($auditInfo.Schema -notin @('plan-acceptance/v2', 'implementation-acceptance/v2') -or
         $auditInfo.Verdict -notin @('ready', 'complete')) {
         continue
-    }
-    foreach ($relatedPlan in @($auditInfo.RelatedPlans)) {
-        if ($planMetadata.ContainsKey($relatedPlan) -and $planMetadata[$relatedPlan].Status -ne 'active') {
-            $failures.Add("Successful acceptance requires an active unarchived plan: $($auditInfo.Path) ($relatedPlan)")
-        }
     }
     $currentAuditNumber = Get-AuditNumber $auditId
     foreach ($candidateEntry in $auditMetadata.GetEnumerator()) {
@@ -1326,6 +1694,10 @@ foreach ($auditEntry in $auditMetadata.GetEnumerator()) {
         $state = $auditRemediationStates[$candidateEntry.Key]
         if ($state -in @('pending', 'required') -or $state -like 'awaiting-verification:*') {
             $failures.Add("Successful acceptance cannot bypass a dirty derived audit chain: $($auditInfo.Path) ($($candidateEntry.Key)=$state)")
+        }
+        if ($state -match '^(?:verified-by|continued-by):(?<audit>AUD-\d{4})$' -and
+            (Get-AuditNumber $Matches['audit']) -ge $currentAuditNumber) {
+            $failures.Add("Successful acceptance cannot derive cleanliness from a later audit: $($auditInfo.Path) ($($candidateEntry.Key)=$state)")
         }
     }
 }
@@ -1418,6 +1790,14 @@ if ($docsRoot -eq $repositoryDocsRoot) {
                  $promptContent -notmatch 'acceptance-chain-contract:\s*derived-index-chain;\s*evidence-run-id;\s*baseline-equals-evidence')) {
                 $failures.Add("Acceptance prompt must define independence and evidence revision requirements: $promptName")
             }
+            if ($promptName -eq 'backend-plan-acceptance-audit' -and $promptContent -notmatch 'audit_schema:\s*plan-acceptance/v2') {
+                $failures.Add('Plan acceptance prompt must use the single-plan plan-acceptance/v2 schema')
+            }
+            if ($promptName -eq 'backend-implementation-acceptance-audit' -and
+                ($promptContent -notmatch 'audit_schema:\s*implementation-acceptance/v2' -or
+                 $promptContent -notmatch 'effective_result_revision')) {
+                $failures.Add('Implementation acceptance prompt must use v2 effective revision semantics')
+            }
             if ($promptName -eq 'backend-plan-acceptance-audit' -and $promptContent -notmatch 'PLAN_AUDIT_CHAIN_CLEAN') {
                 $failures.Add('Plan acceptance prompt must require a clean plan audit chain')
             }
@@ -1463,7 +1843,7 @@ if ($docsRoot -eq $repositoryDocsRoot) {
 
     $orchestrators = @{
         'backend-plan-audit-until-ready' = @('backend-plan-audit', 'backend-fix-audit-findings', 'backend-follow-up-audit', 'backend-plan-acceptance-audit')
-        'backend-implement-audit-until-complete' = @('backend-plan-acceptance-audit', 'backend-implement-plan', 'backend-implementation-audit', 'backend-fix-audit-findings', 'backend-follow-up-audit', 'backend-implementation-acceptance-audit')
+        'backend-implement-audit-until-complete' = @('backend-plan-acceptance-audit', 'backend-plan-audit-until-ready', 'backend-implement-plan', 'backend-implementation-audit', 'backend-fix-audit-findings', 'backend-follow-up-audit', 'backend-implementation-acceptance-audit')
     }
     foreach ($orchestratorName in $orchestrators.Keys) {
         $orchestratorSkillPath = Join-Path $repoRoot ".agents/skills/$orchestratorName/SKILL.md"

@@ -17,9 +17,11 @@
 4. `status=completed`：计划范围已实施且本地 Evidence 齐全；`audit=pending`；`acceptance=pending`。
 5. `status=partial` 或 `status=blocked`：必须逐项记录未完成内容、阻断原因和恢复条件；不得进入完成验收。
 6. 实施审计完成后，索引写 `audit=audited-by:AUD-NNNN`；整改和复审仍以 `docs/audits/` 与 `docs/remediations/` 为准。
-7. 完成验收必须从索引派生完整计划与实施审计链，引用最新 ready 计划验收和最新实施审计，重新检查 IMP result revision，并在与 baseline 相同的干净 evidence revision 上生成唯一 `evidence_run_id`；通过后索引写 `acceptance=accepted-by:AUD-NNNN`，失败或阻断写 `acceptance=rejected-by:AUD-NNNN`。计划不会自动归档。
+7. 完成验收必须为每个计划分别创建 AUD，从索引派生完整计划与实施审计链，且只能验收该计划最新 IMP。没有影响实施结果的 REM 时，`effective_result_revision` 等于 IMP `result_revision`；存在已验证的 `affects_implementation: true` REM 时，等于最新相关 REM 的 `result_revision`。验收的 baseline/evidence revision 必须等于该 effective revision；通过后索引写 `acceptance=accepted-by:AUD-NNNN`，失败或阻断写 `acceptance=rejected-by:AUD-NNNN`。计划不会自动归档。
 
-`completed`、`partial`、`blocked` 的 IMP 记录不可改写。发现实施缺陷时创建 REM 或新的 IMP；不得通过改写历史 IMP 伪造闭环完成。
+`completed`、`partial`、`blocked` 的 IMP 记录不可改写。针对已完成 IMP 的窄范围整改由 REM 记录新的 `result_revision` 并进入 effective revision 链；需要重新执行计划工作包、改变计划范围或无法由原 finding 限定的工作必须创建新的 IMP。不得通过改写历史 IMP 或遗漏 REM 伪造闭环完成。
+
+新实施记录固定使用 `implementation_schema: implementation/v2`，并记录 `plan_evidence_revision`，其值必须等于实施开始时引用的最新 ready `plan-acceptance/v2` 的 `evidence_revision`。这用于区分“计划验收后的治理记录提交”与真正的 plan/checklist 内容漂移。
 
 ## 必需内容
 

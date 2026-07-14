@@ -1,11 +1,15 @@
 ---
 status: in-progress
+remediation_schema: remediation/v2
 remediation_id: REM-NNNN
 implementer: implementer-name
 scope: audit:AUD-NNNN
 source_audits: AUD-NNNN
 source_findings: AUD-NNNN-F001
 baseline: git:full-commit-sha; worktree:clean
+result_revision: pending
+affects_implementation: false
+related_implementations: none
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD

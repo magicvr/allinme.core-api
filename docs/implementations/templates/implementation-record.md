@@ -1,10 +1,12 @@
 ---
 status: in-progress
+implementation_schema: implementation/v2
 implementation_id: IMP-NNNN
 implementer: implementer-name
 scope: plan:PLN-NNNN
 related_plans: PLN-NNNN
 plan_acceptance_audits: AUD-NNNN
+plan_evidence_revision: git:full-commit-sha
 baseline: git:full-commit-sha; worktree:clean
 result_revision: pending
 started_at: YYYY-MM-DDTHH:MM:SS+08:00

@@ -1,17 +1,19 @@
 ---
 status: open
-audit_schema: implementation-acceptance/v1
+audit_schema: implementation-acceptance/v2
 audit_id: AUD-NNNN
 auditor: auditor-name-and-version
 audit_type: acceptance
 acceptance_type: implementation-completion
 acceptance_verdict: pending
+plan_status_at_acceptance: active
 independence_basis: separate-auditor
 scope: plan:PLN-NNNN
 subject: implementation completion acceptance
 baseline: git:full-commit-sha; worktree:clean
 evidence_revision: git:full-commit-sha; worktree:clean
 evidence_run_id: 00000000-0000-4000-8000-000000000000
+effective_result_revision: git:full-commit-sha
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD
@@ -32,7 +34,7 @@ related_plans: PLN-NNNN
 
 | Control | Evidence | Verdict | Finding |
 |---|---|---|---|
-| IMP_PRESENT | 具体证据 | pass/fail | none 或 AUD-NNNN-F001 |
+| IMP_PRESENT | 最新 IMP 与 IMP/REM effective revision 链证据 | pass/fail | none 或 AUD-NNNN-F001 |
 | SCOPE_COMPLETE | 具体证据 | pass/fail | none 或 finding |
 | CHECKLIST_COMPLETE | 具体证据 | pass/fail | none 或 finding |
 | VALIDATION_GATES | 具体证据 | pass/fail | none 或 finding |

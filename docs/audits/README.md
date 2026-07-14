@@ -28,8 +28,8 @@ related_plans: PLN-0005
 - `scope` 写精确对象，例如 `repository:allinme.core-api`、`plan:PLN-0005`、`feature:attachment-lifecycle`。
 - 审计者身份以 frontmatter 为准，文件名只保存便于检索的 slug。
 - 新计划审计必须使用 `audit_schema: plan-audit/v2` 和 [`templates/plan-audit-record.md`](./templates/plan-audit-record.md)。每个相关计划必须有独立的 Checklist 审计矩阵、plan/checklist 双链接和六项固定 Control；缺失时不得关闭。
-- 计划实施就绪验收使用 `audit_schema: plan-acceptance/v1`；实施审计使用 `audit_schema: implementation-audit/v1`；实施完成验收使用 `audit_schema: implementation-acceptance/v1`。三者都必须独立创建 AUD，不得把结论写回 IMP 或旧审计正文。
-- 两类验收 AUD 必须记录 `independence_basis`、完整 SHA 的干净 `evidence_revision` 和全局唯一 UUIDv4 `evidence_run_id`；`baseline` 必须与 `evidence_revision` 相同。验收链必须从索引按 PLN/IMP 派生，`related_audits` 至少包含最新计划审计或实施审计、最新计划验收及终端 follow-up，不得通过漏列较新的脏记录制造干净链条。`ready`/`complete` 必须与全部矩阵 Control、AUD 索引 remediation 状态及 IMP acceptance 状态一致；计划就绪还必须通过 `PLAN_AUDIT_CHAIN_CLEAN`，实施完成必须同时清理计划和实施审计链。
+- 计划实施就绪验收使用 `audit_schema: plan-acceptance/v2`；实施审计使用 `audit_schema: implementation-audit/v1`；实施完成验收使用 `audit_schema: implementation-acceptance/v2`。两类验收严格一计划一 AUD；多目标调用必须拆分记录。三者都必须独立创建 AUD，不得把结论写回 IMP 或旧审计正文。
+- 两类验收 AUD 必须记录 `plan_status_at_acceptance: active`、`independence_basis`、完整 SHA 的干净 `evidence_revision` 和全局唯一 UUIDv4 `evidence_run_id`；`baseline` 必须与 `evidence_revision` 相同。状态快照保证计划后来归档时历史验收仍有效。这里的 revision 是开始写治理记录前的 subject commit，AUD 与索引自身的变更不属于被验收对象。验收链必须从索引按 PLN/IMP 派生，所有状态引用必须指向真实且关系匹配的 REM/follow-up AUD。`ready`/`complete` 必须与全部矩阵 Control、AUD 索引 remediation 状态及 IMP acceptance 状态一致；实施完成还必须记录由最新 IMP 和已验证实施 REM 派生的 `effective_result_revision`。
 
 ## 记录和追溯原则
 
@@ -43,7 +43,7 @@ related_plans: PLN-0005
 
 ## 当前索引
 
-- [`AUD-0009`](./records/AUD-0009-20260714-codex-follow-up-rem-0005-active-audits.md)：`status=closed`；`remediation=required`；`scope=follow-up:REM-0005`；AUD-0008 的两项 parser finding 已验证，AUD-0007 的 WP-Facts exact-output gap 仍需整改。
+- [`AUD-0009`](./records/AUD-0009-20260714-codex-follow-up-rem-0005-active-audits.md)：`status=closed`；`remediation=awaiting-verification:REM-0006`；`scope=follow-up:REM-0005`；AUD-0008 的两项 parser finding 已验证，AUD-0007 的 WP-Facts exact-output gap 已由 REM-0006 整改，等待独立复审。
 - [`AUD-0008`](./records/AUD-0008-20260714-codex-follow-up-rem-0004-contract-clause-parsers.md)：`status=closed`；`remediation=verified-by:AUD-0009`；`scope=follow-up:REM-0004`；REM-0005 的 clause deferral mask、整行 rejection 豁免和未识别关系词已通过独立复审。
 - [`AUD-0007`](./records/AUD-0007-20260714-codex-plan-pln-0005-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=continued-by:AUD-0009`；`scope=plan:PLN-0005`；WP-Facts 五份强制事实源已验证，但 exact-output allowlist 仍需整改。
 - [`AUD-0006`](./records/AUD-0006-20260714-codex-follow-up-rem-0003-contract-validators.md)：`status=closed`；`remediation=continued-by:AUD-0008`；`scope=follow-up:REM-0003`；五个精确复现已修正，但剩余 parser 绕过已转入新的 follow-up audit。
@@ -91,7 +91,7 @@ $backend-plan-audit TARGET="PLN-0005,PLN-0006" FOCUS=recovery
 ```
 
 - 计划审计的 `TARGET` 缺省为 `active`，也可指定一个或多个 `PLN` ID；它只证明选中计划的质量，不代表全仓审计。
-- 计划和实施验收的 `TARGET` 缺省为全部活跃且未归档计划；验收必须独立读取计划、IMP、代码、测试和 Evidence，并在干净的不可变 evidence revision 上关闭。
+- 计划和实施验收的 `TARGET` 缺省为全部活跃且未归档计划；批量调用按计划分别创建 AUD。验收必须独立读取计划、IMP、代码、测试和 Evidence，并针对开始写治理记录前的干净不可变 subject revision 关闭。
 - 实施审计只接受 completed IMP；实施闭环不能绕过计划可实施验收，也不能自动归档计划。
 - 两个闭环 skill 必须把规范化后的同一 `TARGET` 传递给每个子 skill；整改和复审只能选择该目标集合关联的 AUD/REM，不得回退到默认全量队列。
 - 审计提示词只生成审计记录，不直接整改。整改必须生成独立 [`REM`](../remediations/README.md)，复审再生成新的 follow-up `AUD`。

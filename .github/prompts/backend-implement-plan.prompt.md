@@ -19,7 +19,7 @@ agent: agent
 
 1. 检查分支、工作树、HEAD 完整 SHA、计划验收结果、用户已有改动和实施依赖。
 2. 先读取该计划全部 IMP：若存在 `status: in-progress` 的唯一记录则恢复该记录；若最新记录为 `completed`，除非失败验收或 follow-up 明确要求新的实施尝试，否则停止并交回审计/验收闭环；若需要新尝试，使用 `docs/tools/reserve-governance-record.ps1 -Kind IMP -Suffix <YYYYMMDD-implementer-plan-plan-id-subject>` 原子分配 ID 并预留 `IMP-NNNN-YYYYMMDD-<implementer>-plan-<plan-id-subject>.md`，必须采用命令返回的 ID 和路径。
-3. 使用 `docs/implementations/templates/implementation-record.md`，先写 `status: in-progress`、固定 baseline、`started_at`、`related_plans`，并立即更新 `docs/implementations/README.md` 索引。
+3. 使用 `docs/implementations/templates/implementation-record.md`，固定 `implementation_schema: implementation/v2`，先写 `status: in-progress`、固定 baseline、`started_at`、`related_plans`，并把最新 ready 计划验收的 `evidence_revision` 写入 `plan_evidence_revision`。若该验收之后 plan/checklist 内容发生漂移，必须停止并重新进行计划审计闭环。立即更新 `docs/implementations/README.md` 索引。
 4. 创建 IMP 和索引后才能修改产品代码、测试、计划、checklist 或工具配置。
 
 ## 3. 实施纪律

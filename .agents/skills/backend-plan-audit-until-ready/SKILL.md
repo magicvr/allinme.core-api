@@ -24,7 +24,7 @@ description: Orchestrate plan audit, remediation, follow-up verification, and in
 2. 将 `TARGET` 解析为不可变的计划 ID 集合，并根据索引识别当前阶段；已有待整改 AUD 或待复审 REM 时先恢复该队列，不得每轮无条件创建新的计划审计。
 3. 从索引派生该计划集合当前全部 `remediation=required` AUD，包括计划审计、follow-up 和先前失败的计划验收 AUD；调用 `$backend-fix-audit-findings TARGET=<AUD 列表>`，再对这些 AUD 已有或新产生且 `verification=pending` 的 REM 调用 `$backend-follow-up-audit TARGET=<REM 列表>`。
 4. 仅当某计划在当前 revision 上不存在已关闭的 `plan-audit/v2`，或上次审计后 plan/checklist/事实源发生漂移时，调用 `$backend-plan-audit TARGET=<计划列表>`；新审计产生 finding 时返回步骤 3。已有当前且链条干净的计划不得重复审计制造记录噪音。
-5. 审计链干净后调用 `$backend-plan-acceptance-audit TARGET=<同一计划集合>`；禁止回退到子 skill 的默认全量范围。
+5. 审计链干净后，对不可变集合中的每个计划分别调用 `$backend-plan-acceptance-audit TARGET=<单一计划>`；禁止回退到子 skill 的默认全量范围或用一个验收 AUD 合并多个计划。
 6. 验收为 `ready` 时完成；验收产生 finding 时，以该验收 AUD 进入下一整改/复审周期，并在复审后重新执行独立验收，不重复创建计划审计，除非整改改变了计划 revision。一个 cycle 定义为一次“阶段解析、派生待处理队列、整改/复审、必要审计、验收”的完整尝试；只有队列状态、revision、finding 或 verdict 均未变化时才计为 stagnant cycle。
 
 ## 停止条件

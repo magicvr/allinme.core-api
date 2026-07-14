@@ -22,7 +22,7 @@ agent: agent
 1. 检查分支、工作树、当前 HEAD 完整 SHA、REM baseline、实现 revision 和用户已有改动。
 2. 完整读取 REM、全部 source audits/findings、相关 plans、事实源、代码变更和测试证据。
 3. 使用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-follow-up-remediation-id-subject>` 原子分配 ID 并预留 `AUD-NNNN-YYYYMMDD-<auditor>-follow-up-<remediation-id-subject>.md`，必须采用命令返回的 ID 和路径。
-4. frontmatter 使用 `audit_type: follow-up`、`scope: follow-up:REM-NNNN`、`related_audits` 指向源审计、`related_remediations` 指向 REM、`related_plans` 指向相关计划，并固定当前复审 baseline。
+4. frontmatter 使用 `audit_type: follow-up`、`scope: follow-up:REM-NNNN`、`related_audits` 指向源审计、`related_remediations` 指向 REM、`related_plans` 指向相关计划；REM 涉及实施时还必须透传 `related_implementations`。固定当前复审 baseline，并验证它与 REM `result_revision` 的关系。
 5. 在同一次文件变更中加入 `docs/audits/README.md` 索引，初始写 `status=open`、`remediation=pending`。未索引视为创建失败。
 
 ## 3. 独立复核
@@ -39,6 +39,7 @@ agent: agent
 3. 运行 REM 声明的验证，并增加足以推翻整改结论的独立测试或检查。
 4. 区分 `resolved`、`partially-resolved`、`open`、`not-reproduced` 和 `accepted-risk`；说明 baseline 或环境差异。
 5. 发现与整改无关的新问题时，在 follow-up AUD 中创建新的 finding，但不得修改原审计编号或正文。
+6. `affects_implementation: true` 的 REM 只有在其 `result_revision` 可复现、验证通过且 follow-up 记录相同 `related_implementations` 时才能判定 resolved；该 revision 将成为完成验收 effective revision 的候选。
 
 ## 4. 结果与索引流转
 
