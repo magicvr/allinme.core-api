@@ -530,7 +530,20 @@ if (-not [string]::IsNullOrEmpty($hostStatusBefore)) {
 }
 
 $runId = $EvidenceRunId.ToLowerInvariant()
-$artifactDirectory = Join-Path $repoRoot (Join-Path 'docs\evidence\runs' $runId)
+$evidenceRoot = Join-Path $repoRoot 'docs\evidence'
+$runsRoot = Join-Path $evidenceRoot 'runs'
+foreach ($directory in @($evidenceRoot, $runsRoot)) {
+    if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+        [void][IO.Directory]::CreateDirectory($directory)
+    }
+    $directoryItem = Get-Item -LiteralPath $directory -Force
+    if (($directoryItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+        -not [string]::IsNullOrWhiteSpace($directoryItem.LinkType) -or
+        $directoryItem.FullName -ne [IO.Path]::GetFullPath($directory)) {
+        throw "Evidence output directory must be an in-repository regular directory: $directory"
+    }
+}
+$artifactDirectory = Join-Path $runsRoot $runId
 $artifactPath = Join-Path $artifactDirectory 'evidence.json'
 if (Test-Path -LiteralPath $artifactDirectory) {
     throw "Evidence run ID already exists and is immutable: $runId"
@@ -540,7 +553,7 @@ $argv = @($Command) + @($CommandArgs)
 $argvJson = ConvertTo-Json -Compress -InputObject @($argv)
 $argvBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($argvJson))
 $startedAt = [DateTimeOffset]::UtcNow
-$containerName = "allinme-evidence-$($runId.Replace('-', ''))"
+$containerName = "allinme-evidence-$($runId.Replace('-', ''))-$([guid]::NewGuid().ToString('N'))"
 $statusMarker = "__ALLINME_EVIDENCE_STATUS_$($runId.Replace('-', '').ToUpperInvariant())__="
 $snapshotRoot = $null
 $snapshotArchiveSha256 = $null
@@ -549,6 +562,7 @@ $snapshotManifestEntries = [long]0
 $snapshotContentBytes = [long]0
 $imageId = $null
 $preflightComplete = $false
+$containerCleaned = $false
 
 $writeFailure = {
     param(
@@ -839,6 +853,7 @@ exit "$subject_exit"
 
     $containerResult = Invoke-NativeCapture -FilePath $dockerExecutable -Arguments $dockerArguments -WallClockTimeoutSeconds $TimeoutSeconds -OutputLimitBytes $MaxOutputBytes
     $cleanup = Remove-EvidenceContainer -DockerPath $dockerExecutable -Name $containerName
+    $containerCleaned = $true
     if (-not $cleanup.Succeeded) {
         & $writeFailure 'container-cleanup-failed' "Evidence container cleanup could not be proven: $($cleanup.Message)" $true $containerResult $true
     }
@@ -961,5 +976,8 @@ exit "$subject_exit"
     }
     throw
 } finally {
+    if (-not $containerCleaned -and $null -ne $dockerExecutable -and -not [string]::IsNullOrWhiteSpace($containerName)) {
+        try { Remove-EvidenceContainer -DockerPath $dockerExecutable -Name $containerName | Out-Null } catch { }
+    }
     Remove-SnapshotDirectory $snapshotRoot
 }

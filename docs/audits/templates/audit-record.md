@@ -15,6 +15,7 @@ baseline: git:full-commit-sha; worktree:clean
 evidence_revision: git:full-commit-sha; worktree:clean
 evidence_worktree_revision: git:full-commit-sha
 evidence_runner: docs/tools/invoke-revision-evidence.ps1
+evidence_argv_json: ["go", "test", "./..."]
 evidence_run_id: 00000000-0000-4000-8000-000000000000
 evidence_artifact: docs/evidence/runs/00000000-0000-4000-8000-000000000000/evidence.json
 evidence_attestation: docs/evidence/runs/00000000-0000-4000-8000-000000000000/attestation.json

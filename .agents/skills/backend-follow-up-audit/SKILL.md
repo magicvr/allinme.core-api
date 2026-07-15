@@ -6,6 +6,7 @@ description: Verify pending or selected REM records in a separate execution cont
 # Follow-up Audit
 
 <!-- evidence-attestation-contract: external-signed-artifact; exact-run-revision-command-result-image; missing-trust-stops -->
+<!-- evidence-argv-contract: evidence_argv_json; strict-json-array; exact-artifact-and-signed-payload -->
 
 1. Resolve the repository root and read `.github/prompts/backend-follow-up-audit.prompt.md` completely before reviewing remediation work.
 2. Treat that prompt as the canonical workflow, including pending-target selection, independent tests, new follow-up AUD creation, and AUD/REM index transitions.

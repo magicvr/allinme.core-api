@@ -93,10 +93,44 @@ function Get-ListValues([string]$Value) {
     return @($Value.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
+function Get-IndexEntries([string]$Content) {
+    $entries = @{}
+    if ([string]::IsNullOrWhiteSpace($Content)) { return $entries }
+    foreach ($match in [regex]::Matches($Content, '(?m)^(?<line>.*\[(?<id>(?:AUD|REM|IMP)-\d{4,})\].*)$')) {
+        $entries[$match.Groups['id'].Value] = $match.Groups['line'].Value.Trim()
+    }
+    return $entries
+}
+
 $roots = @('docs/audits/records', 'docs/remediations/records', 'docs/implementations/records')
 $historyResult = Invoke-GitProbe (@('log', '--format=', '--name-only', "$baseRevision..$headRevision", '--') + $roots)
 if ($historyResult.ExitCode -ne 0) { throw 'Unable to inspect governance record history' }
 $historyPaths = @($historyResult.Output | Where-Object { $_ -match '^docs/(?:audits|remediations|implementations)/records/.+\.md$' } | Sort-Object -Unique)
+
+$primaryIndexes = @('docs/audits/README.md', 'docs/remediations/README.md', 'docs/implementations/README.md')
+$indexHistoryResult = Invoke-GitProbe (@('rev-list', '--reverse', "$baseRevision..$headRevision", '--') + $primaryIndexes)
+if ($indexHistoryResult.ExitCode -ne 0) { throw 'Unable to inspect governance index history' }
+foreach ($indexCommit in @($indexHistoryResult.Output | Where-Object { $_ })) {
+    $indexCommit = $indexCommit.Trim()
+    $commitPaths = @(Get-CommitPaths $indexCommit)
+    $changedRecordIds = @($commitPaths | ForEach-Object {
+        $recordMatch = [regex]::Match($_, '^docs/(?:audits|remediations|implementations)/records/(?<id>(?:AUD|REM|IMP)-\d{4,})-')
+        if ($recordMatch.Success) { $recordMatch.Groups['id'].Value }
+    } | Sort-Object -Unique)
+    $parentResult = Invoke-GitProbe @('rev-parse', '--verify', "$indexCommit`^1")
+    if ($parentResult.ExitCode -ne 0 -or $parentResult.Output.Count -eq 0) { continue }
+    $parentCommit = @($parentResult.Output | Select-Object -First 1)[0].Trim()
+    foreach ($indexPath in @($commitPaths | Where-Object { $_ -in $primaryIndexes })) {
+        $beforeEntries = Get-IndexEntries (Get-ContentAtRevision $parentCommit $indexPath)
+        $afterEntries = Get-IndexEntries (Get-ContentAtRevision $indexCommit $indexPath)
+        $entryIds = @(@($beforeEntries.Keys) + @($afterEntries.Keys) | Sort-Object -Unique)
+        foreach ($entryId in $entryIds) {
+            if ([string]$beforeEntries[$entryId] -cne [string]$afterEntries[$entryId] -and $entryId -notin $changedRecordIds) {
+                $failures.Add("Governance index entry changed without its record in the same transaction: $indexPath ($entryId; $indexCommit)")
+            }
+        }
+    }
+}
 
 # Attestation files can change without touching their records, so record-path history
 # alone is insufficient. Pin every pre-existing record's runtime attestation blob
@@ -182,6 +216,19 @@ foreach ($path in $historyPaths) {
     if ($isNewRecord -and $pathCommits[0] -ne $openCommit) {
         $failures.Add("New governance record must be created in its open state: $path")
     }
+    $openParentResult = Invoke-GitProbe @('rev-parse', '--verify', "$openCommit`^1")
+    if ((Get-Field $openContent 'governance_contract') -eq 'audit-loop/v3' -and
+        $openParentResult.ExitCode -eq 0 -and $openParentResult.Output.Count -gt 0) {
+        $openParent = @($openParentResult.Output | Select-Object -First 1)[0].Trim().ToLowerInvariant()
+        $baselineValue = Get-Field $openContent 'baseline'
+        if ($baselineValue -notmatch '^git:(?<sha>[0-9a-fA-F]{40});\s*worktree:clean$' -or
+            $Matches['sha'].ToLowerInvariant() -ne $openParent) {
+            $failures.Add("Open governance record baseline must equal its transaction parent: $path ($openParent)")
+        }
+        if ($isNewRecord -and -not (Test-Ancestor $baseRevision $openParent)) {
+            $failures.Add("New governance record open checkpoint must descend from HistoryBase: $path ($baseRevision)")
+        }
+    }
     $openPaths = @(Get-CommitPaths $openCommit)
     if ($openPaths -notcontains $path -or $openPaths -notcontains $primaryIndex) {
         $failures.Add("Open checkpoint must atomically include record and primary index: $path ($openCommit)")
@@ -214,7 +261,7 @@ foreach ($path in $historyPaths) {
             $candidateContent = Get-ContentAtRevision $openCommit $candidatePath
             if ((Get-Field $candidateContent 'status') -eq 'superseded' -and
                 (Get-Field $candidateContent 'superseded_by') -eq $openRecordId -and
-                (Get-Field $candidateContent 'supersession_reason') -eq 'context-loss') {
+                (Get-Field $candidateContent 'supersession_reason') -in @('context-loss', 'baseline-drift')) {
                 $allowedOpenPaths += $candidatePath
             }
         }
@@ -321,6 +368,21 @@ foreach ($path in $historyPaths) {
         }
 
         if ($kind -eq 'AUD') {
+            $intermediateResult = Invoke-GitProbe @('rev-list', '--reverse', "$openCommit..$terminalCommit")
+            if ($intermediateResult.ExitCode -ne 0) {
+                $failures.Add("Unable to inspect commits between AUD open and terminal checkpoints: $path")
+            } else {
+                foreach ($intermediateCommit in @($intermediateResult.Output | Where-Object { $_ -and $_.Trim() -ne $terminalCommit })) {
+                    $intermediatePaths = @(Get-CommitPaths $intermediateCommit.Trim())
+                    $unexpectedIntermediatePaths = @($intermediatePaths | Where-Object {
+                        $_ -notmatch '^docs/(?:audits|remediations|implementations)/(?:README\.md|records/.+\.md)$' -and
+                        $_ -notmatch '^docs/evidence/runtime-attestations/[0-9a-fA-F-]{36}\.json$'
+                    })
+                    if ($unexpectedIntermediatePaths.Count -gt 0) {
+                        $failures.Add("AUD subject paths must not change between open and terminal evidence checkpoints: $path ($($unexpectedIntermediatePaths -join ', '))")
+                    }
+                }
+            }
             $evidenceValue = Get-Field $headContent 'evidence_revision'
             if ($evidenceValue -notmatch '^git:(?<sha>[0-9a-fA-F]{40})(?:;\s*worktree:clean)?$') {
                 $failures.Add("Terminal AUD must bind a full evidence_revision: $path")

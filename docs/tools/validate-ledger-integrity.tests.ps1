@@ -88,11 +88,11 @@ baseline: git:$Baseline; worktree:clean
 evidence_revision: git:$EvidenceRevision; worktree:clean
 evidence_worktree_revision: git:$EvidenceRevision
 evidence_runner: docs/tools/invoke-revision-evidence.ps1
-evidence_argv_json: ["git","rev-parse","HEAD"]
+evidence_argv_json: ["go","test","./..."]
 evidence_run_id: $RunId
 evidence_artifact: docs/evidence/runs/$RunId/evidence.json
 audited_peer_plans: PLN-0001
-audited_subject_paths: docs/plans/PLN-0001-fixture.md, docs/plans/PLN-0001-fixture-checklist.md
+audited_subject_paths: docs/plans/PLN-0001-fixture.md, docs/plans/PLN-0001-fixture-checklist.md, docs/plans/README.md
 started_at: $StartedAt
 completed_at: $CompletedAt
 last_updated: 2026-07-15
@@ -125,7 +125,7 @@ related_plans: PLN-0001
 
 ## 验证结果
 
-``git rev-parse HEAD`` result=pass
+``go test ./...`` result=pass
 "@
 }
 
@@ -154,7 +154,7 @@ baseline: git:$Baseline; worktree:clean
 evidence_revision: git:$EvidenceRevision; worktree:clean
 evidence_worktree_revision: git:$EvidenceRevision
 evidence_runner: docs/tools/invoke-revision-evidence.ps1
-evidence_argv_json: ["git","rev-parse","HEAD"]
+evidence_argv_json: ["go","test","./..."]
 evidence_run_id: $RunId
 evidence_artifact: docs/evidence/runs/$RunId/evidence.json
 evidence_attestation: docs/evidence/runs/$RunId/attestation.json
@@ -186,7 +186,7 @@ related_plans: PLN-0001
 
 ## 验证结果
 
-``git rev-parse HEAD`` result=pass; artifact ``docs/evidence/runs/$RunId/evidence.json``
+``go test ./...`` result=pass; artifact ``docs/evidence/runs/$RunId/evidence.json``
 "@
 }
 
@@ -199,7 +199,7 @@ function Get-EvidenceArtifact([string]$RunId, [string]$Revision, [string]$ExitCo
   "evidence_revision": "$Revision",
   "evidence_tree": "$tree",
   "evidence_worktree": "detached",
-  "argv": ["git", "rev-parse", "HEAD"],
+  "argv": ["go", "test", "./..."],
   "exit_code": $ExitCode,
   "isolation": {
     "engine": "docker",
@@ -313,6 +313,7 @@ try {
     }
     Set-Utf8File (Join-Path $fixtureRoot 'docs\plans\PLN-0001-fixture.md') (Get-Plan 'PLN-0001' 'fixture')
     Set-Utf8File (Join-Path $fixtureRoot 'docs\plans\PLN-0001-fixture-checklist.md') (Get-Plan 'PLN-0001' 'fixture checklist')
+    Set-Utf8File (Join-Path $fixtureRoot 'docs\plans\README.md') "# Plans`n"
     Invoke-Git @('add', '.') | Out-Null
     Invoke-Git @('commit', '-q', '-m', 'base plan') | Out-Null
     $planRevision = (Invoke-Git @('rev-parse', 'HEAD') | Select-Object -First 1).Trim()

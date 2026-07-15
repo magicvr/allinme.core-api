@@ -20,7 +20,7 @@ evidence_run_id: 00000000-0000-4000-8000-000000000000
 evidence_artifact: docs/evidence/runs/00000000-0000-4000-8000-000000000000/evidence.json
 evidence_attestation: docs/evidence/runs/00000000-0000-4000-8000-000000000000/attestation.json
 audited_peer_plans: PLN-NNNN
-audited_subject_paths: docs/plans/PLN-NNNN-subject.md, docs/plans/PLN-NNNN-subject-checklist.md
+audited_subject_paths: docs/plans/PLN-NNNN-subject.md, docs/plans/PLN-NNNN-subject-checklist.md, <repo-relative direct fact-source/code/config path>
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD

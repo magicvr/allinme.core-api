@@ -25,7 +25,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate-gove
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix 20260714-codex-plan-example
 & docs/tools/invoke-governance-transaction.ps1 -ExpectedHead (git rev-parse HEAD) -Paths @('docs/audits/records/AUD-NNNN-example.md','docs/audits/README.md') -Message 'audit: open AUD-NNNN'
 & docs/tools/update-loop-run-state.ps1 -Operation Read -RunId <stable-run-id>
-& docs/tools/invoke-revision-evidence.ps1 -Revision HEAD -Command git -CommandArgs @('rev-parse', 'HEAD')
+& docs/tools/invoke-revision-evidence.ps1 -Revision HEAD -Command go -CommandArgs @('test', './...')
 ```
 
 CI 必须使用完整 Git 历史，并通过 `AUDIT_HISTORY_BASE` 或 `-HistoryBase` 传入 PR merge-base/push 前一 revision，同时运行当前树校验和独立治理历史校验；否则不能证明新记录实际经历了 open/subject/terminal 三阶段，也不能证明终态 AUD/REM/IMP 在多提交分支中未被改写。新增治理记录还要求仓库外配置 `AUDIT_RUNTIME_PUBLIC_KEY_BASE64` 与 `AUDIT_RUNTIME_TRUSTED_KEY_SHA256`；缺失时签名 validator 必须失败关闭。

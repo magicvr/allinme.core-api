@@ -139,13 +139,14 @@ function Test-StringArray([object]$Value) {
 function Test-MeaningfulEvidenceArgv([object[]]$Argv) {
     if ($null -eq $Argv -or $Argv.Count -eq 0) { return $false }
     $command = [IO.Path]::GetFileName(([string]$Argv[0]).Trim()).ToLowerInvariant()
-    if ($command -in @('true', 'true.exe', 'false', 'false.exe', 'echo', 'echo.exe', 'printf', 'printf.exe', ':')) {
+    if ($command -notin @('go', 'go.exe')) {
         return $false
     }
-    if ($command -in @('sh', 'sh.exe', 'bash', 'bash.exe', 'cmd', 'cmd.exe', 'pwsh', 'pwsh.exe', 'powershell', 'powershell.exe') -and
-        (($Argv -join ' ') -match '(?i)(?:^|\s)(?:-c|/c)\s*["'']?(?:true|false|echo|printf|:)(?:["'']?\s|$)')) {
+    if ($Argv.Count -lt 2) {
         return $false
     }
+    $subcommand = ([string]$Argv[1]).Trim().ToLowerInvariant()
+    if ($subcommand -notin @('test', 'vet', 'build')) { return $false }
     return $true
 }
 
@@ -221,6 +222,20 @@ function Test-GitPathAtRevision([string]$Revision, [string]$Path) {
     return $result.ExitCode -eq 0
 }
 
+function Get-GitBlobIdAtRevision([string]$Revision, [string]$Path) {
+    $result = Invoke-NativeCapture -FilePath $gitExecutable -Arguments @('-C', $repoRoot, 'rev-parse', '--verify', "$Revision`:$Path")
+    if ($result.ExitCode -ne 0) { return $null }
+    $blob = $result.Stdout.Trim()
+    if ($blob -notmatch $gitShaPattern) { return $null }
+    return $blob.ToLowerInvariant()
+}
+
+function Get-ContentAtRevision([string]$Revision, [string]$Path) {
+    $result = Invoke-NativeCapture -FilePath $gitExecutable -Arguments @('-C', $repoRoot, 'show', "$Revision`:$Path")
+    if ($result.ExitCode -ne 0 -or ([Text.Encoding]::UTF8.GetByteCount($result.Stdout) -gt 1048576)) { return $null }
+    return $result.Stdout
+}
+
 function Get-GitTreeOrNull([string]$Revision) {
     $result = Invoke-NativeCapture -FilePath $gitExecutable -Arguments @('-C', $repoRoot, 'rev-parse', "$Revision`^{tree}")
     if ($result.ExitCode -ne 0) { return $null }
@@ -292,10 +307,13 @@ if (Test-Path -LiteralPath $recordRoot -PathType Container) {
         }
         $frontmatter = Get-Frontmatter $content
         if ($null -eq $frontmatter) { continue }
+        $baseContent = if (Test-GitPathAtRevision $historyRevision $relativePath) { Get-ContentAtRevision $historyRevision $relativePath } else { $null }
+        $baseFrontmatter = Get-Frontmatter $baseContent
         $record = [pscustomobject]@{
             Path = $relativePath
             IsNew = -not (Test-GitPathAtRevision $historyRevision $relativePath)
             Status = Get-FrontmatterValue $frontmatter 'status'
+            BaseStatus = Get-FrontmatterValue $baseFrontmatter 'status'
             GovernanceContract = Get-FrontmatterValue $frontmatter 'governance_contract'
             WorkflowContract = Get-FrontmatterValue $frontmatter 'workflow_contract_revision'
             AuditId = Get-FrontmatterValue $frontmatter 'audit_id'
@@ -304,17 +322,37 @@ if (Test-Path -LiteralPath $recordRoot -PathType Container) {
             EvidenceArgvJson = Get-FrontmatterValue $frontmatter 'evidence_argv_json'
             EvidenceRevision = Get-GitRevision (Get-FrontmatterValue $frontmatter 'evidence_revision')
             EvidenceAttestation = Get-FrontmatterValue $frontmatter 'evidence_attestation'
+            BaseEvidenceArtifact = Get-FrontmatterValue $baseFrontmatter 'evidence_artifact'
+            BaseEvidenceAttestation = Get-FrontmatterValue $baseFrontmatter 'evidence_attestation'
         }
         $records.Add($record)
     }
 }
 
 $requiredRecords = @($records | Where-Object {
-    $_.IsNew -and
     $_.Status -eq 'closed' -and
     $_.GovernanceContract -eq 'audit-loop/v3' -and
-    $_.WorkflowContract -eq 'audit-runtime/v1'
+    $_.WorkflowContract -eq 'audit-runtime/v1' -and
+    ($_.IsNew -or $_.BaseStatus -ne 'closed')
 })
+
+foreach ($record in @($records | Where-Object { $_.Status -eq 'closed' -and $_.BaseStatus -eq 'closed' })) {
+    foreach ($field in @('EvidenceArtifact', 'EvidenceAttestation')) {
+        $currentPath = [string]$record.$field
+        $basePath = [string]$record.("Base$field")
+        if (-not [string]::IsNullOrWhiteSpace($currentPath) -and $currentPath -eq $basePath) {
+            $baseBlob = Get-GitBlobIdAtRevision $historyRevision $basePath
+            $headBlob = Get-GitBlobIdAtRevision 'HEAD' $currentPath
+            if ($null -ne $baseBlob -and $headBlob -ne $baseBlob) {
+                Add-Failure "Closed evidence binding file cannot change after HistoryBase: $($record.Path) ($currentPath)"
+            }
+        }
+    }
+}
+if ($failures.Count -gt 0) {
+    $failures | ForEach-Object { [Console]::Error.WriteLine($_) }
+    exit 1
+}
 
 if ($requiredRecords.Count -eq 0) {
     Write-Output "Evidence attestation validation passed: no new closed audit-loop/v3 + audit-runtime/v1 records exist after HistoryBase $historyRevision."
@@ -617,7 +655,8 @@ try {
             $payload.image_digest -cne $artifact.isolation.image -or
             $payload.image_id -isnot [string] -or $payload.image_id -cne $artifact.isolation.image_id -or
             $null -eq $issuedAt -or $null -eq $expiresAt -or
-            $issuedAt -ge $expiresAt -or ($expiresAt - $issuedAt).TotalHours -gt 24) {
+            $issuedAt -ge $expiresAt -or ($expiresAt - $issuedAt).TotalHours -gt 24 -or
+            $issuedAt -gt [DateTimeOffset]::UtcNow -or $expiresAt -lt [DateTimeOffset]::UtcNow) {
             Add-Failure "Signed evidence attestation payload does not exactly bind the repository, audit, artifact bytes, execution fields, approved image, and bounded lifetime: $expectedAttestationPath"
             continue
         }

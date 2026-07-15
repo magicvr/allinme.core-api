@@ -6,6 +6,7 @@ description: Independently audit completed implementations at their exact result
 # Backend Implementation Audit
 
 <!-- evidence-attestation-contract: external-signed-artifact; exact-run-revision-command-result-image; missing-trust-stops -->
+<!-- evidence-argv-contract: evidence_argv_json; strict-json-array; exact-artifact-and-signed-payload -->
 
 1. 解析仓库根目录，并在审计前完整读取 `.github/prompts/backend-implementation-audit.prompt.md`。
 2. 将该 prompt 视为唯一规范正文，执行 IMP 选择、实施审计矩阵、AUD 创建、finding 和索引流转。

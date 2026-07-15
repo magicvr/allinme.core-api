@@ -113,13 +113,14 @@ function Test-ExactStringArrays([object[]]$Left, [object[]]$Right) {
 function Test-MeaningfulEvidenceArgv([object[]]$Argv) {
     if ($null -eq $Argv -or $Argv.Count -eq 0) { return $false }
     $command = [IO.Path]::GetFileName(([string]$Argv[0]).Trim()).ToLowerInvariant()
-    if ($command -in @('true', 'true.exe', 'false', 'false.exe', 'echo', 'echo.exe', 'printf', 'printf.exe', ':')) {
+    if ($command -notin @('go', 'go.exe')) {
         return $false
     }
-    if ($command -in @('sh', 'sh.exe', 'bash', 'bash.exe', 'cmd', 'cmd.exe', 'pwsh', 'pwsh.exe', 'powershell', 'powershell.exe') -and
-        (($Argv -join ' ') -match '(?i)(?:^|\s)(?:-c|/c)\s*["'']?(?:true|false|echo|printf|:)(?:["'']?\s|$)')) {
+    if ($Argv.Count -lt 2) {
         return $false
     }
+    $subcommand = ([string]$Argv[1]).Trim().ToLowerInvariant()
+    if ($subcommand -notin @('test', 'vet', 'build')) { return $false }
     return $true
 }
 
@@ -442,7 +443,7 @@ function Test-RevisionEvidenceArtifact(
     } elseif ($declaredArgvResult.IsValid -and -not (Test-ExactStringArrays $declaredArgvResult.Items $argv)) {
         $Failures.Add("Audit evidence_argv_json must exactly match the ordered evidence artifact argv: $($AuditInfo.Path) ($artifactRelativePath)")
     } elseif (-not (Test-MeaningfulEvidenceArgv $argv)) {
-        $Failures.Add("Evidence artifact argv must invoke a meaningful subject-specific command: $($AuditInfo.Path) ($artifactRelativePath)")
+        $Failures.Add("Evidence artifact must contain a subject-specific command (meaningful argv required): $($AuditInfo.Path) ($artifactRelativePath)")
     } elseif (($argv -join ' ') -match '(?i)(?:^|[\\/])validate(?:-[a-z0-9-]+)?(?:\.tests)?\.ps1(?:\s|$)') {
         $Failures.Add("Evidence artifact must contain a subject-specific command: $($AuditInfo.Path) ($artifactRelativePath)")
     }
@@ -587,8 +588,8 @@ function Test-EvidencePlaceholder([string]$Value) {
     return $Value -match '^(?:\.\.\.|TODO|TBD|具体证据|具体文件、frontmatter、链接和索引证据|相关计划 AUD/REM/follow-up 链和验收基线证据|计划/实施 AUD、REM、follow-up 链和验收基线证据|<required:.*>)$'
 }
 
-function Test-SubjectSpecificValidation([string]$Content, [string]$AuditId, [System.Collections.Generic.List[string]]$Failures, [string]$Label) {
-    $validationSection = [regex]::Match($Content, '(?s)##\s+验证结果\s*(?<body>.*?)(?=\r?\n##\s+|\z)')
+function Test-SubjectSpecificValidation([object]$AuditInfo, [string]$AuditId, [System.Collections.Generic.List[string]]$Failures, [string]$Label) {
+    $validationSection = [regex]::Match($AuditInfo.Content, '(?s)##\s+验证结果\s*(?<body>.*?)(?=\r?\n##\s+|\z)')
     if (-not $validationSection.Success) {
         $Failures.Add("Successful $Label must record subject-specific validation: $AuditId")
         return
@@ -600,6 +601,12 @@ function Test-SubjectSpecificValidation([string]$Content, [string]$AuditId, [Sys
     })
     if ($subjectCommands.Count -eq 0) {
         $Failures.Add("Successful $Label must include a non-governance subject-specific command: $AuditId")
+    }
+    $declaredArgv = ConvertFrom-StrictEvidenceArgvJson ([string]$AuditInfo.EvidenceArgvJson)
+    if (-not $declaredArgv.IsValid) { return }
+    $declaredCommand = ($declaredArgv.Items -join ' ')
+    if ($commands -cnotcontains $declaredCommand) {
+        $Failures.Add("Successful $Label validation results must quote the exact evidence_argv_json command: $AuditId ($declaredCommand)")
     }
 }
 
@@ -614,6 +621,10 @@ function Test-FindingDetails([string]$Content, [string]$AuditId, [System.Collect
             if ($section -notmatch "(?m)^-\s*$field`:\s*\S.+$") {
                 $Failures.Add("$Label finding must record ${field}: $($findingMatch.Groups['id'].Value)")
             }
+        }
+        $dispositionMatch = [regex]::Match($section, '(?m)^-\s*Disposition:\s*(?<value>\S+)\s*$')
+        if ($dispositionMatch.Success -and $dispositionMatch.Groups['value'].Value -notin @('open', 'partially-resolved', 'resolved', 'accepted-risk', 'not-reproduced', 'superseded')) {
+            $Failures.Add("$Label finding has an invalid Disposition: $($findingMatch.Groups['id'].Value)")
         }
     }
 }
@@ -1058,6 +1069,29 @@ function Test-AcceptanceVerdict([string]$Content, [string]$Marker, [string]$Mark
 }
 
 $failures = New-Object System.Collections.Generic.List[string]
+$effectiveHistoryBase = $HistoryBase
+if ([string]::IsNullOrWhiteSpace($effectiveHistoryBase)) {
+    $effectiveHistoryBase = $env:AUDIT_HISTORY_BASE
+}
+if ($useGitLedgerChecks -and [string]::IsNullOrWhiteSpace($effectiveHistoryBase)) {
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $upstreamRevision = (& $gitExecutable -C $repoRoot rev-parse --verify '@{upstream}' 2>$null | Select-Object -First 1)
+    $upstreamExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorAction
+    if ($upstreamExitCode -eq 0 -and $upstreamRevision -match '^[0-9a-fA-F]{40}$') {
+        $effectiveHistoryBase = (& $gitExecutable -C $repoRoot merge-base HEAD $upstreamRevision 2>$null | Select-Object -First 1)
+    }
+    if ([string]::IsNullOrWhiteSpace($effectiveHistoryBase)) {
+        $previousErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $effectiveHistoryBase = (& $gitExecutable -C $repoRoot rev-parse --verify 'HEAD^' 2>$null | Select-Object -First 1)
+        $ErrorActionPreference = $previousErrorAction
+    }
+    if ([string]::IsNullOrWhiteSpace($effectiveHistoryBase)) {
+        $failures.Add('Documentation validation requires an explicit or resolvable HistoryBase.')
+    }
+}
 $validationShell = @(Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue) | Select-Object -First 1
 if ($null -eq $validationShell) {
     $validationShell = @(Get-Command powershell.exe -CommandType Application -ErrorAction SilentlyContinue) | Select-Object -First 1
@@ -1080,6 +1114,7 @@ if (-not (Test-Path -LiteralPath $auditWorkflowValidator)) {
     $workflowExitCode = $LASTEXITCODE
     $ErrorActionPreference = $previousErrorAction
     if ($workflowExitCode -ne 0) {
+        $failures.Add("audit workflow contracts validator exited with code $workflowExitCode.")
         foreach ($line in $workflowOutput) {
             $failures.Add("audit workflow contracts: $line")
         }
@@ -1091,13 +1126,14 @@ if ($useGitLedgerChecks) {
         $failures.Add('Runtime attestation validator is missing: docs/tools/validate-runtime-attestations.ps1')
     } else {
         $attestationArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runtimeAttestationValidator, '-RepositoryRoot', $repoRoot)
-        if (-not [string]::IsNullOrWhiteSpace($HistoryBase)) { $attestationArguments += @('-HistoryBase', $HistoryBase) }
+        if (-not [string]::IsNullOrWhiteSpace($effectiveHistoryBase)) { $attestationArguments += @('-HistoryBase', $effectiveHistoryBase) }
         $previousErrorAction = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         $attestationOutput = & $validationShellExecutable @attestationArguments 2>&1
         $attestationExitCode = $LASTEXITCODE
         $ErrorActionPreference = $previousErrorAction
         if ($attestationExitCode -ne 0) {
+            $failures.Add("runtime attestation validator exited with code $attestationExitCode.")
             foreach ($line in $attestationOutput) {
                 $failures.Add("runtime attestations: $line")
             }
@@ -1108,13 +1144,7 @@ if ($useGitLedgerChecks) {
     if (-not (Test-Path -LiteralPath $evidenceAttestationValidator)) {
         $failures.Add('Evidence attestation validator is missing: docs/tools/validate-evidence-attestations.ps1')
     } else {
-        $evidenceHistoryBase = $HistoryBase
-        if ([string]::IsNullOrWhiteSpace($evidenceHistoryBase)) {
-            $evidenceHistoryBase = $env:AUDIT_HISTORY_BASE
-        }
-        if ([string]::IsNullOrWhiteSpace($evidenceHistoryBase)) {
-            $evidenceHistoryBase = 'HEAD'
-        }
+        $evidenceHistoryBase = $effectiveHistoryBase
         $evidenceAttestationArguments = @(
             '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $evidenceAttestationValidator,
             '-RepositoryRoot', $repoRoot, '-HistoryBase', $evidenceHistoryBase
@@ -1125,6 +1155,7 @@ if ($useGitLedgerChecks) {
         $evidenceAttestationExitCode = $LASTEXITCODE
         $ErrorActionPreference = $previousErrorAction
         if ($evidenceAttestationExitCode -ne 0) {
+            $failures.Add("evidence attestation validator exited with code $evidenceAttestationExitCode.")
             foreach ($line in $evidenceAttestationOutput) {
                 $failures.Add("evidence attestations: $line")
             }
@@ -1156,10 +1187,7 @@ if ($docsRoot -eq (Join-Path $repoRoot 'docs')) {
 
 $contractHistoryRevision = $null
 if ($useGitLedgerChecks) {
-    $contractHistorySpec = $HistoryBase
-    if ([string]::IsNullOrWhiteSpace($contractHistorySpec)) {
-        $contractHistorySpec = $env:AUDIT_HISTORY_BASE
-    }
+    $contractHistorySpec = $effectiveHistoryBase
     if ([string]::IsNullOrWhiteSpace($contractHistorySpec)) {
         $contractHistoryRevision = 'HEAD'
     } else {
@@ -1699,6 +1727,13 @@ foreach ($file in $markdownFiles) {
                             }
                             if ($auditedSubjectPaths.Count -lt 2) {
                                 $failures.Add("audit-loop/v3 plan audit must record plan/checklist audited_subject_paths: $relativePath")
+                            }
+                            $directFactPaths = @($auditedSubjectPaths | Where-Object {
+                                $_ -notmatch '^docs/plans/PLN-\d{4}-.+\.md$' -and
+                                $_ -notmatch '^docs/plans/PLN-\d{4}-.+-checklist\.md$'
+                            })
+                            if ($directFactPaths.Count -eq 0) {
+                                $failures.Add("audit-loop/v3 plan audit must record at least one direct fact-source/code/config path: $relativePath")
                             }
                             if ($workflowContractRevision -eq 'audit-runtime/v1' -and ($auditedPeerPlans.Count -eq 0 -or $auditedPeerPlans -notcontains $relatedPlans[0])) {
                                 $failures.Add("audit-loop/v3 plan audit must record an audited_peer_plans set containing its subject: $relativePath")
@@ -2710,7 +2745,7 @@ foreach ($auditInfo in $auditMetadata.Values) {
          ($auditInfo.Schema -eq 'implementation-acceptance/v2' -and $auditInfo.Verdict -eq 'complete'))) {
         $acceptanceLabel = if ($auditInfo.Schema -eq 'plan-acceptance/v2') { 'plan readiness acceptance' } else { 'implementation completion acceptance' }
         $acceptanceAuditId = [regex]::Match($auditInfo.Path, '(AUD-\d{4})').Groups[1].Value
-        Test-SubjectSpecificValidation $auditInfo.Content $acceptanceAuditId $failures $acceptanceLabel
+        Test-SubjectSpecificValidation $auditInfo $acceptanceAuditId $failures $acceptanceLabel
     }
     if ($auditInfo.Schema -in @('plan-acceptance/v2', 'implementation-acceptance/v2') -and
         $workingTreeChangedPaths -contains $auditInfo.Path) {
@@ -3503,6 +3538,9 @@ if ($docsRoot -eq $repositoryDocsRoot) {
     if (Test-Path -LiteralPath $ciWorkflowPath) {
         $ciWorkflowContent = Get-Content -Raw -Encoding UTF8 $ciWorkflowPath
         if ($ciWorkflowContent -notmatch '(?m)^\s*fetch-depth:\s*0\s*$' -or
+            $ciWorkflowContent -match 'uses:\s*actions/(?:checkout|setup-go)@v\d+' -or
+            $ciWorkflowContent -notmatch 'uses:\s*actions/checkout@[0-9a-f]{40}' -or
+            $ciWorkflowContent -notmatch 'uses:\s*actions/setup-go@[0-9a-f]{40}' -or
             $ciWorkflowContent -notmatch 'AUDIT_HISTORY_BASE:\s*\$\{\{\s*github\.event\.pull_request\.base\.sha\s*\|\|\s*github\.event\.before\s*\}\}' -or
             $ciWorkflowContent -notmatch 'AUDIT_RUNTIME_PUBLIC_KEY_BASE64' -or
             $ciWorkflowContent -notmatch 'AUDIT_RUNTIME_TRUSTED_KEY_SHA256' -or
@@ -3512,6 +3550,17 @@ if ($docsRoot -eq $repositoryDocsRoot) {
             $ciWorkflowContent -notmatch 'docs/tools/validate-evidence-attestations\.tests\.ps1' -or
             $ciWorkflowContent -notmatch 'docs/tools/invoke-revision-evidence\.tests\.ps1') {
             $failures.Add('CI documentation validation must fetch full history, pass external attestation trust anchors, validate governance history, and test evidence attestation/runner contracts')
+        }
+    }
+    $codeOwnersPath = Join-Path $repoRoot '.github/CODEOWNERS'
+    if (-not (Test-Path -LiteralPath $codeOwnersPath -PathType Leaf)) {
+        $failures.Add('Governance and CI trust-boundary paths must be protected by .github/CODEOWNERS')
+    } else {
+        $codeOwnersContent = Get-Content -LiteralPath $codeOwnersPath -Raw -Encoding UTF8
+        foreach ($protectedPath in @('/.github/workflows/', '/.github/prompts/', '/.agents/skills/', '/docs/tools/', '/docs/evidence/')) {
+            if ($codeOwnersContent -notmatch "(?m)^$([regex]::Escape($protectedPath))\s+@\S+") {
+                $failures.Add("CODEOWNERS must protect governance trust-boundary path: $protectedPath")
+            }
         }
     }
 
@@ -3775,23 +3824,7 @@ if ($docsRoot -eq $repositoryDocsRoot) {
         }
     }
 
-    $historyBaseRevision = $HistoryBase
-    if ([string]::IsNullOrWhiteSpace($historyBaseRevision)) {
-        $historyBaseRevision = $env:AUDIT_HISTORY_BASE
-    }
-    if ([string]::IsNullOrWhiteSpace($historyBaseRevision)) {
-        $previousErrorPreference = $ErrorActionPreference
-        $ErrorActionPreference = 'SilentlyContinue'
-        $upstreamRevision = (& $gitExecutable -C $repoRoot rev-parse --verify '@{upstream}' 2>$null | Select-Object -First 1)
-        $ErrorActionPreference = $previousErrorPreference
-        if ($LASTEXITCODE -eq 0 -and $upstreamRevision -match '^[0-9a-fA-F]{40}$') {
-            $historyBaseRevision = (& $gitExecutable -C $repoRoot merge-base HEAD $upstreamRevision 2>$null | Select-Object -First 1)
-        }
-    }
-    if ([string]::IsNullOrWhiteSpace($historyBaseRevision)) {
-        $parentRevision = (& $gitExecutable -C $repoRoot rev-parse --verify 'HEAD^' 2>$null | Select-Object -First 1)
-        if ($LASTEXITCODE -eq 0) { $historyBaseRevision = $parentRevision }
-    }
+    $historyBaseRevision = $effectiveHistoryBase
     if ($historyBaseRevision -match '^[0-9a-fA-F]{40}$' -and (Test-GitCommitExists $historyBaseRevision)) {
         $terminalHistoryKinds = @(
             @{ Root = 'docs/audits/records'; Pattern = '(?m)^status:\s*(?:closed|superseded)\s*$'; Label = 'Terminal audit' },

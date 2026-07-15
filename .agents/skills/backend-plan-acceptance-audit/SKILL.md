@@ -6,6 +6,7 @@ description: Verify plan readiness in a separate execution context, creating one
 # Backend Plan Acceptance Audit
 
 <!-- evidence-attestation-contract: external-signed-artifact; exact-run-revision-command-result-image; missing-trust-stops -->
+<!-- evidence-argv-contract: evidence_argv_json; strict-json-array; exact-artifact-and-signed-payload -->
 
 1. 解析仓库根目录，并在执行任何验收前完整读取 `.github/prompts/backend-plan-acceptance-audit.prompt.md`。
 2. 将该 prompt 视为唯一规范正文，完整执行对象解析、独立证据检查、验收矩阵、AUD 创建和索引流转。

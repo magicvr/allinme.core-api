@@ -387,7 +387,8 @@ try {
             [string]::IsNullOrWhiteSpace([string]$payload.parent_task_id) -or
             $payload.task_id -eq $payload.parent_task_id -or
             $null -eq $issuedAt -or $null -eq $expiresAt -or
-            $issuedAt -ge $expiresAt -or ($expiresAt - $issuedAt).TotalHours -gt 24) {
+            $issuedAt -ge $expiresAt -or ($expiresAt - $issuedAt).TotalHours -gt 24 -or
+            $issuedAt -gt [DateTimeOffset]::UtcNow -or $expiresAt -lt [DateTimeOffset]::UtcNow) {
             $failures.Add("Runtime attestation signed payload does not bind the record context, scope, baseline, and bounded lifetime: $($record.AttestationPath)")
             continue
         }

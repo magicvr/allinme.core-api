@@ -204,6 +204,15 @@ try {
     if (-not $lockTaken) { throw 'Timed out waiting for the repository governance transaction lock' }
 
     $changedPaths = @(Assert-TransactionPreconditions)
+    $expectedBlobs = @{}
+    foreach ($path in $normalizedPaths) {
+        $fullPath = Join-Path $repoRoot $path
+        if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
+            $expectedBlobs[$path] = (Invoke-Git @('hash-object', '--', $path) | Select-Object -First 1).Trim().ToLowerInvariant()
+        } else {
+            $expectedBlobs[$path] = '<deleted>'
+        }
+    }
     Invoke-Git @('read-tree', $ExpectedHead) | Out-Null
     $indexResetRequired = $true
     Invoke-Git (@('add', '-A', '--') + $normalizedPaths) | Out-Null
@@ -211,6 +220,15 @@ try {
     $stagedPaths = @(Get-SortedUniquePaths @(Invoke-Git @('diff', '--cached', '--name-only', $ExpectedHead, '--') | ForEach-Object { $_.Trim() }))
     if (-not (Test-ExactPathSequence $stagedPaths $changedPaths)) {
         throw "Exact staging verification failed: expected=$($changedPaths -join ',') staged=$($stagedPaths -join ',')"
+    }
+    foreach ($path in $normalizedPaths) {
+        $stagedBlobResult = Invoke-GitProbe @('rev-parse', '--verify', ":$path")
+        $stagedBlob = if ($stagedBlobResult.ExitCode -eq 0 -and $stagedBlobResult.Output.Count -gt 0) {
+            @($stagedBlobResult.Output | Select-Object -First 1)[0].Trim().ToLowerInvariant()
+        } else { '<deleted>' }
+        if ($stagedBlob -cne $expectedBlobs[$path]) {
+            throw "Governance transaction path changed during staging: $path"
+        }
     }
 
     $tree = (Invoke-Git @('write-tree') | Select-Object -First 1).Trim()

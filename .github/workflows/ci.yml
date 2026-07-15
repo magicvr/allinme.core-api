@@ -19,20 +19,20 @@ jobs:
 
     steps:
       - name: Checkout core API
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           path: allinme.core-api
           fetch-depth: 0
 
       - name: Checkout protocol fixtures
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           repository: magicvr/schema-ui-docs
           ref: d2f0fc0877dc6550c9fe7e3635b25c7ec72b4ddd
           path: schema-ui-docs
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: allinme.core-api/go.mod
           cache: true
@@ -45,16 +45,6 @@ jobs:
 
       - name: Vet
         run: go vet ./...
-
-      - name: Validate documentation
-        shell: pwsh
-        env:
-          AUDIT_HISTORY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          AUDIT_RUNTIME_PUBLIC_KEY_BASE64: ${{ vars.AUDIT_RUNTIME_PUBLIC_KEY_BASE64 }}
-          AUDIT_RUNTIME_TRUSTED_KEY_SHA256: ${{ vars.AUDIT_RUNTIME_TRUSTED_KEY_SHA256 }}
-        run: |
-          ./docs/tools/validate.ps1
-          ./docs/tools/validate-governance-history.ps1 -HistoryBase $env:AUDIT_HISTORY_BASE
 
       - name: Test documentation validator
         shell: pwsh
@@ -69,10 +59,20 @@ jobs:
 
     steps:
       - name: Checkout core API
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           path: allinme.core-api
           fetch-depth: 0
+
+      - name: Validate documentation in isolated checkout
+        shell: pwsh
+        env:
+          AUDIT_HISTORY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          AUDIT_RUNTIME_PUBLIC_KEY_BASE64: ${{ vars.AUDIT_RUNTIME_PUBLIC_KEY_BASE64 }}
+          AUDIT_RUNTIME_TRUSTED_KEY_SHA256: ${{ vars.AUDIT_RUNTIME_TRUSTED_KEY_SHA256 }}
+        run: |
+          ./docs/tools/validate.ps1
+          ./docs/tools/validate-governance-history.ps1 -HistoryBase $env:AUDIT_HISTORY_BASE
 
       - name: Test governance and evidence tools
         shell: pwsh
@@ -94,19 +94,19 @@ jobs:
 
     steps:
       - name: Checkout core API
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           path: allinme.core-api
 
       - name: Checkout protocol fixtures
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           repository: magicvr/schema-ui-docs
           ref: d2f0fc0877dc6550c9fe7e3635b25c7ec72b4ddd
           path: schema-ui-docs
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: allinme.core-api/go.mod
           cache: true

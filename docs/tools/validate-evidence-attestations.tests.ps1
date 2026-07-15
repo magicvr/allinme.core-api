@@ -35,6 +35,8 @@ $recordPath = Join-Path $fixtureRoot $recordRelativePath.Replace('/', '\')
 $artifactRelativePath = "docs/evidence/runs/$runId/evidence.json"
 $artifactPath = Join-Path $fixtureRoot $artifactRelativePath.Replace('/', '\')
 $attestationRelativePath = "docs/evidence/runs/$runId/attestation.json"
+$testIssuedAt = [DateTimeOffset]::UtcNow.AddMinutes(-5).ToString('o')
+$testExpiresAt = [DateTimeOffset]::UtcNow.AddMinutes(55).ToString('o')
 $attestationPath = Join-Path $fixtureRoot $attestationRelativePath.Replace('/', '\')
 $historyBase = $null
 $trustedKeySha256 = $null
@@ -141,7 +143,7 @@ function Get-AuditRecord(
     [string]$EvidenceRevision,
     [string]$EvidenceArtifact,
     [string]$EvidenceAttestation,
-    [string]$EvidenceArgvJson = '["git","rev-parse","HEAD"]'
+    [string]$EvidenceArgvJson = '["go","test","./..."]'
 ) {
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add('---')
@@ -179,7 +181,7 @@ function Get-AuditRecord(
 
 function Write-EvidenceArtifact(
     [string]$ImageDigest = $approvedImageDigest,
-    [string[]]$Argv = @('git', 'rev-parse', 'HEAD')
+    [string[]]$Argv = @('go', 'test', './...')
 ) {
     $tree = (Invoke-Git @('rev-parse', "$historyBase`^{tree}")).Trim()
     $artifact = [ordered]@{
@@ -252,8 +254,8 @@ function Write-SignedAttestation(
         exit_code = [int]$artifact.exit_code
         image_digest = $artifact.isolation.image
         image_id = $artifact.isolation.image_id
-        issued_at = '2026-07-15T00:01:00Z'
-        expires_at = '2026-07-15T01:01:00Z'
+        issued_at = $testIssuedAt
+        expires_at = $testExpiresAt
     }
     if ($null -ne $PayloadOverrides) {
         foreach ($key in $PayloadOverrides.Keys) {
@@ -468,8 +470,22 @@ try {
     Assert-Fail 'correctly signed payload with wrong audit binding' 'does not exactly bind the repository, audit, artifact bytes'
 
     Write-ValidFixture
-    Write-SignedAttestation -PayloadOverrides @{ expires_at = '2026-07-16T01:01:01Z' }
+    Write-SignedAttestation -PayloadOverrides @{ expires_at = [DateTimeOffset]::UtcNow.AddHours(25).ToString('o') }
     Assert-Fail 'attestation lifetime over 24 hours' 'bounded lifetime'
+
+    Write-ValidFixture
+    Write-SignedAttestation -PayloadOverrides @{
+        issued_at = [DateTimeOffset]::UtcNow.AddHours(-2).ToString('o')
+        expires_at = [DateTimeOffset]::UtcNow.AddHours(-1).ToString('o')
+    }
+    Assert-Fail 'expired evidence attestation' 'bounded lifetime'
+
+    Write-ValidFixture
+    Write-SignedAttestation -PayloadOverrides @{
+        issued_at = [DateTimeOffset]::UtcNow.AddHours(1).ToString('o')
+        expires_at = [DateTimeOffset]::UtcNow.AddHours(2).ToString('o')
+    }
+    Assert-Fail 'future evidence attestation' 'bounded lifetime'
 
     Write-ValidFixture
     $duplicatePath = Join-Path $fixtureRoot 'docs\audits\records\AUD-0103-20260715-duplicate-attestation.md'

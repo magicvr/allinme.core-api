@@ -6,6 +6,7 @@ description: Execute revision-bound implementation-plan audits with a persisted 
 # Backend Plan Audit
 
 <!-- evidence-attestation-contract: external-signed-artifact; exact-run-revision-command-result-image; missing-trust-stops -->
+<!-- evidence-argv-contract: evidence_argv_json; strict-json-array; exact-artifact-and-signed-payload -->
 
 1. Resolve the repository root and read `.github/prompts/backend-plan-audit.prompt.md` completely before taking any audit action.
 2. Treat that Copilot prompt as the canonical workflow and execute its target resolution, plan and checklist checks, mandatory per-plan checklist matrices, history comparison, audit-record, and validation requirements.

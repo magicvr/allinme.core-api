@@ -37,6 +37,12 @@ $recordsDirectory = switch ($Kind) {
 if (-not (Test-Path -LiteralPath $recordsDirectory -PathType Container)) {
     throw "Records directory does not exist: $recordsDirectory"
 }
+$recordsDirectoryItem = Get-Item -LiteralPath $recordsDirectory -Force
+if (($recordsDirectoryItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+    -not [string]::IsNullOrWhiteSpace($recordsDirectoryItem.LinkType) -or
+    $recordsDirectoryItem.FullName -ne [IO.Path]::GetFullPath($recordsDirectory)) {
+    throw "Records directory must be an in-repository regular directory: $recordsDirectory"
+}
 
 $gitTopLevel = (& git -C $repoRoot rev-parse --show-toplevel 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($gitTopLevel)) {

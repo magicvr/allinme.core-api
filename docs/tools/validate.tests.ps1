@@ -233,6 +233,7 @@ applies_to: validator fixture
 '@
     Set-Content -LiteralPath (Join-Path $plansRoot 'PLN-0001-validator-fixture.md') -Value ($planFrontmatter + "`n# Plan") -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $plansRoot 'PLN-0001-validator-fixture-checklist.md') -Value ($planFrontmatter + "`n# Checklist") -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $plansRoot 'README.md') -Value "# Plans`n" -Encoding UTF8
 
     $phaseFiveFrontmatter = $planFrontmatter.Replace('PLN-0001', 'PLN-0005')
     $phaseFivePlanPath = Join-Path $plansRoot 'PLN-0005-phase-05-attachment-lifecycle.md'
@@ -462,7 +463,7 @@ scope: plan:PLN-0001
 subject: validator plan fixture
 baseline: git:0000000000000000000000000000000000000000; worktree:clean
 evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean
-audited_subject_paths: docs/plans/PLN-0001-validator-fixture.md, docs/plans/PLN-0001-validator-fixture-checklist.md
+audited_subject_paths: docs/plans/PLN-0001-validator-fixture.md, docs/plans/PLN-0001-validator-fixture-checklist.md, docs/plans/README.md
 started_at: 2026-07-14T00:30:00+08:00
 completed_at: 2026-07-14T00:45:00+08:00
 last_updated: 2026-07-14
@@ -579,6 +580,7 @@ evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean
 evidence_run_id: 11111111-1111-4111-8111-111111111111
 evidence_artifact: docs/evidence/runs/11111111-1111-4111-8111-111111111111/evidence.json
 evidence_attestation: docs/evidence/runs/11111111-1111-4111-8111-111111111111/attestation.json
+evidence_argv_json: ["go", "test", "./..."]
 started_at: 2026-07-14T03:00:00+08:00
 completed_at: 2026-07-14T03:15:00+08:00
 last_updated: 2026-07-14
@@ -607,7 +609,7 @@ related_plans: PLN-0001
 
 ## 验证结果
 
-- command: `fixture plan readiness`; result: 通过
+- command: `go test ./...`; result: 通过
 
 '@
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($acceptancePlanAuditFrontmatter + "`n" + $acceptancePlanMatrix) -Encoding UTF8
@@ -713,6 +715,7 @@ evidence_revision: git:1111111111111111111111111111111111111111; worktree:clean
 evidence_run_id: 22222222-2222-4222-8222-222222222222
 evidence_artifact: docs/evidence/runs/22222222-2222-4222-8222-222222222222/evidence.json
 evidence_attestation: docs/evidence/runs/22222222-2222-4222-8222-222222222222/attestation.json
+evidence_argv_json: ["go", "test", "./..."]
 effective_result_revision: git:1111111111111111111111111111111111111111
 started_at: 2026-07-14T05:00:00+08:00
 completed_at: 2026-07-14T05:15:00+08:00
@@ -742,7 +745,7 @@ related_plans: PLN-0001
 
 ## 验证结果
 
-- command: `fixture completion acceptance`; result: 通过
+- command: `go test ./...`; result: 通过
 '@
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAcceptanceName) -Value ($implementationAcceptanceFrontmatter + "`n" + $implementationAcceptanceMatrix) -Encoding UTF8
     $auditIndexContent += "`n- [AUD-0005](./records/$acceptancePlanAuditName): ``status=closed``; ``remediation=none``; fixture."
@@ -778,7 +781,7 @@ related_plans: PLN-0001
     }
     Set-Content -LiteralPath $planAuditRecordPath -Value ($planAuditFrontmatter + "`n" + $planAuditMatrix) -Encoding UTF8
 
-    $missingPlanAuditRevision = $planAuditFrontmatter.Replace("evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`n", '').Replace("audited_subject_paths: docs/plans/PLN-0001-validator-fixture.md, docs/plans/PLN-0001-validator-fixture-checklist.md`n", '')
+    $missingPlanAuditRevision = $planAuditFrontmatter.Replace("evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`n", '').Replace("audited_subject_paths: docs/plans/PLN-0001-validator-fixture.md, docs/plans/PLN-0001-validator-fixture-checklist.md, docs/plans/README.md`n", '')
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $planAuditRecordName) -Value ($missingPlanAuditRevision + "`n" + $planAuditMatrix) -Encoding UTF8
     $missingPlanAuditRevisionResult = Invoke-Validator $fixtureRoot
     if ($missingPlanAuditRevisionResult.ExitCode -eq 0 -or $missingPlanAuditRevisionResult.Output -notmatch 'evidence_revision|audited_subject_paths') {
@@ -786,7 +789,7 @@ related_plans: PLN-0001
     }
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $planAuditRecordName) -Value ($planAuditFrontmatter + "`n" + $planAuditMatrix) -Encoding UTF8
 
-    $governanceOnlyPlanAcceptance = $acceptancePlanMatrix.Replace('`fixture plan readiness`', '`powershell.exe -File docs/tools/validate.ps1`')
+    $governanceOnlyPlanAcceptance = $acceptancePlanMatrix.Replace('`go test ./...`', '`powershell.exe -File docs/tools/validate.ps1`')
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($acceptancePlanAuditFrontmatter + "`n" + $governanceOnlyPlanAcceptance) -Encoding UTF8
     $governanceOnlyPlanAcceptanceResult = Invoke-Validator $fixtureRoot
     if ($governanceOnlyPlanAcceptanceResult.ExitCode -eq 0 -or $governanceOnlyPlanAcceptanceResult.Output -notmatch 'subject-specific command') {
@@ -794,7 +797,7 @@ related_plans: PLN-0001
     }
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $acceptancePlanAuditName) -Value ($acceptancePlanAuditFrontmatter + "`n" + $acceptancePlanMatrix) -Encoding UTF8
 
-    $governanceOnlyImplementationAcceptance = $implementationAcceptanceMatrix.Replace('`fixture completion acceptance`', '`git diff HEAD --check`')
+    $governanceOnlyImplementationAcceptance = $implementationAcceptanceMatrix.Replace('`go test ./...`', '`git diff HEAD --check`')
     Set-Content -LiteralPath (Join-Path $auditRecordsRoot $implementationAcceptanceName) -Value ($implementationAcceptanceFrontmatter + "`n" + $governanceOnlyImplementationAcceptance) -Encoding UTF8
     $governanceOnlyImplementationAcceptanceResult = Invoke-Validator $fixtureRoot
     if ($governanceOnlyImplementationAcceptanceResult.ExitCode -eq 0 -or $governanceOnlyImplementationAcceptanceResult.Output -notmatch 'subject-specific command') {

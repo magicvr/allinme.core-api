@@ -101,7 +101,7 @@ go test ./...
 
 ## 7. CI 与协议升级
 
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) 从 `go.mod` 读取 Go 版本，固定 Schema-UI commit 后运行 test 和 vet。文档门禁使用完整 Git 历史，以 PR base/push 前一 revision 作为 `AUDIT_HISTORY_BASE`，分别运行当前树 validator 与 `validate-governance-history.ps1`；后者拒绝把单提交终态记录冒充 open/subject/terminal 事务链。协议 pin 变化只有在以下证据齐全时完成：
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) 从 `go.mod` 读取 Go 版本，固定第三方 Action 与 Schema-UI commit 后运行 test 和 vet。文档门禁使用完整 Git 历史，以 PR base/push 前一 revision 作为 `AUDIT_HISTORY_BASE`，分别运行当前树 validator 与 `validate-governance-history.ps1`；后者拒绝把单提交终态记录冒充 open/subject/terminal 事务链。`main` 分支保护必须启用 CODEOWNERS approval，且不得允许作者自行批准 `.github/workflows/`、`docs/tools/`、prompt/skill、模板或 Evidence 合同变更；缺少此外部保护时，仓库内自验证不能构成独立信任边界。协议 pin 变化只有在以下证据齐全时完成：
 
 1. Schema-UI 固定对象永久可达；
 2. 本地测试使用同一 fixture checkout 通过；

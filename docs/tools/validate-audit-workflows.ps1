@@ -103,6 +103,7 @@ $evidenceAuditCreators = @(
 foreach ($name in $evidenceAuditCreators) {
     $content = Read-WorkflowAsset ".github/prompts/$name.prompt.md"
     Require-Pattern $content 'evidence-attestation-contract:\s*external-signed-artifact;\s*exact-run-revision-command-result-image;\s*missing-trust-stops' "$name must declare the external evidence attestation contract"
+    Require-Pattern $content 'evidence-argv-contract:\s*evidence_argv_json;\s*strict-json-array;\s*exact-artifact-and-signed-payload' "$name must declare the structured evidence argv contract"
     Require-Pattern $content 'evidence_attestation' "$name must persist the external evidence attestation"
     Require-Pattern $content 'validate-evidence-attestations\.ps1' "$name must verify signed evidence before closing"
     Require-Pattern $content 'docs/evidence/runs/<(?:run-id|evidence_run_id)>/attestation\.json' "$name must use the canonical evidence attestation path"
@@ -225,6 +226,7 @@ foreach ($name in @('backend-plan-acceptance-audit', 'backend-implementation-aud
 
 foreach ($name in $evidenceAuditCreators) {
     $content = Read-WorkflowAsset ".agents/skills/$name/SKILL.md"
+    Require-Pattern $content 'evidence-argv-contract:\s*evidence_argv_json;\s*strict-json-array;\s*exact-artifact-and-signed-payload' "$name skill must preserve the structured evidence argv contract"
     Require-Pattern $content 'evidence_attestation' "$name skill must preserve externally signed evidence"
     Require-Pattern $content 'attestation\.json' "$name skill must preserve the canonical evidence attestation path"
 }
@@ -241,6 +243,7 @@ Require-Pattern $genericAuditTemplate 'governance_contract:\s*audit-loop/v3' 'ge
 Require-Pattern $genericAuditTemplate 'workflow_contract_revision:\s*audit-runtime/v1' 'generic audit template must use the current workflow contract'
 Require-Pattern $genericAuditTemplate 'runtime_context_attestation' 'generic audit template must bind a signed runtime context'
 Require-Pattern $genericAuditTemplate 'evidence_attestation' 'generic audit template must bind externally signed evidence'
+Require-Pattern $genericAuditTemplate 'evidence_argv_json' 'generic audit template must bind the exact structured evidence argv'
 
 foreach ($name in @('backend-plan-audit-until-ready', 'backend-implement-audit-until-complete')) {
     $content = Read-WorkflowAsset ".agents/skills/$name/SKILL.md"

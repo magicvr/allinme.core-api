@@ -1,0 +1,9 @@
+# Governance and CI trust boundary. The protected main branch must require
+# approval from these code owners before merging changes to these paths.
+/.github/workflows/ @magicvr
+/.github/CODEOWNERS @magicvr
+/.github/prompts/ @magicvr
+/.agents/skills/ @magicvr
+/docs/tools/ @magicvr
+/docs/audits/templates/ @magicvr
+/docs/evidence/ @magicvr

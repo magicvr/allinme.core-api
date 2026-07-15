@@ -37,6 +37,8 @@ $sourceScope = 'plan:PLN-0001'
 $acceptanceScope = 'plan:PLN-0001'
 $sourceTaskId = 'task-source'
 $acceptanceTaskId = 'task-acceptance'
+$testIssuedAt = [DateTimeOffset]::UtcNow.AddMinutes(-5).ToString('o')
+$testExpiresAt = [DateTimeOffset]::UtcNow.AddMinutes(55).ToString('o')
 
 function Set-Utf8File([string]$Path, [string]$Content) {
     $parent = Split-Path -Parent $Path
@@ -230,8 +232,8 @@ function Write-SignedAttestation(
         baseline_revision = $BaselineRevision
         task_id = $TaskId
         parent_task_id = $ParentTaskId
-        issued_at = '2026-07-15T00:00:00Z'
-        expires_at = '2026-07-15T01:00:00Z'
+        issued_at = $testIssuedAt
+        expires_at = $testExpiresAt
     }
     $payloadPath = Join-Path $fixtureRoot ("runtime-payload-{0}.json" -f [Guid]::NewGuid().ToString('N'))
     $signaturePath = Join-Path $fixtureRoot ("runtime-signature-{0}.bin" -f [Guid]::NewGuid().ToString('N'))

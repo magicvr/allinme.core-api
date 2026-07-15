@@ -108,6 +108,7 @@ function Get-AuditRecord(
 ---
 status: $Status
 workflow_contract_revision: audit-runtime/v1
+baseline: git:$EvidenceRevision; worktree:clean
 ${runtimeLine}evidence_revision: git:$EvidenceRevision; worktree:clean
 evidence_run_id: $EvidenceRunId
 evidence_artifact: docs/evidence/runs/$EvidenceRunId/evidence.json
