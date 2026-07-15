@@ -3,11 +3,12 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $validator = Join-Path $PSScriptRoot 'validate.ps1'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("allinme-docs-validator-" + [guid]::NewGuid().ToString('N'))
+$powershellPath = (Get-Process -Id $PID).Path
 
 function Invoke-Validator([string]$DocsRoot) {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $validator -DocsRoot $DocsRoot 2>&1
+    $output = & $powershellPath -NoProfile -ExecutionPolicy Bypass -File $validator -DocsRoot $DocsRoot 2>&1
     $code = $LASTEXITCODE
     $ErrorActionPreference = $previousPreference
     return @{ Code = $code; Output = ($output -join "`n") }
