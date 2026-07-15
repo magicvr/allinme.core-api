@@ -47,6 +47,7 @@ try {
     Assert-Fail 'duplicate audit index' $duplicateIndexRoot 'indexed exactly once'
 
     Write-Output 'Documentation validator tests passed: valid structure, link failure, plan pairing, required audit fields, and unique indexes.'
+    exit 0
 } finally {
     Get-ChildItem ([IO.Path]::GetTempPath()) -Directory -Filter 'allinme-docs-validator-*' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
 }
