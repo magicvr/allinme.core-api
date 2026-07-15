@@ -48,9 +48,9 @@ jobs:
 
       - name: Validate documentation
         shell: pwsh
-        env:
-          AUDIT_HISTORY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: ./docs/tools/validate.ps1
+        run: |
+          ./docs/tools/validate.ps1
+          ./docs/tools/validate-audit-workflows.ps1
 
       - name: Test documentation validator
         shell: pwsh

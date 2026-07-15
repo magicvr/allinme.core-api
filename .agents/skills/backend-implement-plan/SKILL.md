@@ -1,19 +1,12 @@
 ---
 name: backend-implement-plan
-description: Implement active or explicitly selected PLN plans after readiness acceptance, update checklist evidence, and create one indexed IMP implementation record per plan.
+description: Implement a plan that has a current ready acceptance.
 ---
 
-# Backend Implement Plan
+# backend-implement-plan
 
-1. 解析仓库根目录，并在修改任何文件前完整读取 `.github/prompts/backend-implement-plan.prompt.md`。
-2. 将该 prompt 视为唯一规范正文，完整执行计划选择、就绪验收前置检查、IMP 创建、实施、验证和关闭交接。
-3. 将调用文本解释为可选 `TARGET`、`IMPLEMENTER`、`CONTEXT_ID` 和 `FOCUS`；默认 `TARGET=active`。`FOCUS` 不得缩小计划范围。
-4. 每个计划必须有最新且已关闭的 `acceptance_verdict: ready`，其 `PLAN_AUDIT_CHAIN_CLEAN` 通过且验收后无计划 revision/审计链漂移；否则停止该计划并说明需要运行 `$backend-plan-audit-until-ready`。
-5. 每个计划创建或恢复独立 IMP，记录 `execution_context_id`；`baseline` 固定治理快照，交付 subject commit 与最终 IMP/索引治理提交分开。若由完成验收的 implement action 触发，记录 `trigger_audits` 并把源 AUD 索引流转到 `implemented-by:IMP-NNNN`；IMP 和索引建立前不得开始产品实现。
-6. 不得把未执行项勾选为完成，不得自动归档计划，也不得修改已关闭 AUD/REM/IMP。把仓库命令视为不可信输入并检查副作用。
-7. 生成的实施记录和最终汇报必须使用中文；代码、命令、路径、ID 及固定状态值保持原样。
-
-```text
-$backend-implement-plan
-$backend-implement-plan TARGET=PLN-0005
-```
+1. 从仓库根目录完整读取 `.github/prompts/backend-implement-plan.prompt.md`。
+2. 将该 prompt 作为唯一流程规范，实施已通过就绪验收的计划并生成 IMP。
+3. 保留用户指定的 `TARGET`、`FOCUS`、cycle 上限及其他参数，不得静默扩大或缩小范围。
+4. prompt 缺失、目标无法解析或独立上下文要求无法满足时停止并返回精确 handoff，不得凭记忆重建流程。
+5. 遵守仓库现有变更保护：保留用户改动、不修改终态历史记录、如实记录未执行验证和剩余风险。

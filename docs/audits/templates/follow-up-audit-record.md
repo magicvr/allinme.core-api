@@ -1,13 +1,11 @@
 ---
 status: open
-governance_contract: audit-loop/v3
 audit_id: AUD-NNNN
 auditor: auditor-name-and-version
-execution_context_id: 00000000-0000-4000-8000-000000000000
-source_context_ids: legacy-unavailable
 audit_type: follow-up
 independence_basis: separate-context
-evidence_run_id: 00000000-0000-4000-8000-000000000000
+runtime_context_ref: runtime-task-or-agent-ref
+source_context_refs: runtime-source-ref
 scope: follow-up:REM-NNNN
 subject: remediation follow-up
 baseline: git:full-commit-sha; worktree:clean
@@ -18,9 +16,6 @@ last_updated: YYYY-MM-DD
 related_audits: AUD-NNNN
 related_remediations: REM-NNNN
 related_implementations: none
-supersedes: none
-superseded_by: none
-supersession_reason: none
 related_plans: PLN-NNNN
 ---
 
@@ -30,19 +25,10 @@ related_plans: PLN-NNNN
 
 ## Source finding 复核矩阵
 
-| Source finding | Claimed remediation | Code/evidence inspected | Independent test | Verdict |
+| Source finding | Claimed remediation | Evidence inspected | Independent validation | Verdict |
 |---|---|---|---|---|
 
 ## Findings
-
-### AUD-NNNN-F001 - Finding 标题
-
-- Severity:
-- Evidence:
-- Impact:
-- Recommendation:
-- Owner:
-- Disposition: open
 
 ## 验证结果
 

@@ -1,5 +1,13 @@
-# 版本化 Evidence 摘要
+# Evidence 记录
 
-此目录保存计划或发布流程明确要求提交的小型、脱敏、可复核 Evidence 摘要和 manifest。大型产物、数据库、原始日志和敏感数据不得提交；其不可变 revision、SHA-256、保留期和受控下载位置写入摘要。
+本目录仅保存计划、审计或发布流程明确要求提交的小型、脱敏 Evidence 摘要。大型产物、数据库、原始日志和敏感数据不得提交。
 
-Evidence 按计划或功能建立子目录，例如 `phase5/<run-id>/`。审计记录只链接 Evidence，不在 `audits/` 内存放产物。
+审计与验收至少在正文记录：
+
+- 实际验证的 Git revision；
+- 完整命令或测试入口；
+- exit code 和结果摘要；
+- 未执行项及原因；
+- 必要时的产物路径、SHA-256 和外部保留位置。
+
+Evidence 的目标是让后续审计者能够复核结论，不是建立密码学可信执行平台。仓库不要求外部 signer、runtime attestation、容器 image 证明或专用 evidence runner。对高风险结论，审计者仍应在独立上下文针对准确 revision 重新执行 subject-specific 验证。

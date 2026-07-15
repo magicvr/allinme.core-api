@@ -1,29 +1,23 @@
 ---
 status: open
-governance_contract: audit-loop/v3
 audit_schema: plan-acceptance/v2
 audit_id: AUD-NNNN
 auditor: auditor-name-and-version
-execution_context_id: 00000000-0000-4000-8000-000000000000
-source_context_ids: legacy-unavailable
 audit_type: acceptance
 acceptance_type: plan-readiness
 acceptance_verdict: pending
-plan_status_at_acceptance: active
 independence_basis: separate-context
+runtime_context_ref: runtime-task-or-agent-ref
+source_context_refs: runtime-source-ref
 scope: plan:PLN-NNNN
 subject: plan readiness acceptance
 baseline: git:full-commit-sha; worktree:clean
 evidence_revision: git:full-commit-sha; worktree:clean
-evidence_run_id: 00000000-0000-4000-8000-000000000000
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD
 related_audits: none
 related_remediations: none
-supersedes: none
-superseded_by: none
-supersession_reason: none
 related_plans: PLN-NNNN
 ---
 
@@ -31,19 +25,16 @@ related_plans: PLN-NNNN
 
 <!-- plan-acceptance-audit: PLN-NNNN -->
 
-- Plan: `../../plans/PLN-NNNN-subject.md`
-- Checklist: `../../plans/PLN-NNNN-subject-checklist.md`
-
 | Control | Evidence | Verdict | Finding |
 |---|---|---|---|
-| READY_IDENTITY | <required:file/frontmatter/index evidence> | pass/fail | none 或 AUD-NNNN-F001 |
-| READY_SCOPE | <required:scope section evidence> | pass/fail | none 或 finding |
-| READY_FACTS | <required:fact-source/code evidence> | pass/fail | none 或 finding |
-| READY_DEPENDENCIES | <required:dependency/version evidence> | pass/fail | none 或 finding |
-| READY_DESIGN | <required:decision/stop-condition evidence> | pass/fail | none 或 finding |
-| READY_EVIDENCE | <required:test/CI/recovery plan evidence> | pass/fail | none 或 finding |
-| READY_GATES | <required:entry/release/owner evidence> | pass/fail | none 或 finding |
-| PLAN_AUDIT_CHAIN_CLEAN | <required:derived AUD/REM chain evidence> | pass/fail | none 或 finding |
+| READY_IDENTITY | <file/frontmatter/index> | pass/fail | none 或 AUD-NNNN-F001 |
+| READY_SCOPE | <scope and non-goals> | pass/fail | none 或 finding |
+| READY_FACTS | <fact sources/code> | pass/fail | none 或 finding |
+| READY_DEPENDENCIES | <dependency/version> | pass/fail | none 或 finding |
+| READY_DESIGN | <decisions/stop conditions> | pass/fail | none 或 finding |
+| READY_EVIDENCE | <test/recovery plan> | pass/fail | none 或 finding |
+| READY_GATES | <entry/release/owner> | pass/fail | none 或 finding |
+| PLAN_AUDIT_CHAIN_CLEAN | <AUD/REM/follow-up chain> | pass/fail | none 或 finding |
 
 ## Findings
 
