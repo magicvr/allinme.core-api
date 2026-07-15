@@ -1,10 +1,9 @@
 ---
 status: in-progress
-governance_contract: audit-loop/v3
 implementation_schema: implementation/v2
 implementation_id: IMP-NNNN
 implementer: implementer-name
-execution_context_id: 00000000-0000-4000-8000-000000000000
+runtime_context_ref: runtime-task-or-agent-ref
 scope: plan:PLN-NNNN
 related_plans: PLN-NNNN
 plan_acceptance_audits: AUD-NNNN

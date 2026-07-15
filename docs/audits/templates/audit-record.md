@@ -6,12 +6,12 @@ audit_type: targeted
 scope: feature:subject
 subject: concise subject
 baseline: git:full-commit-sha; worktree:clean
+evidence_revision: git:full-commit-sha; worktree:clean
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD
 related_audits: none
 related_remediations: none
-supersedes: none
 related_plans: none
 ---
 
