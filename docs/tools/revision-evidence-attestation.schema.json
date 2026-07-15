@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/magicvr/allinme.core-api/docs/tools/revision-evidence-attestation.schema.json",
+  "title": "Revision evidence attestation envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "attestation_id",
+    "algorithm",
+    "key_id",
+    "payload_base64",
+    "signature_base64"
+  ],
+  "properties": {
+    "schema": { "const": "revision-evidence-attestation/v1" },
+    "attestation_id": { "$ref": "#/$defs/uuidV4" },
+    "algorithm": { "const": "rsa-sha256" },
+    "key_id": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "payload_base64": { "type": "string", "minLength": 4 },
+    "signature_base64": { "type": "string", "minLength": 4 }
+  },
+  "$defs": {
+    "uuidV4": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "gitSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "payload": {
+      "title": "Decoded revision evidence binding payload",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "attestation_id",
+        "repository",
+        "audit_id",
+        "audit_record_path",
+        "evidence_run_id",
+        "evidence_artifact_path",
+        "evidence_artifact_sha256",
+        "evidence_revision",
+        "evidence_tree",
+        "argv",
+        "exit_code",
+        "image_digest",
+        "image_id",
+        "issued_at",
+        "expires_at"
+      ],
+      "properties": {
+        "schema": { "const": "revision-evidence-binding/v1" },
+        "attestation_id": { "$ref": "#/$defs/uuidV4" },
+        "repository": { "type": "string", "minLength": 1 },
+        "audit_id": {
+          "type": "string",
+          "pattern": "^AUD-[0-9]{4,}$"
+        },
+        "audit_record_path": {
+          "type": "string",
+          "pattern": "^docs/audits/records/AUD-[0-9]{4,}-.+\\.md$"
+        },
+        "evidence_run_id": { "$ref": "#/$defs/uuidV4" },
+        "evidence_artifact_path": {
+          "type": "string",
+          "pattern": "^docs/evidence/runs/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/evidence\\.json$"
+        },
+        "evidence_artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "evidence_revision": { "$ref": "#/$defs/gitSha" },
+        "evidence_tree": { "$ref": "#/$defs/gitSha" },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "exit_code": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "image_digest": {
+          "const": "docker.io/library/golang@sha256:349ad04971da5f200a537641ae2c70774a592ca21fad4b513b65f813f546781a"
+        },
+        "image_id": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "issued_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

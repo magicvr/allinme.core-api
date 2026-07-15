@@ -8,14 +8,14 @@ $workflowFixtureRoot = Join-Path $fixtureBase ('.workflow-fixture-' + [Guid]::Ne
 $validator = Join-Path $PSScriptRoot 'validate.ps1'
 $allocator = Join-Path $PSScriptRoot 'reserve-governance-record.ps1'
 $workflowValidator = Join-Path $PSScriptRoot 'validate-audit-workflows.ps1'
+$shell = Get-Command pwsh -ErrorAction SilentlyContinue
+if ($null -eq $shell) {
+    $shell = Get-Command powershell -ErrorAction Stop
+}
 
 function Invoke-Validator([string]$DocsRoot) {
     $previousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    $shell = Get-Command pwsh -ErrorAction SilentlyContinue
-    if ($null -eq $shell) {
-        $shell = Get-Command powershell -ErrorAction Stop
-    }
     $output = & $shell.Source -NoProfile -ExecutionPolicy Bypass -File $validator -DocsRoot $DocsRoot 2>&1
     $exitCode = $LASTEXITCODE
     Start-Sleep -Milliseconds 100
@@ -29,7 +29,7 @@ function Invoke-Validator([string]$DocsRoot) {
 function Invoke-WorkflowValidator([string]$RepositoryRoot) {
     $previousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $workflowValidator -RepositoryRoot $RepositoryRoot 2>&1
+    $output = & $shell.Source -NoProfile -ExecutionPolicy Bypass -File $workflowValidator -RepositoryRoot $RepositoryRoot 2>&1
     $exitCode = $LASTEXITCODE
     $ErrorActionPreference = $previousErrorAction
     return @{
@@ -43,6 +43,10 @@ try {
     New-Item -ItemType Directory -Path $fixtureRoot | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $workflowFixtureRoot '.github\prompts') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $workflowFixtureRoot '.agents\skills') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $workflowFixtureRoot 'docs\tools') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $workflowFixtureRoot 'docs\audits\templates') -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\audits\templates\audit-record.md') -Destination (Join-Path $workflowFixtureRoot 'docs\audits\templates\audit-record.md')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\audits\README.md') -Destination (Join-Path $workflowFixtureRoot 'docs\audits\README.md')
     foreach ($prompt in Get-ChildItem (Join-Path $repoRoot '.github\prompts') -Filter 'backend-*.prompt.md') {
         Copy-Item -LiteralPath $prompt.FullName -Destination (Join-Path $workflowFixtureRoot ".github\prompts\$($prompt.Name)")
     }
@@ -53,11 +57,24 @@ try {
         'backend-plan-acceptance-audit',
         'backend-implementation-audit',
         'backend-implementation-acceptance-audit',
-        'backend-follow-up-audit'
+        'backend-follow-up-audit',
+        'backend-implement-plan',
+        'backend-fix-audit-findings'
     )) {
         $skillTarget = Join-Path $workflowFixtureRoot ".agents\skills\$skillName"
         New-Item -ItemType Directory -Path $skillTarget -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $repoRoot ".agents\skills\$skillName\SKILL.md") -Destination (Join-Path $skillTarget 'SKILL.md')
+    }
+    foreach ($toolName in @(
+        'invoke-governance-transaction.ps1',
+        'update-loop-run-state.ps1',
+        'governance-loop-run.schema.json',
+        'validate-governance-history.ps1',
+        'validate-runtime-attestations.ps1',
+        'validate-evidence-attestations.ps1',
+        'invoke-revision-evidence.ps1'
+    )) {
+        Copy-Item -LiteralPath (Join-Path $repoRoot "docs\tools\$toolName") -Destination (Join-Path $workflowFixtureRoot "docs\tools\$toolName")
     }
 
     $validWorkflowResult = Invoke-WorkflowValidator $workflowFixtureRoot
@@ -74,6 +91,13 @@ try {
     }
     Set-Content -LiteralPath $planLoopFixture -Value $planLoopContent -Encoding UTF8
 
+    Set-Content -LiteralPath $planLoopFixture -Value ($planLoopContent.Replace('<!-- standalone-goal-contract: advance-set-equals-target; complete-full-target-only -->', '')) -Encoding UTF8
+    $standaloneSubsetResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($standaloneSubsetResult.ExitCode -eq 0 -or $standaloneSubsetResult.Output -notmatch 'strict advance subset|full goal') {
+        throw "workflow validator did not reject standalone completion over an advance subset: $($standaloneSubsetResult.Output)"
+    }
+    Set-Content -LiteralPath $planLoopFixture -Value $planLoopContent -Encoding UTF8
+
     $implementationLoopFixture = Join-Path $workflowFixtureRoot '.github\prompts\backend-implement-audit-until-complete.prompt.md'
     $implementationLoopContent = Get-Content -Raw -Encoding UTF8 $implementationLoopFixture
     Set-Content -LiteralPath $implementationLoopFixture -Value ($implementationLoopContent.Replace('GOAL_MODE=child STEP_MODE=single-transition MAX_CYCLES=1', 'GOAL_MODE=child')) -Encoding UTF8
@@ -83,9 +107,16 @@ try {
     }
     Set-Content -LiteralPath $implementationLoopFixture -Value $implementationLoopContent -Encoding UTF8
 
-    Set-Content -LiteralPath $implementationLoopFixture -Value ($implementationLoopContent.Replace('<!-- terminal-reentry-contract: blocked-rem-requires-changed-recovery-evidence; partial-or-blocked-imp-requires-new-ready-revision; no-automatic-retry-storm -->', '')) -Encoding UTF8
+    Set-Content -LiteralPath $implementationLoopFixture -Value ($implementationLoopContent.Replace('; consumed-actions-are-not-replayable', '').Replace('implemented-by:IMP-NNNN', 'implementation-required')) -Encoding UTF8
+    $replayedImplementActionResult = Invoke-WorkflowValidator $workflowFixtureRoot
+    if ($replayedImplementActionResult.ExitCode -eq 0 -or $replayedImplementActionResult.Output -notmatch 'consumed|replaying') {
+        throw "workflow validator did not reject replayable implementation actions: $($replayedImplementActionResult.Output)"
+    }
+    Set-Content -LiteralPath $implementationLoopFixture -Value $implementationLoopContent -Encoding UTF8
+
+    Set-Content -LiteralPath $implementationLoopFixture -Value ($implementationLoopContent.Replace('<!-- terminal-reentry-contract: blocked-rem-requires-changed-recovery-evidence; partial-or-blocked-imp-requires-current-ready-and-changed-recovery-evidence; consumed-actions-are-not-replayable; no-automatic-retry-storm -->', '')) -Encoding UTF8
     $missingTerminalReentryResult = Invoke-WorkflowValidator $workflowFixtureRoot
-    if ($missingTerminalReentryResult.ExitCode -eq 0 -or $missingTerminalReentryResult.Output -notmatch 'safely re-enter terminal REM and IMP work') {
+    if ($missingTerminalReentryResult.ExitCode -eq 0 -or $missingTerminalReentryResult.Output -notmatch 'safely re-enter terminal IMP work without replaying consumed actions') {
         throw "workflow validator did not reject unsafe terminal work re-entry: $($missingTerminalReentryResult.Output)"
     }
     Set-Content -LiteralPath $implementationLoopFixture -Value $implementationLoopContent -Encoding UTF8
@@ -138,7 +169,7 @@ try {
     $implementationAuditContent = Get-Content -Raw -Encoding UTF8 $implementationAuditFixture
     Set-Content -LiteralPath $implementationAuditFixture -Value ($implementationAuditContent.Replace('<!-- governance-handoff-contract: open-checkpoint-commit; reuse-existing-checkpoint; no-empty-commit; terminal-governance-commit; clean-revision-return -->', '')) -Encoding UTF8
     $missingGovernanceHandoffResult = Invoke-WorkflowValidator $workflowFixtureRoot
-    if ($missingGovernanceHandoffResult.ExitCode -eq 0 -or $missingGovernanceHandoffResult.Output -notmatch 'governance handoff contract') {
+    if ($missingGovernanceHandoffResult.ExitCode -eq 0 -or $missingGovernanceHandoffResult.Output -notmatch 'reusable open checkpoints|clean revision handoff') {
         throw "workflow validator did not reject a missing durable governance handoff: $($missingGovernanceHandoffResult.Output)"
     }
     Set-Content -LiteralPath $implementationAuditFixture -Value $implementationAuditContent -Encoding UTF8
@@ -153,19 +184,24 @@ try {
     Set-Content -LiteralPath $planAuditFixture -Value $planAuditContent -Encoding UTF8
 
     $evidenceRunner = Join-Path $PSScriptRoot 'invoke-revision-evidence.ps1'
-    $evidenceRunOutput = & $evidenceRunner -Revision HEAD -Command git -CommandArgs @('rev-parse', 'HEAD') 2>&1
-    if ($LASTEXITCODE -ne 0 -or ($evidenceRunOutput | Out-String) -notmatch '"evidence_worktree":"detached"' -or
-        ($evidenceRunOutput | Out-String) -notmatch '"tracked_worktree_clean_after_run":true') {
-        throw "revision evidence runner did not prove detached exact-revision execution: $($evidenceRunOutput | Out-String)"
+    $dirtyRunId = [Guid]::NewGuid().ToString()
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $dirtyEvidenceOutput = & $shell.Source -NoProfile -ExecutionPolicy Bypass -File $evidenceRunner -Revision HEAD -Command git -CommandArgs rev-parse,HEAD -EvidenceRunId $dirtyRunId 2>&1
+    $dirtyEvidenceExit = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorAction
+    if ($dirtyEvidenceExit -ne 125 -or ($dirtyEvidenceOutput | Out-String) -notmatch 'Host worktree is dirty') {
+        throw "revision evidence runner did not fail closed on a dirty host: $($dirtyEvidenceOutput | Out-String)"
     }
-    $failingEvidenceOutput = & $evidenceRunner -Revision HEAD -Command git -CommandArgs @('rev-parse', '--verify', 'definitely-missing-revision') 2>&1
-    if ($LASTEXITCODE -eq 0 -or ($failingEvidenceOutput | Out-String) -notmatch '"exit_code":128') {
-        throw "revision evidence runner did not preserve a failing command exit code and metadata: $($failingEvidenceOutput | Out-String)"
+    if (Test-Path -LiteralPath (Join-Path $repoRoot "docs\evidence\runs\$dirtyRunId")) {
+        throw 'revision evidence runner created an artifact before the dirty-host preflight passed'
     }
 
     New-Item -ItemType Directory -Path (Join-Path $allocatorRoot 'docs\audits\records') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $allocatorRoot 'docs\remediations\records') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $allocatorRoot 'docs\implementations\records') -Force | Out-Null
+    & git -C $allocatorRoot init --quiet
+    if ($LASTEXITCODE -ne 0) { throw 'unable to initialize allocator fixture repository' }
     $firstAllocation = & $allocator -Kind AUD -Suffix '20260714-validator-plan-first' -RepositoryRoot $allocatorRoot
     $secondAllocation = & $allocator -Kind AUD -Suffix '20260714-validator-plan-second' -RepositoryRoot $allocatorRoot
     if ($firstAllocation -notmatch '^AUD-0001\s+docs/audits/records/AUD-0001-' -or
@@ -541,6 +577,8 @@ subject: validator plan readiness
 baseline: git:0000000000000000000000000000000000000000; worktree:clean
 evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean
 evidence_run_id: 11111111-1111-4111-8111-111111111111
+evidence_artifact: docs/evidence/runs/11111111-1111-4111-8111-111111111111/evidence.json
+evidence_attestation: docs/evidence/runs/11111111-1111-4111-8111-111111111111/attestation.json
 started_at: 2026-07-14T03:00:00+08:00
 completed_at: 2026-07-14T03:15:00+08:00
 last_updated: 2026-07-14
@@ -619,6 +657,8 @@ subject: validator implementation
 baseline: git:1111111111111111111111111111111111111111; worktree:clean
 evidence_revision: git:1111111111111111111111111111111111111111; worktree:clean
 evidence_run_id: 66666666-6666-4666-9666-666666666666
+evidence_artifact: docs/evidence/runs/66666666-6666-4666-9666-666666666666/evidence.json
+evidence_attestation: docs/evidence/runs/66666666-6666-4666-9666-666666666666/attestation.json
 started_at: 2026-07-14T04:30:00+08:00
 completed_at: 2026-07-14T04:45:00+08:00
 last_updated: 2026-07-14
@@ -671,6 +711,8 @@ subject: validator implementation completion
 baseline: git:1111111111111111111111111111111111111111; worktree:clean
 evidence_revision: git:1111111111111111111111111111111111111111; worktree:clean
 evidence_run_id: 22222222-2222-4222-8222-222222222222
+evidence_artifact: docs/evidence/runs/22222222-2222-4222-8222-222222222222/evidence.json
+evidence_attestation: docs/evidence/runs/22222222-2222-4222-8222-222222222222/attestation.json
 effective_result_revision: git:1111111111111111111111111111111111111111
 started_at: 2026-07-14T05:00:00+08:00
 completed_at: 2026-07-14T05:15:00+08:00
@@ -718,10 +760,10 @@ related_plans: PLN-0001
         "governance_contract: audit-loop/v3`nworkflow_contract_revision: audit-runtime/v1`n"
     ).Replace(
         "execution_context_id: 44444444-4444-4444-8444-444444444444`n",
-        "execution_context_id: 44444444-4444-4444-8444-444444444444`nruntime_context_ref: runtime-unavailable`n"
+        "execution_context_id: 44444444-4444-4444-8444-444444444444`nruntime_context_ref: runtime-unavailable`nruntime_context_attestation: docs/evidence/runtime-attestations/44444444-4444-4444-8444-444444444444.json`n"
     ).Replace(
         "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`n",
-        "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`nevidence_worktree_revision: git:0000000000000000000000000000000000000000`nevidence_runner: docs/tools/invoke-revision-evidence.ps1`naudited_peer_plans: PLN-0001`n"
+        "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`nevidence_worktree_revision: git:0000000000000000000000000000000000000000`nevidence_runner: docs/tools/invoke-revision-evidence.ps1`nevidence_run_id: 44444444-4444-4444-9444-444444444444`nevidence_artifact: docs/evidence/runs/44444444-4444-4444-9444-444444444444/evidence.json`nevidence_attestation: docs/evidence/runs/44444444-4444-4444-9444-444444444444/attestation.json`naudited_peer_plans: PLN-0001`n"
     )
     $planAuditRecordPath = Join-Path $auditRecordsRoot $planAuditRecordName
     Set-Content -LiteralPath $planAuditRecordPath -Value ($runtimePlanAuditFrontmatter + "`n" + $planAuditMatrix) -Encoding UTF8
@@ -785,7 +827,7 @@ related_plans: PLN-0001
         "governance_contract: audit-loop/v3`nworkflow_contract_revision: audit-runtime/v1`n"
     ).Replace(
         "execution_context_id: 55555555-5555-4555-8555-555555555555`n",
-        "execution_context_id: 55555555-5555-4555-8555-555555555555`nruntime_context_ref: runtime-plan-acceptance`nsource_context_refs: runtime-plan-audit`n"
+        "execution_context_id: 55555555-5555-4555-8555-555555555555`nruntime_context_ref: runtime-plan-acceptance`nruntime_context_attestation: docs/evidence/runtime-attestations/55555555-5555-4555-8555-555555555555.json`nsource_context_refs: runtime-plan-audit`n"
     ).Replace(
         "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`n",
         "evidence_revision: git:0000000000000000000000000000000000000000; worktree:clean`nevidence_worktree_revision: git:0000000000000000000000000000000000000000`nevidence_runner: docs/tools/invoke-revision-evidence.ps1`n"
@@ -908,7 +950,7 @@ related_plans: PLN-0001
         'status: partial'
     ).Replace(
         'result_revision: git:1111111111111111111111111111111111111111',
-        'result_revision: pending'
+        'result_revision: git:2222222222222222222222222222222222222222'
     ).Replace(
         'started_at: 2026-07-14T03:30:00+08:00',
         'started_at: 2026-07-14T06:00:00+08:00'
@@ -949,7 +991,7 @@ related_plans: PLN-0001
     $auditIndexWithLateAcceptance = $auditIndexContent + "`n- [AUD-0008](./records/$latePlanAcceptanceName): ``status=closed``; ``remediation=required``; fixture."
     Set-Content -LiteralPath $auditIndexPath -Value $auditIndexWithLateAcceptance -Encoding UTF8
     $stalePlanAcceptanceResult = Invoke-Validator $fixtureRoot
-    if ($stalePlanAcceptanceResult.ExitCode -eq 0 -or $stalePlanAcceptanceResult.Output -notmatch 'latest plan acceptance available when it started') {
+    if ($stalePlanAcceptanceResult.ExitCode -eq 0 -or $stalePlanAcceptanceResult.Output -notmatch 'must reference the latest plan acceptance in its baseline') {
         throw "validator accepted implementation against a stale ready plan acceptance: $($stalePlanAcceptanceResult.Output)"
     }
     Remove-Item -LiteralPath (Join-Path $auditRecordsRoot $latePlanAcceptanceName)
@@ -1551,7 +1593,7 @@ related_plans: none
         'audit_id: AUD-0018'
     ).Replace(
         "execution_context_id: 55555555-5555-4555-8555-555555555555`n",
-        "execution_context_id: 18181818-1818-4818-8818-181818181818`nruntime_context_ref: runtime-lost-task`nsource_context_refs: runtime-plan-audit`n"
+        "execution_context_id: 18181818-1818-4818-8818-181818181818`nruntime_context_ref: runtime-lost-task`nruntime_context_attestation: docs/evidence/runtime-attestations/18181818-1818-4818-8818-181818181818.json`nsource_context_refs: runtime-plan-audit`n"
     ).Replace(
         'acceptance_verdict: ready',
         'acceptance_verdict: superseded'
@@ -1582,7 +1624,7 @@ related_plans: none
         'audit_id: AUD-0019'
     ).Replace(
         "execution_context_id: 55555555-5555-4555-8555-555555555555`nsource_context_ids: 44444444-4444-4444-8444-444444444444`n",
-        "execution_context_id: 19191919-1919-4919-8919-191919191919`nruntime_context_ref: runtime-new-task`nsource_context_ids: 44444444-4444-4444-8444-444444444444, 18181818-1818-4818-8818-181818181818`nsource_context_refs: runtime-plan-audit, runtime-lost-task`n"
+        "execution_context_id: 19191919-1919-4919-8919-191919191919`nruntime_context_ref: runtime-new-task`nruntime_context_attestation: docs/evidence/runtime-attestations/19191919-1919-4919-8919-191919191919.json`nsource_context_ids: 44444444-4444-4444-8444-444444444444, 18181818-1818-4818-8818-181818181818`nsource_context_refs: runtime-plan-audit, runtime-lost-task`n"
     ).Replace(
         'acceptance_verdict: ready',
         'acceptance_verdict: pending'

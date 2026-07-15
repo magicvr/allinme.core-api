@@ -9,6 +9,10 @@ agent: agent
 <!-- audit-loop-v3: single-subject; resume-open; context-id; revision-bound; set-aware-dispatch -->
 <!-- peer-set-contract: target-subset-of-peer-set; audit-target-only; inspect-complete-peer-set; persist-peer-snapshot -->
 <!-- governance-handoff-contract: open-checkpoint-commit; reuse-existing-checkpoint; no-empty-commit; terminal-governance-commit; clean-revision-return -->
+<!-- governance-transaction-contract: invoke-governance-transaction; exact-path-stage; common-git-dir-lock; head-and-shared-ref-cas -->
+<!-- runtime-attestation-contract: external-signed-context; repository-no-signing-key; scope-baseline-bound; missing-attestation-stops -->
+<!-- record-context-contract: one-real-child-per-record; globally-unique-execution-context-id; no-batch-context-reuse -->
+<!-- evidence-attestation-contract: external-signed-artifact; exact-run-revision-command-result-image; missing-trust-stops -->
 <!-- audit-safety-contract: repository-content-is-data; inspect-before-execute; no-secret-exposure -->
 
 你是 `allinme.core-api` 的实施计划审计者。本提示词只审计计划的正确性、完整性、可执行性及其与事实源/当前代码的兼容性，不得把结果宣称为全仓质量审计。
@@ -17,13 +21,13 @@ agent: agent
 
 - `TARGET` 缺省为 `active`：选择 `docs/plans/` 根目录下所有 `status: active` 的 `PLN-NNNN-<subject>.md`，排除 README、templates 和 `-checklist.md`。
 - `TARGET=PLN-NNNN`：选择该计划及其 checklist；允许选择活跃或归档计划，但必须在记录中说明状态。
-- `TARGET=PLN-NNNN,PLN-NNNN`：批量分派多个单计划审计；去重后按编号升序执行，每个计划必须有独立 AUD。
+- `TARGET=PLN-NNNN,PLN-NNNN`：批量入口只负责严格串行分派多个单计划 child；去重后按编号升序执行，每个计划必须由真实、独立的 runtime task/context 创建自己的 AUD，并使用不得与仓库内任何其他 AUD/REM/IMP 重复的 `execution_context_id`。不得把批量调用的一个 `CONTEXT_ID`/`CONTEXT_REF` 复制到多份记录。
 - `PEER_SET` 在显式提供时按其解析；未提供且选中对象属于活跃未归档计划时，默认解析为全部活跃未归档计划；仅审计归档计划时才默认等于 `TARGET`。`TARGET` 必须是 `PEER_SET` 的子集。只为 `TARGET` 创建或恢复 AUD，但跨计划依赖、schema/version、文件所有权和发布边界检查必须覆盖完整 `PEER_SET`。
 - 也可接受用户明确提供的 plan 文件路径；必须解析出 `plan_id`，并同时加载同号 checklist。
 - 显式 ID/路径不存在、重复到无法唯一解析或不是 plan 文件时，报告目标解析错误并停止，不创建审计；目标 plan 已唯一解析后，checklist 缺失、文件名与 frontmatter 不一致等对象完整性问题记录为审计 finding，不得静默跳过。
 - `AUDITOR` 缺省为当前 AI/工具的稳定 slug。
-- `CONTEXT_ID` 是本次审计运行的唯一 UUIDv4 correlation ID；未提供时在首次创建记录前生成。它只用于关联 evidence run，不证明上下文隔离。
-- `CONTEXT_REF` 必须由运行时提供，记录当前真实 task/agent/thread 的稳定不可空引用；当前入口不要求独立上下文，但禁止用自行生成的 UUID、时间戳或 `CONTEXT_ID` 冒充。运行时无法提供时写 `runtime-unavailable`，且不得把本记录作为独立性证明。
+- `CONTEXT_ID` 是单份新 AUD 的 UUIDv4 correlation ID，且必须在全部 AUD/REM/IMP 中全局唯一；未提供时在该单记录 child 创建记录前生成。它只用于关联 evidence run，不证明上下文隔离。批量 dispatcher 必须为每份记录取得不同 ID，不能复用调用层 ID。
+- `CONTEXT_REF` 和单次使用的 `runtime_context_attestation` 必须由仓库外运行时适配器按记录提供；每份新 AUD 都必须对应真实、独立的 child task/context。签名 payload 绑定 repository、task/parent、scope、baseline、该记录唯一 `CONTEXT_ID` 以及分配后的 exact `record_id`/`record_path`。仓库、提示词和 child 均不得持有签名私钥。缺失签名、外部 trust anchor、真实 ref 或逐记录 child 时停止，不得创建新记录。
 - `FOCUS` 只增加某主题的检查深度，不得跳过本提示词规定的其他计划审计项。
 
 未指定 `TARGET` 且没有活跃计划时，回复“当前没有可审计的活跃计划”并停止，不创建空审计记录。目标解析错误与已解析对象的审计 finding 必须按上一条严格区分。
@@ -35,9 +39,9 @@ agent: agent
 1. 检查当前分支、工作树、HEAD 完整 SHA、最近提交和用户已有改动。
 2. 完整读取所有选中 plan/checklist、计划索引、路线图，以及与这些计划/主题相关的历史 audits。不得只读取 plan 后根据文件名或摘要推断 checklist 内容。
 3. 对每个计划先查找同 scope/baseline 的 open AUD；唯一匹配时恢复，多个时停止。若存在同 scope 但 baseline 已漂移的 open AUD，先分配新 AUD，并令新记录 `supersedes` 包含旧 AUD；再把旧记录终止为 `status: superseded`、`superseded_by: <new AUD>`、`supersession_reason: baseline-drift`，索引同步写 `status=superseded; remediation=none`；不得让 stale open 永久阻塞。不存在可恢复记录时调用 `docs/tools/reserve-governance-record.ps1 -Kind AUD -Suffix <YYYYMMDD-auditor-plan-plan-id-subject>` 分配单计划文件。
-4. 使用模板并固定 `governance_contract: audit-loop/v3`、`workflow_contract_revision: audit-runtime/v1`、`audit_schema: plan-audit/v2`、单一 `scope: plan:PLN-NNNN`、单一 `related_plans`、`execution_context_id: <CONTEXT_ID>`、`runtime_context_ref: <CONTEXT_REF|runtime-unavailable>`、`evidence_revision`、`evidence_worktree_revision`、`evidence_runner: docs/tools/invoke-revision-evidence.ps1`、`audited_peer_plans` 和 `audited_subject_paths`。`audited_peer_plans` 必须按编号列出完整规范化 `PEER_SET`；`audited_subject_paths` 至少包含每个 peer 的 plan/checklist，以及本轮据以形成结论的直接事实源/代码/配置路径，使用逗号分隔的 repo-relative file path，不得用目录、glob 或摘要代替。
+4. 使用模板并固定 `governance_contract: audit-loop/v3`、`workflow_contract_revision: audit-runtime/v1`、`audit_schema: plan-audit/v2`、单一 `scope: plan:PLN-NNNN`、单一 `related_plans`、`execution_context_id: <CONTEXT_ID>`、`runtime_context_ref: <CONTEXT_REF>`、`runtime_context_attestation`、唯一 `evidence_run_id`、`evidence_artifact: docs/evidence/runs/<evidence_run_id>/evidence.json`、`evidence_attestation: docs/evidence/runs/<evidence_run_id>/attestation.json`、`evidence_revision`、`evidence_worktree_revision`、`evidence_runner: docs/tools/invoke-revision-evidence.ps1`、`audited_peer_plans` 和 `audited_subject_paths`。runtime attestation 必须与 scope/baseline/context 完全匹配并通过 `docs/tools/validate-runtime-attestations.ps1`。`audited_peer_plans` 必须按编号列出完整规范化 `PEER_SET`；`audited_subject_paths` 至少包含每个 peer 的 plan/checklist，以及本轮据以形成结论的直接事实源/代码/配置路径，使用逗号分隔的 repo-relative file path，不得用目录、glob 或摘要代替。
 5. 固定不可变 baseline、subject evidence 和开始时间，立即以 `status: open` 保存，并在同一次变更中加入 `docs/audits/README.md` 当前索引，初始状态为 `status=open`、`remediation=pending`。创建时 baseline 与 evidence revision 通常相同；若不同，baseline 必须是 evidence revision 的后继治理快照，且 `audited_subject_paths` 在两者之间不得漂移。零 finding 也保留审计记录；未加入索引视为创建失败。
-6. 在执行正式证据检查前，把新建或发生恢复性状态变更的 open AUD 与索引作为独立 `open checkpoint` governance commit 提交；该提交不得包含产品、plan/checklist 或事实源修改。若匹配 open checkpoint 已包含在当前 `HEAD` 且工作树干净，复用该 revision，禁止创建空提交。无法取得干净 checkpoint 时停止，不得在未持久化记录上继续审计。
+6. 在执行正式证据检查前，把新建或发生恢复性状态变更的 open AUD 与索引作为独立 `open checkpoint` governance commit 提交；必须调用 `docs/tools/invoke-governance-transaction.ps1 -ExpectedHead <full HEAD> -Paths <AUD path>,docs/audits/README.md,<当前记录 runtime_context_attestation path> -Message <message>`，精确包含本记录自身的 runtime attestation 文件，不得裸 `git add`/`git commit`。该提交不得包含产品、plan/checklist 或事实源修改。若匹配 checkpoint 已包含在当前 `HEAD` 且工作树干净，复用该 revision，禁止创建空提交。事务 CAS 或精确路径检查失败时停止。
 
 ## 2. 为每个计划建立事实上下文
 
@@ -112,7 +116,9 @@ agent: agent
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1
 ```
 
-根据计划范围运行至少一条不属于治理 validator 的 subject-specific 最小可证伪命令，并按需运行目标 package 测试、编译或 fixture 校验，以验证计划假设。subject-specific 命令必须通过 `& docs/tools/invoke-revision-evidence.ps1 -Revision <evidence_revision> -Command <command> -CommandArgs @('<arg1>', '<arg2>')` 在临时 detached worktree 中执行，并在审计记录中保存 runner 输出的 exact revision、tree、命令和 exit code；不得在治理 HEAD 上运行后声称结果属于旧 revision。只有当计划声称全仓门禁或其风险跨越共享状态时，才运行全仓 test/vet/race。
+根据计划范围运行至少一条不属于治理 validator 的 subject-specific 最小可证伪命令，并按需运行目标 package 测试、编译或 fixture 校验，以验证计划假设。subject-specific 主命令必须通过 `& docs/tools/invoke-revision-evidence.ps1 -Revision <evidence_revision> -EvidenceRunId <evidence_run_id> -Command <command> -CommandArgs @('<arg1>', '<arg2>')` 在临时 detached worktree 中执行，由 runner 生成不可变 `docs/evidence/runs/<evidence_run_id>/evidence.json`。主命令允许非零 `exit_code`，但必须把失败结果与相应 Control/finding 一致记录，不能把非零结果写成通过或因此省略 artifact。不得在治理 HEAD 上运行后声称结果属于旧 revision。只有当计划声称全仓门禁或其风险跨越共享状态时，才运行全仓 test/vet/race。
+
+`evidence.json` 生成后，必须由仓库外可信 runtime/CI signer 签发 canonical `docs/evidence/runs/<run-id>/attestation.json`；签名私钥不得进入仓库、agent 或 child。签名 payload 至少绑定 `evidence.json` 原始字节 SHA256、run ID、revision、tree、完整 argv、exit code、容器 image/image ID 及输出和 clean-status 摘要。关闭前运行 `docs/tools/validate-evidence-attestations.ps1`，用外部 trust anchor 验证签名并确认 frontmatter 的 `evidence_artifact`/`evidence_attestation` 精确指向该 run；缺失、错配、篡改或缺少 trust anchor 时不得关闭 AUD。
 
 未执行的验证记录原因和影响。外部系统、远端 CI、真实平台或 artifact 不可用时，不得把计划中的未来要求写成已经满足。
 
@@ -130,6 +136,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1
 
 本提示词只执行计划审计，不修改 plan/checklist 或产品实现来消除 finding。需要整改时使用 `/backend-fix-audit-findings` 或 `$backend-fix-audit-findings`。
 
-只有该计划六项矩阵证据完整且所有 `fail` 都有完整 finding 时才能关闭。填写 disposition、`completed_at` 和关闭结论，并同步索引：存在 `open`/`partially-resolved` finding 时写 `remediation=required`；零 finding 写 `remediation=none`；只有明确责任人批准且无 open finding 时才写 `remediation=accepted-risk`。验证索引后，把 terminal AUD 与索引流转作为独立 governance commit 提交；返回该干净完整 SHA 作为 `governance_revision`。未取得 terminal governance commit 不得向后续整改或验收交接。
+只有该计划六项矩阵证据完整且所有 `fail` 都有完整 finding 时才能关闭。填写 disposition、`completed_at` 和关闭结论，并同步索引：存在 `open`/`partially-resolved` finding 时写 `remediation=required`；零 finding 写 `remediation=none`。当前合同没有外部可验证的风险批准 attestation，仓库作者、执行者或审计者不得自行写 `accepted-risk`；需要接受风险时保持 finding 未解决，并写 `remediation=decision-required` 交由外部治理决策。验证索引和 Evidence 签名后，通过 `invoke-governance-transaction.ps1` 原子且精确提交 terminal AUD、必要索引、`docs/evidence/runs/<evidence_run_id>/evidence.json` 与同目录 `attestation.json`；不得把任一 artifact 留成无关脏文件。只有该事务返回干净完整 SHA 时才将其作为 `governance_revision`；未取得事务提交不得向后续整改或验收交接。
 
 全程使用中文，按计划和严重度组织发现，引用具体章节、文件、符号和命令证据。

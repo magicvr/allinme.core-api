@@ -6,7 +6,8 @@ audit_schema: plan-audit/v2
 audit_id: AUD-NNNN
 auditor: auditor-name-and-version
 execution_context_id: 00000000-0000-4000-8000-000000000000
-runtime_context_ref: runtime-unavailable
+runtime_context_ref: runtime-task-or-agent-ref
+runtime_context_attestation: docs/evidence/runtime-attestations/00000000-0000-4000-8000-000000000000.json
 audit_type: targeted
 scope: plan:PLN-NNNN
 subject: concise plan subject
@@ -14,6 +15,10 @@ baseline: git:full-commit-sha; worktree:clean
 evidence_revision: git:full-commit-sha; worktree:clean
 evidence_worktree_revision: git:full-commit-sha
 evidence_runner: docs/tools/invoke-revision-evidence.ps1
+evidence_argv_json: ["<subject-command>", "<arg-1>"]
+evidence_run_id: 00000000-0000-4000-8000-000000000000
+evidence_artifact: docs/evidence/runs/00000000-0000-4000-8000-000000000000/evidence.json
+evidence_attestation: docs/evidence/runs/00000000-0000-4000-8000-000000000000/attestation.json
 audited_peer_plans: PLN-NNNN
 audited_subject_paths: docs/plans/PLN-NNNN-subject.md, docs/plans/PLN-NNNN-subject-checklist.md
 started_at: YYYY-MM-DDTHH:MM:SS+08:00

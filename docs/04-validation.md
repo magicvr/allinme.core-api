@@ -13,7 +13,13 @@ applies_to: allinme.core-api
 go test ./...
 go vet ./...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate-audit-workflows.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.tests.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate-runtime-attestations.tests.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate-evidence-attestations.tests.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/governance-helpers.tests.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/invoke-revision-evidence.tests.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate-governance-history.tests.ps1
 ```
 
 | 命令 | 证明内容 | 不能证明 |
@@ -21,6 +27,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.test
 | `go test ./...` | HTTP 与协议算法测试、共享 fixtures 的当前行为 | 生产依赖可用或远端部署健康 |
 | `go vet ./...` | Go 静态分析未发现已知问题 | 并发安全和业务语义完整 |
 | `docs/tools/validate.ps1` | 文档 frontmatter、链接、计划/审计/整改命名与索引、Copilot/Codex 工作流入口规则 | 文档内容本身的业务正确性 |
+| `docs/tools/validate-audit-workflows.ps1` | 原子治理事务、持久闭环状态、child 串行与 runtime 隔离契约仍存在 | prompt/skill 实际运行时一定遵守契约 |
+| `docs/tools/validate-governance-history.ps1 -HistoryBase <sha>` | 新 AUD/REM/IMP 在 Git 历史中真实经历 open checkpoint、subject/evidence ancestry 和 terminal commit，且各阶段路径受限 | `HistoryBase` 之前的历史或业务证据本身正确 |
 
 涉及共享状态、goroutine 或并发 handler 时增加：
 
@@ -93,7 +101,7 @@ go test ./...
 
 ## 7. CI 与协议升级
 
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) 从 `go.mod` 读取 Go 版本，固定 Schema-UI commit 后运行 test 和 vet。协议 pin 变化只有在以下证据齐全时完成：
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) 从 `go.mod` 读取 Go 版本，固定 Schema-UI commit 后运行 test 和 vet。文档门禁使用完整 Git 历史，以 PR base/push 前一 revision 作为 `AUDIT_HISTORY_BASE`，分别运行当前树 validator 与 `validate-governance-history.ps1`；后者拒绝把单提交终态记录冒充 open/subject/terminal 事务链。协议 pin 变化只有在以下证据齐全时完成：
 
 1. Schema-UI 固定对象永久可达；
 2. 本地测试使用同一 fixture checkout 通过；

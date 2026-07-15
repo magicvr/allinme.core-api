@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/magicvr/allinme.core-api/docs/tools/runtime-context-attestation.schema.json",
+  "title": "Runtime context attestation envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "attestation_id",
+    "algorithm",
+    "key_id",
+    "payload_base64",
+    "signature_base64"
+  ],
+  "properties": {
+    "schema": { "const": "runtime-context-attestation/v1" },
+    "attestation_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "algorithm": { "const": "rsa-sha256" },
+    "key_id": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "payload_base64": { "type": "string", "minLength": 4 },
+    "signature_base64": { "type": "string", "minLength": 4 }
+  }
+}

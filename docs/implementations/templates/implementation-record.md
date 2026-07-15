@@ -6,7 +6,8 @@ implementation_schema: implementation/v2
 implementation_id: IMP-NNNN
 implementer: implementer-name
 execution_context_id: 00000000-0000-4000-8000-000000000000
-runtime_context_ref: runtime-unavailable
+runtime_context_ref: runtime-task-or-agent-ref
+runtime_context_attestation: docs/evidence/runtime-attestations/00000000-0000-4000-8000-000000000000.json
 scope: plan:PLN-NNNN
 related_plans: PLN-NNNN
 plan_acceptance_audits: AUD-NNNN
@@ -14,6 +15,9 @@ trigger_audits: none
 plan_evidence_revision: git:full-commit-sha
 baseline: git:full-commit-sha; worktree:clean
 result_revision: pending
+supersedes: none
+superseded_by: none
+supersession_reason: none
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD

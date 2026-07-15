@@ -6,7 +6,8 @@ remediation_schema: remediation/v2
 remediation_id: REM-NNNN
 implementer: implementer-name
 execution_context_id: 00000000-0000-4000-8000-000000000000
-runtime_context_ref: runtime-unavailable
+runtime_context_ref: runtime-task-or-agent-ref
+runtime_context_attestation: docs/evidence/runtime-attestations/00000000-0000-4000-8000-000000000000.json
 scope: audit:AUD-NNNN
 source_audits: AUD-NNNN
 source_findings: AUD-NNNN-F001
@@ -15,6 +16,9 @@ result_revision: pending
 parent_result_revision: none
 affects_implementation: false
 related_implementations: none
+supersedes: none
+superseded_by: none
+supersession_reason: none
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD

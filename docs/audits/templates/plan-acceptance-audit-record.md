@@ -7,8 +7,10 @@ audit_id: AUD-NNNN
 auditor: auditor-name-and-version
 execution_context_id: 00000000-0000-4000-8000-000000000000
 runtime_context_ref: runtime-task-or-agent-ref
+runtime_context_attestation: docs/evidence/runtime-attestations/00000000-0000-4000-8000-000000000000.json
 source_context_ids: legacy-unavailable
 source_context_refs: legacy-unavailable
+source_context_attestations: docs/evidence/runtime-attestations/00000000-0000-4000-8000-000000000000.json
 audit_type: acceptance
 acceptance_type: plan-readiness
 acceptance_verdict: pending
@@ -20,7 +22,10 @@ baseline: git:full-commit-sha; worktree:clean
 evidence_revision: git:full-commit-sha; worktree:clean
 evidence_worktree_revision: git:full-commit-sha
 evidence_runner: docs/tools/invoke-revision-evidence.ps1
+evidence_argv_json: ["<subject-command>", "<arg-1>"]
 evidence_run_id: 00000000-0000-4000-8000-000000000000
+evidence_artifact: docs/evidence/runs/00000000-0000-4000-8000-000000000000/evidence.json
+evidence_attestation: docs/evidence/runs/00000000-0000-4000-8000-000000000000/attestation.json
 started_at: YYYY-MM-DDTHH:MM:SS+08:00
 completed_at: pending
 last_updated: YYYY-MM-DD

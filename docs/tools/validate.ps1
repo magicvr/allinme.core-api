@@ -6,11 +6,28 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$gitCommand = @(Get-Command git -CommandType Application -ErrorAction SilentlyContinue) | Select-Object -First 1
+if ($null -eq $gitCommand -or [string]::IsNullOrWhiteSpace([string]$gitCommand.Source)) {
+    throw 'Git is required to validate documentation.'
+}
+$gitExecutable = [IO.Path]::GetFullPath([string]$gitCommand.Source)
+$repoRootPrefix = $repoRoot.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+if ([string]::Equals($gitExecutable, $repoRoot, [StringComparison]::OrdinalIgnoreCase) -or
+    $gitExecutable.StartsWith($repoRootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to execute a repository-controlled Git binary: $gitExecutable"
+}
 if ([string]::IsNullOrWhiteSpace($DocsRoot)) {
     $docsRoot = Join-Path $repoRoot 'docs'
 } else {
     $docsRoot = (Resolve-Path $DocsRoot).Path
 }
+$canonicalDocsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot 'docs')).TrimEnd('\', '/')
+$useGitLedgerChecks = [string]::Equals(
+    [IO.Path]::GetFullPath($docsRoot).TrimEnd('\', '/'),
+    $canonicalDocsRoot,
+    [StringComparison]::OrdinalIgnoreCase
+)
+$approvedEvidenceContainerImage = 'docker.io/library/golang@sha256:349ad04971da5f200a537641ae2c70774a592ca21fad4b513b65f813f546781a'
 $frontmatterExceptions = @(
     'CHANGELOG.md',
     'README.md',
@@ -23,6 +40,7 @@ $frontmatterExceptions = @(
     'audits/templates/plan-audit-record.md',
     'decisions/README.md',
     'evidence/README.md',
+    'evidence/runtime-attestations/README.md',
     'implementations/README.md',
     'implementations/templates/implementation-record.md',
     'plans/README.md',
@@ -63,6 +81,48 @@ function Get-ListValues([string]$Value) {
     return @($Value.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
+function ConvertFrom-StrictEvidenceArgvJson([string]$Value) {
+    $invalid = [pscustomobject]@{ IsValid = $false; Items = @() }
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $invalid }
+    try {
+        $parsed = ConvertFrom-Json -InputObject $Value -ErrorAction Stop
+    } catch {
+        return $invalid
+    }
+    if ($parsed -isnot [System.Array]) { return $invalid }
+    $items = @($parsed)
+    if ($items.Count -eq 0 -or
+        @($items | Where-Object {
+            $_ -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$_) -or ([string]$_).IndexOf([char]0) -ge 0
+        }).Count -gt 0) {
+        return $invalid
+    }
+    return [pscustomobject]@{ IsValid = $true; Items = $items }
+}
+
+function Test-ExactStringArrays([object[]]$Left, [object[]]$Right) {
+    $leftItems = @($Left)
+    $rightItems = @($Right)
+    if ($leftItems.Count -ne $rightItems.Count) { return $false }
+    for ($index = 0; $index -lt $leftItems.Count; $index++) {
+        if ([string]$leftItems[$index] -cne [string]$rightItems[$index]) { return $false }
+    }
+    return $true
+}
+
+function Test-MeaningfulEvidenceArgv([object[]]$Argv) {
+    if ($null -eq $Argv -or $Argv.Count -eq 0) { return $false }
+    $command = [IO.Path]::GetFileName(([string]$Argv[0]).Trim()).ToLowerInvariant()
+    if ($command -in @('true', 'true.exe', 'false', 'false.exe', 'echo', 'echo.exe', 'printf', 'printf.exe', ':')) {
+        return $false
+    }
+    if ($command -in @('sh', 'sh.exe', 'bash', 'bash.exe', 'cmd', 'cmd.exe', 'pwsh', 'pwsh.exe', 'powershell', 'powershell.exe') -and
+        (($Argv -join ' ') -match '(?i)(?:^|\s)(?:-c|/c)\s*["'']?(?:true|false|echo|printf|:)(?:["'']?\s|$)')) {
+        return $false
+    }
+    return $true
+}
+
 function Get-AuditNumber([string]$AuditId) {
     if ($AuditId -notmatch '^AUD-(?<number>\d{4})$') {
         return -1
@@ -99,20 +159,40 @@ function ConvertTo-DateTimeOffsetOrNull([string]$Value) {
     return $null
 }
 
+function Test-DisplayRecordAvailableBefore([object]$Earlier, [object]$Later) {
+    if ($null -eq $Earlier -or $null -eq $Later) { return $false }
+    $earlierCompleted = ConvertTo-DateTimeOffsetOrNull $Earlier.CompletedAt
+    $laterStarted = ConvertTo-DateTimeOffsetOrNull $Later.StartedAt
+    return $null -ne $earlierCompleted -and $null -ne $laterStarted -and $earlierCompleted -le $laterStarted
+}
+
+function Test-Rfc3339Timestamp([string]$Value) {
+    if ($Value -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$') { return $false }
+    return $null -ne (ConvertTo-DateTimeOffsetOrNull $Value)
+}
+
 function Test-GitCommitExists([string]$Revision) {
     if ([string]::IsNullOrWhiteSpace($Revision)) {
         return $false
     }
-    & git -C $repoRoot cat-file -e "$Revision`^{commit}" 2>$null
-    return $LASTEXITCODE -eq 0
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $gitExecutable -C $repoRoot cat-file -e "$Revision`^{commit}" 2>$null
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    return $exitCode -eq 0
 }
 
 function Test-GitAncestor([string]$Ancestor, [string]$Descendant) {
     if ([string]::IsNullOrWhiteSpace($Ancestor) -or [string]::IsNullOrWhiteSpace($Descendant)) {
         return $false
     }
-    & git -C $repoRoot merge-base --is-ancestor $Ancestor $Descendant 2>$null
-    return $LASTEXITCODE -eq 0
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $gitExecutable -C $repoRoot merge-base --is-ancestor $Ancestor $Descendant 2>$null
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    return $exitCode -eq 0
 }
 
 function Test-GitPathExistsAtRevision([string]$Revision, [string]$Path) {
@@ -120,30 +200,382 @@ function Test-GitPathExistsAtRevision([string]$Revision, [string]$Path) {
         return $false
     }
     $normalizedPath = $Path.Replace('\', '/')
-    & git -C $repoRoot cat-file -e "$Revision`:$normalizedPath" 2>$null
-    return $LASTEXITCODE -eq 0
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $gitExecutable -C $repoRoot cat-file -e "$Revision`:$normalizedPath" 2>$null
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    return $exitCode -eq 0
 }
 
 function Get-GitBlobIdAtRevision([string]$Revision, [string]$Path) {
     if ([string]::IsNullOrWhiteSpace($Revision) -or [string]::IsNullOrWhiteSpace($Path)) { return $null }
     $normalizedPath = $Path.Replace('\', '/')
-    $value = (& git -C $repoRoot rev-parse "$Revision`:$normalizedPath" 2>$null | Select-Object -First 1)
-    if ($LASTEXITCODE -ne 0 -or $value -notmatch '^[0-9a-fA-F]{40}$') { return $null }
-    return $value.ToLowerInvariant()
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $output = @(& $gitExecutable -C $repoRoot rev-parse "$Revision`:$normalizedPath" 2>$null)
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    $value = $output | Select-Object -First 1
+    if ($exitCode -ne 0 -or $null -eq $value -or $value -notmatch '^[0-9a-fA-F]{40}$') { return $null }
+    return ([string]$value).ToLowerInvariant()
 }
 
 function Get-WorkingTreeBlobId([string]$Path) {
     $fullPath = Join-Path $repoRoot $Path
     if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) { return $null }
-    $value = (& git -C $repoRoot hash-object -- $fullPath 2>$null | Select-Object -First 1)
-    if ($LASTEXITCODE -ne 0 -or $value -notmatch '^[0-9a-fA-F]{40}$') { return $null }
-    return $value.ToLowerInvariant()
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $output = @(& $gitExecutable -C $repoRoot hash-object -- $fullPath 2>$null)
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    $value = $output | Select-Object -First 1
+    if ($exitCode -ne 0 -or $null -eq $value -or $value -notmatch '^[0-9a-fA-F]{40}$') { return $null }
+    return ([string]$value).ToLowerInvariant()
 }
 
 function Test-GitPathMatchesWorkingTree([string]$Revision, [string]$Path) {
     $revisionBlob = Get-GitBlobIdAtRevision $Revision $Path
     $workingTreeBlob = Get-WorkingTreeBlobId $Path
     return $null -ne $revisionBlob -and $revisionBlob -eq $workingTreeBlob
+}
+
+$script:gitPlanSnapshotCache = @{}
+
+function Get-GitFileContentAtRevision([string]$Revision, [string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Revision) -or [string]::IsNullOrWhiteSpace($Path)) { return $null }
+    $normalizedPath = $Path.Replace('\', '/')
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $output = @(& $gitExecutable -C $repoRoot show "$Revision`:$normalizedPath" 2>$null)
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    if ($exitCode -ne 0) { return $null }
+    return ($output | Out-String)
+}
+
+function Get-GitPlanSnapshotAtRevision([string]$Revision) {
+    if ([string]::IsNullOrWhiteSpace($Revision) -or -not (Test-GitCommitExists $Revision)) { return @{} }
+    $cacheKey = $Revision.ToLowerInvariant()
+    if ($script:gitPlanSnapshotCache.ContainsKey($cacheKey)) {
+        return $script:gitPlanSnapshotCache[$cacheKey]
+    }
+
+    $snapshot = @{}
+    $paths = @(& $gitExecutable -C $repoRoot ls-tree -r --name-only $Revision -- docs/plans 2>$null)
+    if ($LASTEXITCODE -ne 0) { return @{} }
+    foreach ($path in $paths) {
+        $normalizedPath = $path.Replace('\', '/')
+        $pathMatch = [regex]::Match($normalizedPath, '^docs/plans/(?:(?:archived)/)?(?<stem>PLN-(?<number>\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*)\.md$')
+        if (-not $pathMatch.Success -or $pathMatch.Groups['stem'].Value.EndsWith('-checklist')) {
+            continue
+        }
+        $content = Get-GitFileContentAtRevision $Revision $normalizedPath
+        if ($null -eq $content -or $content -notmatch '(?s)\A(?:\uFEFF)?---\r?\n(?<frontmatter>.*?)\r?\n---\r?\n') { continue }
+        $frontmatter = $Matches['frontmatter']
+        $planId = "PLN-$($pathMatch.Groups['number'].Value)"
+        $checklistPath = $normalizedPath.Substring(0, $normalizedPath.Length - 3) + '-checklist.md'
+        $snapshot[$planId] = @{
+            Status = Get-FrontmatterValue $frontmatter 'status'
+            PlanPath = $normalizedPath
+            ChecklistPath = if (Test-GitPathExistsAtRevision $Revision $checklistPath) { $checklistPath } else { $null }
+        }
+    }
+    $script:gitPlanSnapshotCache[$cacheKey] = $snapshot
+    return $snapshot
+}
+
+function Get-ActivePlanIdsAtRevision([string]$Revision) {
+    $snapshot = Get-GitPlanSnapshotAtRevision $Revision
+    return @($snapshot.Keys | Where-Object { $snapshot[$_].Status -eq 'active' } | Sort-Object)
+}
+
+function Test-GitRecordMatchesSnapshot([string]$Revision, [hashtable]$Info) {
+    if ($null -eq $Info -or [string]::IsNullOrWhiteSpace($Info.Path)) { return $false }
+    if (-not $useGitLedgerChecks) { return $true }
+    $snapshotBlob = Get-GitBlobIdAtRevision $Revision $Info.Path
+    $terminalBlob = Get-WorkingTreeBlobId $Info.Path
+    return $null -ne $snapshotBlob -and $snapshotBlob -eq $terminalBlob
+}
+
+function Test-GitEntryMatchesSnapshot([string]$Revision, [object]$Entry) {
+    return $null -ne $Entry -and (Test-GitRecordMatchesSnapshot $Revision $Entry.Value)
+}
+
+function Test-GitMetadataEntryMatchesSnapshot([string]$Revision, [object]$Entry) {
+    if ($null -eq $Entry) { return $false }
+    if (-not $useGitLedgerChecks) { return $true }
+    $snapshotBlob = Get-GitBlobIdAtRevision $Revision $Entry.Value.Path
+    $workingTreeBlob = Get-WorkingTreeBlobId $Entry.Value.Path
+    return $null -ne $snapshotBlob -and $snapshotBlob -eq $workingTreeBlob
+}
+
+function Test-GitRecordDescendsFrom([hashtable]$LaterInfo, [hashtable]$EarlierInfo) {
+    if ($null -eq $LaterInfo -or $null -eq $EarlierInfo) { return $false }
+    if (-not $useGitLedgerChecks) { return $true }
+    $laterBaseline = Get-GitRevision $LaterInfo.Baseline
+    if ($null -eq $laterBaseline -or -not (Test-GitCommitExists $laterBaseline)) { return $false }
+    return Test-GitRecordMatchesSnapshot $laterBaseline $EarlierInfo
+}
+
+function Get-GitPathLastChangeCommitAtRevision([string]$Revision, [string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Revision) -or [string]::IsNullOrWhiteSpace($Path)) { return $null }
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $output = @(& $gitExecutable -C $repoRoot rev-list -1 $Revision -- $Path 2>$null)
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    $commit = $output | Select-Object -First 1
+    if ($exitCode -ne 0 -or $null -eq $commit -or $commit -notmatch '^[0-9a-fA-F]{40}$') { return $null }
+    return ([string]$commit).ToLowerInvariant()
+}
+
+function Select-LatestGitRecord([object[]]$Entries, [string]$Revision, [System.Collections.Generic.List[string]]$Failures, [string]$Label) {
+    if ($Entries.Count -eq 0) { return $null }
+    if (-not $useGitLedgerChecks) {
+        return $Entries | Sort-Object {
+            if ($_.Key -match '^[A-Z]+-(?<number>\d{4})$') { [int]$Matches['number'] } else { -1 }
+        } | Select-Object -Last 1
+    }
+    $candidates = New-Object System.Collections.Generic.List[object]
+    foreach ($entry in $Entries) {
+        $changeCommit = Get-GitPathLastChangeCommitAtRevision $Revision $entry.Value.Path
+        if ($null -eq $changeCommit) {
+            $Failures.Add("$Label cannot derive a Git ordering commit: $($entry.Value.Path)")
+            continue
+        }
+        $candidates.Add([pscustomobject]@{ Entry = $entry; Commit = $changeCommit })
+    }
+    $maximal = New-Object System.Collections.Generic.List[object]
+    foreach ($candidate in $candidates) {
+        $shadowed = $false
+        foreach ($other in $candidates) {
+            if ($candidate.Entry.Key -eq $other.Entry.Key -or $candidate.Commit -eq $other.Commit) { continue }
+            if (Test-GitAncestor $candidate.Commit $other.Commit) {
+                $shadowed = $true
+                break
+            }
+        }
+        if (-not $shadowed) { $maximal.Add($candidate) }
+    }
+    if ($maximal.Count -ne 1) {
+        $Failures.Add("$Label must have one ancestry-maximal record at $Revision; found $($maximal.Count)")
+        return $null
+    }
+    return $maximal[0].Entry
+}
+
+function Test-RevisionEvidenceArtifact(
+    [string]$AuditId,
+    [hashtable]$AuditInfo,
+    [bool]$RequireSuccess,
+    [System.Collections.Generic.List[string]]$Failures
+) {
+    $runId = $AuditInfo.EvidenceRunId
+    if (-not (Test-UuidV4 $runId)) {
+        $Failures.Add("Terminal audit-runtime/v1 record must bind a UUIDv4 evidence artifact: $($AuditInfo.Path)")
+        return
+    }
+    $artifactRelativePath = "docs/evidence/runs/$($runId.ToLowerInvariant())/evidence.json"
+    if ($AuditInfo.EvidenceArtifact -ne $artifactRelativePath) {
+        $Failures.Add("Audit evidence_artifact must exactly match its evidence_run_id: $($AuditInfo.Path) (expected=$artifactRelativePath; actual=$($AuditInfo.EvidenceArtifact))")
+        return
+    }
+    $artifactPath = Join-Path $repoRoot $artifactRelativePath
+    if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
+        $Failures.Add("Evidence artifact is missing: $($AuditInfo.Path) ($artifactRelativePath)")
+        return
+    }
+    $artifactItem = Get-Item -LiteralPath $artifactPath -Force
+    if (($artifactItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+        -not [string]::IsNullOrWhiteSpace($artifactItem.LinkType)) {
+        $Failures.Add("Evidence artifact must be a regular non-reparse file: $($AuditInfo.Path) ($artifactRelativePath)")
+        return
+    }
+
+    try {
+        $artifact = Get-Content -LiteralPath $artifactPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        $Failures.Add("Evidence artifact must be valid JSON: $($AuditInfo.Path) ($artifactRelativePath)")
+        return
+    }
+    if ($artifact -isnot [pscustomobject]) {
+        $Failures.Add("Evidence artifact must be a JSON object: $($AuditInfo.Path) ($artifactRelativePath)")
+        return
+    }
+    $declaredArgvJson = [string]$AuditInfo.EvidenceArgvJson
+    $declaredArgvResult = ConvertFrom-StrictEvidenceArgvJson $declaredArgvJson
+    $declarationRequired = [bool]$AuditInfo.IsNew -or -not [string]::IsNullOrWhiteSpace($declaredArgvJson)
+    if ($declarationRequired -and -not $declaredArgvResult.IsValid) {
+        $Failures.Add("Audit evidence_argv_json must be strict JSON containing a non-empty array of non-empty strings: $($AuditInfo.Path)")
+    }
+    $requiredTopLevel = @('schema', 'evidence_run_id', 'evidence_revision', 'evidence_tree', 'evidence_worktree', 'argv', 'exit_code', 'isolation', 'output', 'clean_status', 'tracked_worktree_clean_after_run', 'started_at', 'completed_at')
+    foreach ($field in $requiredTopLevel) {
+        if ($artifact.PSObject.Properties.Name -notcontains $field) {
+            $Failures.Add("Evidence artifact is missing '$field': $($AuditInfo.Path) ($artifactRelativePath)")
+        }
+    }
+    if ($artifact.schema -isnot [string] -or $artifact.schema -cne 'revision-evidence/v1' -or
+        $artifact.evidence_run_id -isnot [string] -or $artifact.evidence_run_id -cne $runId.ToLowerInvariant()) {
+        $Failures.Add("Evidence artifact schema/run ID does not match the audit: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+    if ($artifact.evidence_worktree -isnot [string] -or $artifact.evidence_worktree -cne 'detached') {
+        $Failures.Add("Evidence artifact must prove a detached evidence worktree: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+    $evidenceSha = Get-GitRevision $AuditInfo.EvidenceRevision
+    if ($null -eq $evidenceSha -or $artifact.evidence_revision -isnot [string] -or $artifact.evidence_revision -cne $evidenceSha) {
+        $Failures.Add("Evidence artifact revision does not match evidence_revision: $($AuditInfo.Path) ($artifactRelativePath)")
+    } elseif (Test-GitCommitExists $evidenceSha) {
+        $previousPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $treeOutput = @(& $gitExecutable -C $repoRoot rev-parse "$evidenceSha`^{tree}" 2>$null)
+        $treeExitCode = $LASTEXITCODE
+        $ErrorActionPreference = $previousPreference
+        $expectedTree = $treeOutput | Select-Object -First 1
+        if ($treeExitCode -ne 0 -or $artifact.evidence_tree -isnot [string] -or $artifact.evidence_tree -cne $expectedTree) {
+            $Failures.Add("Evidence artifact tree does not match evidence_revision: $($AuditInfo.Path) ($artifactRelativePath)")
+        }
+    }
+    $argv = @($artifact.argv)
+    if ($artifact.argv -isnot [System.Array] -or $argv.Count -eq 0 -or @($argv | Where-Object { $_ -isnot [string] -or [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
+        $Failures.Add("Evidence artifact argv must be a non-empty string array: $($AuditInfo.Path) ($artifactRelativePath)")
+    } elseif ($declaredArgvResult.IsValid -and -not (Test-ExactStringArrays $declaredArgvResult.Items $argv)) {
+        $Failures.Add("Audit evidence_argv_json must exactly match the ordered evidence artifact argv: $($AuditInfo.Path) ($artifactRelativePath)")
+    } elseif (-not (Test-MeaningfulEvidenceArgv $argv)) {
+        $Failures.Add("Evidence artifact argv must invoke a meaningful subject-specific command: $($AuditInfo.Path) ($artifactRelativePath)")
+    } elseif (($argv -join ' ') -match '(?i)(?:^|[\\/])validate(?:-[a-z0-9-]+)?(?:\.tests)?\.ps1(?:\s|$)') {
+        $Failures.Add("Evidence artifact must contain a subject-specific command: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+    $parsedExitCode = [long]0
+    $exitCodeIsInteger = $artifact.exit_code -is [int] -or $artifact.exit_code -is [long]
+    if (-not $exitCodeIsInteger -or [long]$artifact.exit_code -lt [int]::MinValue -or [long]$artifact.exit_code -gt [int]::MaxValue) {
+        $Failures.Add("Evidence artifact exit_code must be a signed 32-bit integer: $($AuditInfo.Path) ($artifactRelativePath)")
+    } else {
+        $parsedExitCode = [long]$artifact.exit_code
+    }
+    if ($RequireSuccess -and $exitCodeIsInteger -and $parsedExitCode -ne 0) {
+        $Failures.Add("Successful acceptance requires evidence exit_code=0: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+    if (-not $RequireSuccess -and $exitCodeIsInteger -and $parsedExitCode -ne 0 -and
+        $AuditInfo.Content -notmatch '(?m)^-\s*Disposition:\s*(?:open|partially-resolved)\s*$') {
+        $Failures.Add("Nonzero primary evidence must be reflected by an actionable audit finding: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+
+    $isolation = $artifact.isolation
+    $memoryIsInteger = $isolation.memory_megabytes -is [int] -or $isolation.memory_megabytes -is [long]
+    $memoryMegabytes = if ($memoryIsInteger) { [long]$isolation.memory_megabytes } else { [long]0 }
+    $cpuIsNumber = $isolation.cpus -is [int] -or $isolation.cpus -is [long] -or
+        $isolation.cpus -is [decimal] -or $isolation.cpus -is [double]
+    $cpuLimit = if ($cpuIsNumber) { [double]$isolation.cpus } else { 0.0 }
+    $pidsIsInteger = $isolation.pids_limit -is [int] -or $isolation.pids_limit -is [long]
+    $pidsLimit = if ($pidsIsInteger) { [long]$isolation.pids_limit } else { [long]0 }
+    $snapshotEntriesIsInteger = $isolation.snapshot_manifest_entries -is [int] -or $isolation.snapshot_manifest_entries -is [long]
+    $timeoutIsInteger = $isolation.timeout_seconds -is [int] -or $isolation.timeout_seconds -is [long]
+    $outputLimitIsInteger = $isolation.max_output_bytes -is [int] -or $isolation.max_output_bytes -is [long]
+    $failureKind = [string]$isolation.failure_kind
+    $allowedFailureKinds = @('none', 'wall-clock-timeout', 'output-limit-exceeded')
+    if ($isolation -isnot [pscustomobject] -or
+        $isolation.engine -isnot [string] -or $isolation.engine -cne 'docker' -or
+        $isolation.image -isnot [string] -or $isolation.image -cne $approvedEvidenceContainerImage -or
+        $isolation.approved_image -isnot [bool] -or -not $isolation.approved_image -or
+        $isolation.image_id -isnot [string] -or $isolation.image_id -notmatch '^sha256:[0-9a-f]{64}$' -or
+        $isolation.entrypoint -isnot [string] -or $isolation.entrypoint -cne '/usr/bin/env' -or
+        $isolation.network -isnot [string] -or $isolation.network -cne 'none' -or
+        $isolation.repository_mount -isnot [string] -or $isolation.repository_mount -cne 'read-only' -or
+        $isolation.host_repository_mounted -isnot [bool] -or $isolation.host_repository_mounted -or
+        $isolation.snapshot_source -isnot [string] -or $isolation.snapshot_source -cne 'git-archive-tar+manifest/v1' -or
+        $isolation.snapshot_mount -isnot [string] -or $isolation.snapshot_mount -cne 'read-only' -or
+        $isolation.snapshot_archive_sha256 -isnot [string] -or $isolation.snapshot_archive_sha256 -cnotmatch '^[0-9a-f]{64}$' -or
+        $isolation.snapshot_manifest_sha256 -isnot [string] -or $isolation.snapshot_manifest_sha256 -cnotmatch '^[0-9a-f]{64}$' -or
+        -not $snapshotEntriesIsInteger -or [long]$isolation.snapshot_manifest_entries -lt 1 -or
+        $isolation.root_filesystem -isnot [string] -or $isolation.root_filesystem -cne 'read-only' -or
+        $isolation.capabilities -isnot [string] -or $isolation.capabilities -cne 'none' -or
+        $isolation.no_new_privileges -isnot [bool] -or -not $isolation.no_new_privileges -or
+        $isolation.user -isnot [string] -or $isolation.user -cne '65534:65534' -or
+        -not $memoryIsInteger -or $memoryMegabytes -lt 64 -or $memoryMegabytes -gt 4096 -or
+        -not $cpuIsNumber -or $cpuLimit -lt 0.1 -or $cpuLimit -gt 4.0 -or
+        -not $pidsIsInteger -or $pidsLimit -lt 16 -or $pidsLimit -gt 1024 -or
+        -not $timeoutIsInteger -or [long]$isolation.timeout_seconds -lt 1 -or [long]$isolation.timeout_seconds -gt 3600 -or
+        -not $outputLimitIsInteger -or [long]$isolation.max_output_bytes -lt 1024 -or [long]$isolation.max_output_bytes -gt 16777216 -or
+        $isolation.output_capture -isnot [string] -or $isolation.output_capture -cne 'streaming-bounded' -or
+        $isolation.sanitized_environment -isnot [bool] -or -not $isolation.sanitized_environment -or
+        $isolation.preflight_passed -isnot [bool] -or -not $isolation.preflight_passed -or
+        $failureKind -notin $allowedFailureKinds -or
+        $isolation.failure_message_sha256 -isnot [string] -or $isolation.failure_message_sha256 -cnotmatch '^[0-9a-f]{64}$' -or
+        $isolation.workspace -isnot [string] -or $isolation.workspace -cne '/tmp/workspace (tmpfs)' -or
+        $isolation.workspace_mount_options -isnot [string] -or $isolation.workspace_mount_options -cne 'rw,exec,nosuid,nodev,size=512m') {
+        $Failures.Add("Evidence artifact does not prove the required isolated execution: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+    if ($RequireSuccess -and $failureKind -ne 'none') {
+        $Failures.Add("Successful evidence cannot use a runner failure_kind other than none: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+    if ($failureKind -eq 'none' -and $isolation.failure_message_sha256 -cne 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855') {
+        $Failures.Add("Successful runner metadata must bind an empty failure message: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+    if (-not $RequireSuccess -and $failureKind -notin @('none', 'wall-clock-timeout', 'output-limit-exceeded')) {
+        $Failures.Add("Evidence runner failure_kind is not admissible as primary audit evidence: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+    $artifactOutput = $artifact.output
+    foreach ($digestField in @('stdout_sha256', 'stderr_sha256', 'combined_sha256')) {
+        if ($artifactOutput -isnot [pscustomobject] -or $artifactOutput.$digestField -isnot [string] -or
+            $artifactOutput.$digestField -cnotmatch '^[0-9a-f]{64}$') {
+            $Failures.Add("Evidence artifact output.$digestField must be SHA-256: $($AuditInfo.Path) ($artifactRelativePath)")
+        }
+    }
+    foreach ($byteField in @('stdout_bytes', 'stderr_bytes')) {
+        if ($artifactOutput -isnot [pscustomobject] -or
+            ($artifactOutput.$byteField -isnot [int] -and $artifactOutput.$byteField -isnot [long]) -or
+            [long]$artifactOutput.$byteField -lt 0) {
+            $Failures.Add("Evidence artifact output.$byteField must be non-negative: $($AuditInfo.Path) ($artifactRelativePath)")
+        }
+    }
+    $capturedBytesIsInteger = $artifactOutput -is [pscustomobject] -and ($artifactOutput.captured_bytes -is [int] -or $artifactOutput.captured_bytes -is [long])
+    $observedBytesIsInteger = $artifactOutput -is [pscustomobject] -and ($artifactOutput.observed_bytes_at_least -is [int] -or $artifactOutput.observed_bytes_at_least -is [long])
+    if (-not $capturedBytesIsInteger -or -not $observedBytesIsInteger -or
+        [long]$artifactOutput.captured_bytes -ne ([long]$artifactOutput.stdout_bytes + [long]$artifactOutput.stderr_bytes) -or
+        [long]$artifactOutput.captured_bytes -gt [long]$isolation.max_output_bytes -or
+        [long]$artifactOutput.observed_bytes_at_least -lt [long]$artifactOutput.captured_bytes -or
+        $artifactOutput.truncated -isnot [bool] -or $artifactOutput.capture_complete -isnot [bool]) {
+        $Failures.Add("Evidence artifact output capture bounds are invalid: $($AuditInfo.Path) ($artifactRelativePath)")
+    } elseif ($failureKind -eq 'none' -and
+        ($artifactOutput.truncated -or -not $artifactOutput.capture_complete -or
+         [long]$artifactOutput.observed_bytes_at_least -ne [long]$artifactOutput.captured_bytes)) {
+        $Failures.Add("Successful evidence must prove complete, non-truncated bounded output: $($AuditInfo.Path) ($artifactRelativePath)")
+    } elseif ($failureKind -eq 'output-limit-exceeded' -and -not $artifactOutput.truncated) {
+        $Failures.Add("Output-limit evidence must record truncation: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+    $cleanStatus = $artifact.clean_status
+    if ($cleanStatus -isnot [pscustomobject] -or
+        $cleanStatus.host_tracked_clean_before_run -isnot [bool] -or
+        $cleanStatus.host_tracked_clean_after_run -isnot [bool] -or
+        $cleanStatus.host_tracked_state_unchanged -isnot [bool] -or -not $cleanStatus.host_tracked_state_unchanged -or
+        $cleanStatus.subject_tracked_clean_before_run -isnot [bool] -or
+        $cleanStatus.subject_tracked_clean_after_run -isnot [bool] -or
+        $cleanStatus.subject_workspace_discarded -isnot [bool] -or -not $cleanStatus.subject_workspace_discarded -or
+        $artifact.tracked_worktree_clean_after_run -isnot [bool]) {
+        $Failures.Add("Evidence artifact must prove typed clean status, unchanged host state, and discarded subject workspace: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+    if ($RequireSuccess -and
+        ($cleanStatus -isnot [pscustomobject] -or
+         $cleanStatus.subject_tracked_clean_before_run -isnot [bool] -or -not $cleanStatus.subject_tracked_clean_before_run -or
+         $cleanStatus.subject_tracked_clean_after_run -isnot [bool] -or -not $cleanStatus.subject_tracked_clean_after_run -or
+         $artifact.tracked_worktree_clean_after_run -isnot [bool] -or -not $artifact.tracked_worktree_clean_after_run)) {
+        $Failures.Add("Successful evidence must start and finish with the detached subject tracked-clean: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+    if ($artifact.started_at -isnot [string] -or $artifact.completed_at -isnot [string] -or
+        -not (Test-Rfc3339Timestamp $artifact.started_at) -or -not (Test-Rfc3339Timestamp $artifact.completed_at)) {
+        $Failures.Add("Evidence artifact timestamps must be RFC3339: $($AuditInfo.Path) ($artifactRelativePath)")
+    } elseif ((ConvertTo-DateTimeOffsetOrNull $artifact.completed_at) -lt (ConvertTo-DateTimeOffsetOrNull $artifact.started_at)) {
+        $Failures.Add("Evidence artifact completed_at cannot precede started_at: $($AuditInfo.Path) ($artifactRelativePath)")
+    }
+    if (Test-GitPathMatchesWorkingTree 'HEAD' $AuditInfo.Path) {
+        $recordCommit = Get-GitPathLastChangeCommitAtRevision 'HEAD' $AuditInfo.Path
+        $artifactBlobAtRecordCommit = Get-GitBlobIdAtRevision $recordCommit $artifactRelativePath
+        $artifactBlob = Get-WorkingTreeBlobId $artifactRelativePath
+        if ($null -eq $artifactBlobAtRecordCommit -or $artifactBlobAtRecordCommit -ne $artifactBlob) {
+            $Failures.Add("Committed terminal audit must bind the immutable evidence artifact blob: $($AuditInfo.Path) ($artifactRelativePath)")
+        }
+    }
 }
 
 function Test-UuidV4([string]$Value) {
@@ -626,18 +1058,76 @@ function Test-AcceptanceVerdict([string]$Content, [string]$Marker, [string]$Mark
 }
 
 $failures = New-Object System.Collections.Generic.List[string]
+$validationShell = @(Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue) | Select-Object -First 1
+if ($null -eq $validationShell) {
+    $validationShell = @(Get-Command powershell.exe -CommandType Application -ErrorAction SilentlyContinue) | Select-Object -First 1
+}
+if ($null -eq $validationShell) {
+    $validationShell = @(Get-Command powershell -CommandType Application -ErrorAction Stop) | Select-Object -First 1
+}
+$validationShellExecutable = [IO.Path]::GetFullPath([string]$validationShell.Source)
+if ([string]::Equals($validationShellExecutable, $repoRoot, [StringComparison]::OrdinalIgnoreCase) -or
+    $validationShellExecutable.StartsWith($repoRootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to execute a repository-controlled validation shell: $validationShellExecutable"
+}
 $auditWorkflowValidator = Join-Path $PSScriptRoot 'validate-audit-workflows.ps1'
 if (-not (Test-Path -LiteralPath $auditWorkflowValidator)) {
     $failures.Add('Audit workflow contract validator is missing: docs/tools/validate-audit-workflows.ps1')
 } else {
     $previousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    $workflowOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $auditWorkflowValidator -RepositoryRoot $repoRoot 2>&1
+    $workflowOutput = & $validationShellExecutable -NoProfile -ExecutionPolicy Bypass -File $auditWorkflowValidator -RepositoryRoot $repoRoot 2>&1
     $workflowExitCode = $LASTEXITCODE
     $ErrorActionPreference = $previousErrorAction
     if ($workflowExitCode -ne 0) {
         foreach ($line in $workflowOutput) {
             $failures.Add("audit workflow contracts: $line")
+        }
+    }
+}
+if ($useGitLedgerChecks) {
+    $runtimeAttestationValidator = Join-Path $PSScriptRoot 'validate-runtime-attestations.ps1'
+    if (-not (Test-Path -LiteralPath $runtimeAttestationValidator)) {
+        $failures.Add('Runtime attestation validator is missing: docs/tools/validate-runtime-attestations.ps1')
+    } else {
+        $attestationArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runtimeAttestationValidator, '-RepositoryRoot', $repoRoot)
+        if (-not [string]::IsNullOrWhiteSpace($HistoryBase)) { $attestationArguments += @('-HistoryBase', $HistoryBase) }
+        $previousErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $attestationOutput = & $validationShellExecutable @attestationArguments 2>&1
+        $attestationExitCode = $LASTEXITCODE
+        $ErrorActionPreference = $previousErrorAction
+        if ($attestationExitCode -ne 0) {
+            foreach ($line in $attestationOutput) {
+                $failures.Add("runtime attestations: $line")
+            }
+        }
+    }
+
+    $evidenceAttestationValidator = Join-Path $PSScriptRoot 'validate-evidence-attestations.ps1'
+    if (-not (Test-Path -LiteralPath $evidenceAttestationValidator)) {
+        $failures.Add('Evidence attestation validator is missing: docs/tools/validate-evidence-attestations.ps1')
+    } else {
+        $evidenceHistoryBase = $HistoryBase
+        if ([string]::IsNullOrWhiteSpace($evidenceHistoryBase)) {
+            $evidenceHistoryBase = $env:AUDIT_HISTORY_BASE
+        }
+        if ([string]::IsNullOrWhiteSpace($evidenceHistoryBase)) {
+            $evidenceHistoryBase = 'HEAD'
+        }
+        $evidenceAttestationArguments = @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $evidenceAttestationValidator,
+            '-RepositoryRoot', $repoRoot, '-HistoryBase', $evidenceHistoryBase
+        )
+        $previousErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $evidenceAttestationOutput = & $validationShellExecutable @evidenceAttestationArguments 2>&1
+        $evidenceAttestationExitCode = $LASTEXITCODE
+        $ErrorActionPreference = $previousErrorAction
+        if ($evidenceAttestationExitCode -ne 0) {
+            foreach ($line in $evidenceAttestationOutput) {
+                $failures.Add("evidence attestations: $line")
+            }
         }
     }
 }
@@ -659,9 +1149,36 @@ $implementationRecords = @{}
 $implementationMetadata = @{}
 $workingTreeChangedPaths = @()
 if ($docsRoot -eq (Join-Path $repoRoot 'docs')) {
-    $trackedChanges = @(& git -c core.safecrlf=false -C $repoRoot diff --name-only HEAD 2>$null)
-    $untrackedChanges = @(& git -c core.safecrlf=false -C $repoRoot ls-files --others --exclude-standard 2>$null)
+    $trackedChanges = @(& $gitExecutable -c core.safecrlf=false -C $repoRoot diff --name-only HEAD 2>$null)
+    $untrackedChanges = @(& $gitExecutable -c core.safecrlf=false -C $repoRoot ls-files --others --exclude-standard 2>$null)
     $workingTreeChangedPaths = @($trackedChanges + $untrackedChanges | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+$contractHistoryRevision = $null
+if ($useGitLedgerChecks) {
+    $contractHistorySpec = $HistoryBase
+    if ([string]::IsNullOrWhiteSpace($contractHistorySpec)) {
+        $contractHistorySpec = $env:AUDIT_HISTORY_BASE
+    }
+    if ([string]::IsNullOrWhiteSpace($contractHistorySpec)) {
+        $contractHistoryRevision = 'HEAD'
+    } else {
+        $previousErrorAction = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $contractHistoryOutput = @(& $gitExecutable -C $repoRoot rev-parse --verify "$contractHistorySpec`^{commit}" 2>$null)
+            $contractHistoryExitCode = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $previousErrorAction
+        }
+        $contractHistoryCandidate = $contractHistoryOutput | Select-Object -First 1
+        if ($contractHistoryExitCode -eq 0 -and $contractHistoryCandidate -match '^[0-9a-fA-F]{40}$') {
+            $contractHistoryRevision = $contractHistoryCandidate.ToLowerInvariant()
+        } else {
+            $failures.Add("Documentation validation requires a valid HistoryBase: $contractHistorySpec")
+            $contractHistoryRevision = 'HEAD'
+        }
+    }
 }
 
 $auditsRoot = Join-Path $docsRoot 'audits'
@@ -687,6 +1204,9 @@ foreach ($file in $markdownFiles) {
     $docsRelativePath = Get-DocsRelativePath $file.FullName
     $content = Get-Content $file.FullName -Raw -Encoding UTF8
     $frontmatter = $null
+    $isGovernanceRecord = $docsRelativePath -match '^(?:audits|remediations|implementations)/records/'
+    $isNewGovernanceRecord = $useGitLedgerChecks -and $isGovernanceRecord -and
+        -not (Test-GitPathExistsAtRevision $contractHistoryRevision $relativePath)
 
     if ($frontmatterExceptions -notcontains $docsRelativePath) {
         if ($content -notmatch '(?s)\A(?:\uFEFF)?---\r?\n(?<frontmatter>.*?)\r?\n---\r?\n') {
@@ -706,11 +1226,18 @@ foreach ($file in $markdownFiles) {
                     $requiredFields += @('execution_context_id')
                 }
                 if ((Get-FrontmatterValue $frontmatter 'workflow_contract_revision') -eq 'audit-runtime/v1') {
-                    $requiredFields += @('runtime_context_ref')
+                    $requiredFields += @(
+                        'runtime_context_ref',
+                        'evidence_revision', 'evidence_worktree_revision', 'evidence_runner',
+                        'evidence_run_id', 'evidence_artifact'
+                    )
+                    if ($isNewGovernanceRecord) {
+                        $requiredFields += @('runtime_context_attestation', 'evidence_attestation', 'evidence_argv_json')
+                    }
                 }
                 if ((Get-FrontmatterValue $frontmatter 'workflow_contract_revision') -eq 'audit-runtime/v1' -and
                     (Get-FrontmatterValue $frontmatter 'audit_schema') -eq 'plan-audit/v2') {
-                    $requiredFields += @('evidence_revision', 'evidence_worktree_revision', 'evidence_runner', 'audited_peer_plans', 'audited_subject_paths')
+                    $requiredFields += @('audited_peer_plans', 'audited_subject_paths')
                 }
                 if ((Get-FrontmatterValue $frontmatter 'status') -eq 'superseded') {
                     $requiredFields += @('completed_at', 'superseded_by', 'supersession_reason')
@@ -729,6 +1256,10 @@ foreach ($file in $markdownFiles) {
                 }
                 if ((Get-FrontmatterValue $frontmatter 'workflow_contract_revision') -eq 'audit-runtime/v1') {
                     $requiredFields += @('runtime_context_ref')
+                    if ($isNewGovernanceRecord) { $requiredFields += @('runtime_context_attestation') }
+                }
+                if ((Get-FrontmatterValue $frontmatter 'status') -eq 'superseded') {
+                    $requiredFields += @('completed_at', 'superseded_by', 'supersession_reason')
                 }
             }
             if ($docsRelativePath.StartsWith('implementations/records/')) {
@@ -738,11 +1269,32 @@ foreach ($file in $markdownFiles) {
                 }
                 if ((Get-FrontmatterValue $frontmatter 'workflow_contract_revision') -eq 'audit-runtime/v1') {
                     $requiredFields += @('runtime_context_ref')
+                    if ($isNewGovernanceRecord) { $requiredFields += @('runtime_context_attestation') }
+                }
+                if ((Get-FrontmatterValue $frontmatter 'status') -eq 'superseded') {
+                    $requiredFields += @('completed_at', 'superseded_by', 'supersession_reason')
+                }
+            }
+            if ($isNewGovernanceRecord) {
+                if ((Get-FrontmatterValue $frontmatter 'governance_contract') -ne 'audit-loop/v3') {
+                    $failures.Add("New governance record must use governance_contract audit-loop/v3: $relativePath")
+                }
+                if ((Get-FrontmatterValue $frontmatter 'workflow_contract_revision') -ne 'audit-runtime/v1') {
+                    $failures.Add("New governance record must use workflow_contract_revision audit-runtime/v1: $relativePath")
                 }
             }
             foreach ($field in $requiredFields) {
                 if ($frontmatter -notmatch "(?m)^${field}:\s*\S.*$") {
                     $failures.Add("Missing frontmatter field '$field': $relativePath")
+                }
+            }
+            if ($isNewGovernanceRecord -and
+                $docsRelativePath.StartsWith('audits/records/') -and
+                (Get-FrontmatterValue $frontmatter 'workflow_contract_revision') -eq 'audit-runtime/v1') {
+                $declaredArgvJson = Get-FrontmatterValue $frontmatter 'evidence_argv_json'
+                if (-not [string]::IsNullOrWhiteSpace($declaredArgvJson) -and
+                    -not (ConvertFrom-StrictEvidenceArgvJson $declaredArgvJson).IsValid) {
+                    $failures.Add("Audit evidence_argv_json must be strict JSON containing a non-empty array of non-empty strings: $relativePath")
                 }
             }
         }
@@ -1139,6 +1691,7 @@ foreach ($file in $markdownFiles) {
                         }
                         if ($governanceContract -eq 'audit-loop/v3') {
                             $planAuditEvidenceRevision = Get-FrontmatterValue $frontmatter 'evidence_revision'
+                            $planAuditEvidenceRunId = Get-FrontmatterValue $frontmatter 'evidence_run_id'
                             $auditedPeerPlans = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'audited_peer_plans'))
                             $auditedSubjectPaths = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'audited_subject_paths'))
                             if ($planAuditEvidenceRevision -notmatch '^git:[0-9a-fA-F]{40};\s*worktree:clean$') {
@@ -1150,13 +1703,21 @@ foreach ($file in $markdownFiles) {
                             if ($workflowContractRevision -eq 'audit-runtime/v1' -and ($auditedPeerPlans.Count -eq 0 -or $auditedPeerPlans -notcontains $relatedPlans[0])) {
                                 $failures.Add("audit-loop/v3 plan audit must record an audited_peer_plans set containing its subject: $relativePath")
                             }
-                            if ($workflowContractRevision -eq 'audit-runtime/v1' -and
-                                $planMetadata.ContainsKey($relatedPlans[0]) -and
-                                $planMetadata[$relatedPlans[0]].Status -eq 'active') {
-                                $expectedActivePeers = @($planMetadata.Keys | Where-Object { $planMetadata[$_].Status -eq 'active' } | Sort-Object)
+                            if ($workflowContractRevision -eq 'audit-runtime/v1') {
+                                if (-not (Test-UuidV4 $planAuditEvidenceRunId)) {
+                                    $failures.Add("audit-loop/v3 plan audit must record a valid UUIDv4 evidence_run_id: $relativePath")
+                                } elseif ($acceptanceEvidenceRunIds.ContainsKey($planAuditEvidenceRunId.ToLowerInvariant())) {
+                                    $failures.Add("Independent evidence_run_id must be globally unique: $relativePath ($planAuditEvidenceRunId)")
+                                } else {
+                                    $acceptanceEvidenceRunIds[$planAuditEvidenceRunId.ToLowerInvariant()] = $auditId
+                                }
+                            }
+                            if ($workflowContractRevision -eq 'audit-runtime/v1' -and $docsRoot -eq (Join-Path $repoRoot 'docs')) {
+                                $planAuditEvidenceSha = Get-GitRevision $planAuditEvidenceRevision
+                                $expectedActivePeers = @(Get-ActivePlanIdsAtRevision $planAuditEvidenceSha)
                                 $normalizedAuditedPeers = @($auditedPeerPlans | Sort-Object -Unique)
                                 if (($expectedActivePeers -join ',') -ne ($normalizedAuditedPeers -join ',')) {
-                                    $failures.Add("Active plan audit must snapshot the complete active peer set: $relativePath (expected=$($expectedActivePeers -join ','); actual=$($normalizedAuditedPeers -join ','))")
+                                    $failures.Add("Plan audit must snapshot the active peer set at evidence_revision: $relativePath (expected=$($expectedActivePeers -join ','); actual=$($normalizedAuditedPeers -join ','))")
                                 }
                             }
                             foreach ($auditedPeerPlan in $auditedPeerPlans) {
@@ -1187,7 +1748,7 @@ foreach ($file in $markdownFiles) {
                                     if (-not (Test-GitAncestor $planAuditEvidenceSha $planAuditBaselineSha)) {
                                         $failures.Add("Plan audit baseline must descend from evidence_revision: $relativePath")
                                     } else {
-                                        & git -C $repoRoot diff --quiet $planAuditEvidenceSha $planAuditBaselineSha -- $auditedSubjectPaths
+                                        & $gitExecutable -C $repoRoot diff --quiet $planAuditEvidenceSha $planAuditBaselineSha -- $auditedSubjectPaths
                                         if ($LASTEXITCODE -eq 1) {
                                             $failures.Add("Plan audit audited_subject_paths drifted between evidence_revision and baseline: $relativePath")
                                         } elseif ($LASTEXITCODE -ne 0) {
@@ -1255,6 +1816,7 @@ foreach ($file in $markdownFiles) {
             }
             $auditMetadata[$auditId] = @{
                 Path = $relativePath
+                IsNew = $isNewGovernanceRecord
                 Status = $auditStatus
                 Auditor = Get-FrontmatterValue $frontmatter 'auditor'
                 AuditType = Get-FrontmatterValue $frontmatter 'audit_type'
@@ -1268,6 +1830,9 @@ foreach ($file in $markdownFiles) {
                 AuditedSubjectPaths = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'audited_subject_paths'))
                 AuditedPeerPlans = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'audited_peer_plans'))
                 EvidenceRunId = Get-FrontmatterValue $frontmatter 'evidence_run_id'
+                EvidenceArtifact = Get-FrontmatterValue $frontmatter 'evidence_artifact'
+                EvidenceAttestation = Get-FrontmatterValue $frontmatter 'evidence_attestation'
+                EvidenceArgvJson = Get-FrontmatterValue $frontmatter 'evidence_argv_json'
                 EffectiveResultRevision = Get-FrontmatterValue $frontmatter 'effective_result_revision'
                 GovernanceContract = $governanceContract
                 WorkflowContractRevision = $workflowContractRevision
@@ -1308,7 +1873,7 @@ foreach ($file in $markdownFiles) {
                 $remediationIds[$remediationId] = $relativePath
             }
             $remediationStatus = Get-FrontmatterValue $frontmatter 'status'
-            if ($remediationStatus -notin @('in-progress', 'completed', 'partial', 'blocked')) {
+            if ($remediationStatus -notin @('in-progress', 'completed', 'partial', 'blocked', 'superseded')) {
                 $failures.Add("Invalid remediation status: $relativePath ($remediationStatus)")
             }
             if ($remediationStatus -ne 'in-progress') {
@@ -1316,6 +1881,11 @@ foreach ($file in $markdownFiles) {
                 if ([string]::IsNullOrWhiteSpace($completedAt) -or $completedAt -eq 'pending') {
                     $failures.Add("Closed remediation must record completed_at: $relativePath")
                 }
+            }
+            if ($remediationStatus -eq 'superseded' -and
+                ((Get-FrontmatterValue $frontmatter 'superseded_by') -notmatch '^REM-\d{4}$' -or
+                 (Get-FrontmatterValue $frontmatter 'supersession_reason') -ne 'context-loss')) {
+                $failures.Add("Superseded remediation must identify a replacement and context-loss reason: $relativePath")
             }
             $remediationStartedAt = Get-FrontmatterValue $frontmatter 'started_at'
             $remediationStartedAtValue = ConvertTo-DateTimeOffsetOrNull $remediationStartedAt
@@ -1409,6 +1979,9 @@ foreach ($file in $markdownFiles) {
                 Baseline = Get-FrontmatterValue $frontmatter 'baseline'
                 RelatedPlans = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'related_plans'))
                 RelatedImplementations = $remediationRelatedImplementations
+                Supersedes = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'supersedes'))
+                SupersededBy = Get-FrontmatterValue $frontmatter 'superseded_by'
+                SupersessionReason = Get-FrontmatterValue $frontmatter 'supersession_reason'
             }
             $remediationRecords[$file.Name] = $remediationStatus
         }
@@ -1431,7 +2004,7 @@ foreach ($file in $markdownFiles) {
                 $implementationIds[$implementationId] = $relativePath
             }
             $implementationStatus = Get-FrontmatterValue $frontmatter 'status'
-            if ($implementationStatus -notin @('in-progress', 'completed', 'partial', 'blocked')) {
+            if ($implementationStatus -notin @('in-progress', 'completed', 'partial', 'blocked', 'superseded')) {
                 $failures.Add("Invalid implementation status: $relativePath ($implementationStatus)")
             }
             if ($implementationStatus -ne 'in-progress') {
@@ -1439,6 +2012,11 @@ foreach ($file in $markdownFiles) {
                 if ([string]::IsNullOrWhiteSpace($completedAt) -or $completedAt -eq 'pending') {
                     $failures.Add("Closed implementation must record completed_at: $relativePath")
                 }
+            }
+            if ($implementationStatus -eq 'superseded' -and
+                ((Get-FrontmatterValue $frontmatter 'superseded_by') -notmatch '^IMP-\d{4}$' -or
+                 (Get-FrontmatterValue $frontmatter 'supersession_reason') -ne 'context-loss')) {
+                $failures.Add("Superseded implementation must identify a replacement and context-loss reason: $relativePath")
             }
             $implementationStartedAt = Get-FrontmatterValue $frontmatter 'started_at'
             $implementationStartedAtValue = ConvertTo-DateTimeOffsetOrNull $implementationStartedAt
@@ -1481,8 +2059,8 @@ foreach ($file in $markdownFiles) {
                 }
             }
             $resultRevision = Get-FrontmatterValue $frontmatter 'result_revision'
-            if ($implementationStatus -eq 'completed' -and $resultRevision -notmatch '^git:[0-9a-fA-F]{40}$') {
-                $failures.Add("Completed implementation must record a full git result_revision: $relativePath")
+            if ($implementationStatus -in @('completed', 'partial') -and $resultRevision -notmatch '^git:[0-9a-fA-F]{40}$') {
+                $failures.Add("Completed or partial implementation must record a full git result_revision: $relativePath")
             }
             $implementationSchema = Get-FrontmatterValue $frontmatter 'implementation_schema'
             $implementationContract = Get-FrontmatterValue $frontmatter 'governance_contract'
@@ -1528,6 +2106,9 @@ foreach ($file in $markdownFiles) {
                 GovernanceContract = $implementationContract
                 ExecutionContextId = $implementationExecutionContextId
                 RuntimeContextRef = $implementationRuntimeContextRef
+                Supersedes = @(Get-ListValues (Get-FrontmatterValue $frontmatter 'supersedes'))
+                SupersededBy = Get-FrontmatterValue $frontmatter 'superseded_by'
+                SupersessionReason = Get-FrontmatterValue $frontmatter 'supersession_reason'
             }
             $implementationRecords[$file.Name] = $implementationStatus
         }
@@ -1608,6 +2189,50 @@ foreach ($auditEntry in $auditMetadata.GetEnumerator()) {
     }
 }
 
+foreach ($remediationEntry in $remediationMetadata.GetEnumerator()) {
+    $remediationInfo = $remediationEntry.Value
+    if ($remediationInfo.Status -ne 'superseded') { continue }
+    $replacementId = $remediationInfo.SupersededBy
+    if (-not $remediationMetadata.ContainsKey($replacementId)) {
+        $failures.Add("Superseded remediation references a missing replacement: $($remediationInfo.Path) ($replacementId)")
+        continue
+    }
+    $replacement = $remediationMetadata[$replacementId]
+    if ((Get-RemediationNumber $replacementId) -le (Get-RemediationNumber $remediationEntry.Key) -or
+        $replacement.Supersedes -notcontains $remediationEntry.Key) {
+        $failures.Add("Replacement remediation must be newer and list the superseded REM: $($remediationInfo.Path) ($replacementId)")
+    }
+    if ($remediationInfo.SupersessionReason -ne 'context-loss' -or
+        $replacement.Scope -ne $remediationInfo.Scope -or
+        $replacement.Baseline -ne $remediationInfo.Baseline -or
+        $replacement.RuntimeContextRef -eq $remediationInfo.RuntimeContextRef -or
+        $replacement.ExecutionContextId -eq $remediationInfo.ExecutionContextId) {
+        $failures.Add("context-loss remediation replacement must preserve scope/baseline and use a different runtime context: $($remediationInfo.Path) ($replacementId)")
+    }
+}
+
+foreach ($implementationEntry in $implementationMetadata.GetEnumerator()) {
+    $implementationInfo = $implementationEntry.Value
+    if ($implementationInfo.Status -ne 'superseded') { continue }
+    $replacementId = $implementationInfo.SupersededBy
+    if (-not $implementationMetadata.ContainsKey($replacementId)) {
+        $failures.Add("Superseded implementation references a missing replacement: $($implementationInfo.Path) ($replacementId)")
+        continue
+    }
+    $replacement = $implementationMetadata[$replacementId]
+    if ((Get-ImplementationNumber $replacementId) -le (Get-ImplementationNumber $implementationEntry.Key) -or
+        $replacement.Supersedes -notcontains $implementationEntry.Key) {
+        $failures.Add("Replacement implementation must be newer and list the superseded IMP: $($implementationInfo.Path) ($replacementId)")
+    }
+    if ($implementationInfo.SupersessionReason -ne 'context-loss' -or
+        $replacement.PlanId -ne $implementationInfo.PlanId -or
+        $replacement.Baseline -ne $implementationInfo.Baseline -or
+        $replacement.RuntimeContextRef -eq $implementationInfo.RuntimeContextRef -or
+        $replacement.ExecutionContextId -eq $implementationInfo.ExecutionContextId) {
+        $failures.Add("context-loss implementation replacement must preserve plan/baseline and use a different runtime context: $($implementationInfo.Path) ($replacementId)")
+    }
+}
+
 $inProgressRemediationKeys = @{}
 foreach ($remediationEntry in $remediationMetadata.GetEnumerator()) {
     $remediationInfo = $remediationEntry.Value
@@ -1628,8 +2253,11 @@ foreach ($entry in $planIds.GetEnumerator()) {
 
 foreach ($auditInfo in $auditMetadata.Values) {
     if ($auditInfo.GovernanceContract -ne 'audit-loop/v3' -or $auditInfo.Schema -ne 'plan-audit/v2') { continue }
-    if ($auditInfo.RelatedPlans.Count -ne 1 -or -not $planMetadata.ContainsKey($auditInfo.RelatedPlans[0])) { continue }
-    foreach ($requiredSubjectPath in @($planMetadata[$auditInfo.RelatedPlans[0]].PlanDocsPath, $planMetadata[$auditInfo.RelatedPlans[0]].ChecklistDocsPath)) {
+    if ($auditInfo.RelatedPlans.Count -ne 1) { continue }
+    $evidenceSha = Get-GitRevision $auditInfo.EvidenceRevision
+    $evidencePlanSnapshot = Get-GitPlanSnapshotAtRevision $evidenceSha
+    if (-not $evidencePlanSnapshot.ContainsKey($auditInfo.RelatedPlans[0])) { continue }
+    foreach ($requiredSubjectPath in @($evidencePlanSnapshot[$auditInfo.RelatedPlans[0]].PlanPath, $evidencePlanSnapshot[$auditInfo.RelatedPlans[0]].ChecklistPath)) {
         if ([string]::IsNullOrWhiteSpace($requiredSubjectPath) -or $auditInfo.AuditedSubjectPaths -notcontains $requiredSubjectPath) {
             $failures.Add("Plan audit audited_subject_paths must include the resolved plan/checklist: $($auditInfo.Path) ($requiredSubjectPath)")
         }
@@ -1655,8 +2283,8 @@ foreach ($auditInfo in $auditMetadata.Values) {
             $currentAuditId = [regex]::Match($auditInfo.Path, '(AUD-\d{4})').Groups[1].Value
             if ($auditInfo.GovernanceContract -eq 'audit-loop/v3' -and
                 $auditMetadata.ContainsKey($relatedAudit) -and
-                ((ConvertTo-DateTimeOffsetOrNull $auditMetadata[$relatedAudit].CompletedAt) -gt (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt))) {
-                $failures.Add("Acceptance audit cannot rely on an audit completed after its chain snapshot: $($auditInfo.Path) ($relatedAudit)")
+                -not (Test-GitRecordMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $auditMetadata[$relatedAudit])) {
+                $failures.Add("Acceptance audit baseline must contain the referenced terminal audit blob: $($auditInfo.Path) ($relatedAudit)")
             } elseif ($auditInfo.GovernanceContract -ne 'audit-loop/v3' -and (Get-AuditNumber $relatedAudit) -ge (Get-AuditNumber $currentAuditId)) {
                 $failures.Add("Acceptance audit cannot reference a future or same-number audit: $($auditInfo.Path) ($relatedAudit)")
             }
@@ -1686,22 +2314,35 @@ foreach ($auditInfo in $auditMetadata.Values) {
                 $_.Value.AuditedSubjectPaths.Count -ge 2 -and
                 (Get-GitRevision $_.Value.EvidenceRevision) -ne $null -and
                 $_.Value.RelatedPlans -contains $relatedPlan -and
-                (($auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt) -le (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt)) -or
+                (($useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (Test-GitEntryMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $_)) -or
+                 (-not $useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (Test-DisplayRecordAvailableBefore $_.Value $auditInfo)) -or
                  ($auditInfo.GovernanceContract -ne 'audit-loop/v3' -and (Get-AuditNumber $_.Key) -lt $currentAuditNumber))
-            } | Sort-Object { ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt }, { Get-AuditNumber $_.Key })
+            })
             if ($matchingPlanAudits.Count -eq 0) {
                 $failures.Add("Plan acceptance must reference a matching closed plan-audit/v2 record: $($auditInfo.Path) ($relatedPlan)")
             } else {
-                $latestPlanAuditId = $matchingPlanAudits[-1].Key
+                $latestPlanAuditEntry = if ($auditInfo.GovernanceContract -eq 'audit-loop/v3') {
+                    Select-LatestGitRecord $matchingPlanAudits (Get-GitRevision $auditInfo.Baseline) $failures "Plan acceptance source plan audit"
+                } else { $matchingPlanAudits | Sort-Object { Get-AuditNumber $_.Key } | Select-Object -Last 1 }
+                if ($null -eq $latestPlanAuditEntry) { continue }
+                $latestPlanAuditId = $latestPlanAuditEntry.Key
                 if ($auditInfo.RelatedAudits -notcontains $latestPlanAuditId) {
                     $failures.Add("Plan acceptance must reference the latest matching plan audit: $($auditInfo.Path) ($relatedPlan=$latestPlanAuditId)")
                 }
-                $latestPlanAudit = $matchingPlanAudits[-1].Value
-                if ($planMetadata.ContainsKey($relatedPlan)) {
-                    foreach ($requiredSubjectPath in @($planMetadata[$relatedPlan].PlanDocsPath, $planMetadata[$relatedPlan].ChecklistDocsPath)) {
+                $latestPlanAudit = $latestPlanAuditEntry.Value
+                $acceptanceEvidenceSnapshot = Get-GitPlanSnapshotAtRevision (Get-GitRevision $auditInfo.EvidenceRevision)
+                if ($acceptanceEvidenceSnapshot.ContainsKey($relatedPlan)) {
+                    foreach ($requiredSubjectPath in @($acceptanceEvidenceSnapshot[$relatedPlan].PlanPath, $acceptanceEvidenceSnapshot[$relatedPlan].ChecklistPath)) {
                         if ($latestPlanAudit.AuditedSubjectPaths -notcontains $requiredSubjectPath) {
                             $failures.Add("Plan acceptance source audit omits required audited subject path: $($auditInfo.Path) ($latestPlanAuditId/$requiredSubjectPath)")
                         }
+                    }
+                }
+                if ($useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3') {
+                    $expectedCurrentPeers = @(Get-ActivePlanIdsAtRevision (Get-GitRevision $auditInfo.EvidenceRevision))
+                    $auditedPeers = @($latestPlanAudit.AuditedPeerPlans | Sort-Object -Unique)
+                    if (($expectedCurrentPeers -join ',') -ne ($auditedPeers -join ',')) {
+                        $failures.Add("Plan readiness source audit peer snapshot drifted at acceptance evidence_revision: $($auditInfo.Path) (expected=$($expectedCurrentPeers -join ','); actual=$($auditedPeers -join ','))")
                     }
                 }
                 if ($docsRoot -eq (Join-Path $repoRoot 'docs')) {
@@ -1710,7 +2351,7 @@ foreach ($auditInfo in $auditMetadata.Values) {
                     if ($null -ne $planAuditEvidenceSha -and $null -ne $acceptanceEvidenceSha -and
                         (Test-GitCommitExists $planAuditEvidenceSha) -and (Test-GitCommitExists $acceptanceEvidenceSha)) {
                         foreach ($auditedSubjectPath in @($latestPlanAudit.AuditedSubjectPaths)) {
-                            & git -C $repoRoot diff --quiet $planAuditEvidenceSha $acceptanceEvidenceSha -- $auditedSubjectPath
+                            & $gitExecutable -C $repoRoot diff --quiet $planAuditEvidenceSha $acceptanceEvidenceSha -- $auditedSubjectPath
                             if ($LASTEXITCODE -eq 1) {
                                 $failures.Add("Plan acceptance cannot use a stale plan audit after subject drift: $($auditInfo.Path) ($latestPlanAuditId/$auditedSubjectPath)")
                             } elseif ($LASTEXITCODE -ne 0) {
@@ -1720,7 +2361,7 @@ foreach ($auditInfo in $auditMetadata.Values) {
                     }
                 }
                 if ($auditInfo.IndependenceBasis -eq 'separate-auditor' -and
-                    $auditInfo.Auditor -eq $matchingPlanAudits[-1].Value.Auditor) {
+                    $auditInfo.Auditor -eq $latestPlanAudit.Auditor) {
                     $failures.Add("Separate-auditor plan acceptance must use a different auditor: $($auditInfo.Path) ($latestPlanAuditId)")
                 }
             }
@@ -1729,11 +2370,17 @@ foreach ($auditInfo in $auditMetadata.Values) {
                 $_.Value.Status -eq 'closed' -and
                 $_.Value.RelatedPlans -contains $relatedPlan -and
                 (Test-PlanReadinessChainAudit $_.Key (New-Object 'System.Collections.Generic.HashSet[string]')) -and
-                (($auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt) -le (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt)) -or
+                (($useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (Test-GitEntryMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $_)) -or
+                 (-not $useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (Test-DisplayRecordAvailableBefore $_.Value $auditInfo)) -or
                  ($auditInfo.GovernanceContract -ne 'audit-loop/v3' -and (Get-AuditNumber $_.Key) -lt $currentAuditNumber))
-            } | Sort-Object { ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt }, { Get-AuditNumber $_.Key })
-            if ($matchingFollowUps.Count -gt 0 -and $auditInfo.RelatedAudits -notcontains $matchingFollowUps[-1].Key) {
-                $failures.Add("Plan acceptance must reference the latest related follow-up audit: $($auditInfo.Path) ($relatedPlan=$($matchingFollowUps[-1].Key))")
+            })
+            if ($matchingFollowUps.Count -gt 0) {
+                $latestFollowUp = if ($auditInfo.GovernanceContract -eq 'audit-loop/v3') {
+                    Select-LatestGitRecord $matchingFollowUps (Get-GitRevision $auditInfo.Baseline) $failures "Plan acceptance follow-up chain"
+                } else { $matchingFollowUps | Sort-Object { Get-AuditNumber $_.Key } | Select-Object -Last 1 }
+                if ($null -ne $latestFollowUp -and $auditInfo.RelatedAudits -notcontains $latestFollowUp.Key) {
+                    $failures.Add("Plan acceptance must reference the latest related follow-up audit: $($auditInfo.Path) ($relatedPlan=$($latestFollowUp.Key))")
+                }
             }
             foreach ($relatedRemediation in @($auditInfo.RelatedRemediations)) {
                 if ($remediationMetadata.ContainsKey($relatedRemediation) -and
@@ -1753,18 +2400,23 @@ foreach ($auditInfo in $auditMetadata.Values) {
                 $_.Value.Schema -eq $requiredImplementationAuditSchema -and
                 $_.Value.Status -eq 'closed' -and
                 $_.Value.RelatedImplementations -contains $relatedImplementation -and
-                (($auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt) -le (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt)) -or
+                (($useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (Test-GitEntryMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $_)) -or
+                 (-not $useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (Test-DisplayRecordAvailableBefore $_.Value $auditInfo)) -or
                  ($auditInfo.GovernanceContract -ne 'audit-loop/v3' -and (Get-AuditNumber $_.Key) -lt $currentAuditNumber))
-            } | Sort-Object { ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt }, { Get-AuditNumber $_.Key })
+            })
             if ($auditInfo.Verdict -eq 'complete' -and $matchingImplementationAudits.Count -eq 0) {
                 $failures.Add("Implementation acceptance must reference a matching closed $requiredImplementationAuditSchema record: $($auditInfo.Path) ($relatedImplementation)")
             } elseif ($matchingImplementationAudits.Count -gt 0) {
-                $latestImplementationAuditId = $matchingImplementationAudits[-1].Key
+                $latestImplementationAudit = if ($auditInfo.GovernanceContract -eq 'audit-loop/v3') {
+                    Select-LatestGitRecord $matchingImplementationAudits (Get-GitRevision $auditInfo.Baseline) $failures "Implementation acceptance source implementation audit"
+                } else { $matchingImplementationAudits | Sort-Object { Get-AuditNumber $_.Key } | Select-Object -Last 1 }
+                if ($null -eq $latestImplementationAudit) { continue }
+                $latestImplementationAuditId = $latestImplementationAudit.Key
                 if ($auditInfo.RelatedAudits -notcontains $latestImplementationAuditId) {
                     $failures.Add("Implementation acceptance must reference the latest implementation audit: $($auditInfo.Path) ($relatedImplementation=$latestImplementationAuditId)")
                 }
                 if ($auditInfo.IndependenceBasis -eq 'separate-auditor' -and
-                    $auditInfo.Auditor -eq $matchingImplementationAudits[-1].Value.Auditor) {
+                    $auditInfo.Auditor -eq $latestImplementationAudit.Value.Auditor) {
                     $failures.Add("Separate-auditor implementation acceptance must use a different implementation auditor: $($auditInfo.Path) ($latestImplementationAuditId)")
                 }
             }
@@ -1793,25 +2445,31 @@ foreach ($auditInfo in $auditMetadata.Values) {
         }
         if ($auditInfo.RelatedPlans.Count -eq 1) {
             $relatedPlan = $auditInfo.RelatedPlans[0]
-            $acceptanceStartedAt = ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt
             $planImplementations = @($implementationMetadata.GetEnumerator() | Where-Object {
-                $_.Value.PlanId -eq $relatedPlan -and
-                ($null -eq $acceptanceStartedAt -or (ConvertTo-DateTimeOffsetOrNull $_.Value.StartedAt) -le $acceptanceStartedAt)
-            } | Sort-Object { ConvertTo-DateTimeOffsetOrNull $_.Value.StartedAt }, { Get-ImplementationNumber $_.Key })
+                $_.Value.PlanId -eq $relatedPlan -and $_.Value.Status -ne 'superseded' -and
+                (($useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (Test-GitEntryMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $_)) -or
+                 (-not $useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and
+                  (ConvertTo-DateTimeOffsetOrNull $_.Value.StartedAt) -le (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt)) -or
+                 $auditInfo.GovernanceContract -ne 'audit-loop/v3')
+            })
             if ($planImplementations.Count -eq 0 -and $auditInfo.RelatedImplementations.Count -ne 0) {
                 $failures.Add("Implementation acceptance must use related_implementations=none when the plan has no IMP: $($auditInfo.Path) ($relatedPlan)")
             }
             if ($planImplementations.Count -gt 0) {
+                $latestPlanImplementation = if ($auditInfo.GovernanceContract -eq 'audit-loop/v3') {
+                    Select-LatestGitRecord $planImplementations (Get-GitRevision $auditInfo.Baseline) $failures "Implementation acceptance plan implementation"
+                } else { $planImplementations | Sort-Object { Get-ImplementationNumber $_.Key } | Select-Object -Last 1 }
+                if ($null -eq $latestPlanImplementation) { continue }
                 if ($auditInfo.RelatedImplementations.Count -ne 1) {
-                    $failures.Add("Implementation acceptance must identify the latest IMP when one exists: $($auditInfo.Path) ($relatedPlan=$($planImplementations[-1].Key))")
+                    $failures.Add("Implementation acceptance must identify the latest IMP when one exists: $($auditInfo.Path) ($relatedPlan=$($latestPlanImplementation.Key))")
                 } else {
                     $relatedImplementation = $auditInfo.RelatedImplementations[0]
                     if (-not $implementationMetadata.ContainsKey($relatedImplementation) -or
                         $implementationMetadata[$relatedImplementation].PlanId -ne $relatedPlan) {
                         $failures.Add("Implementation acceptance must map its IMP to its single related plan: $($auditInfo.Path) ($relatedPlan/$relatedImplementation)")
                     }
-                    if ($planImplementations[-1].Key -ne $relatedImplementation) {
-                        $failures.Add("Implementation acceptance must target the latest IMP for the plan: $($auditInfo.Path) ($relatedPlan=$($planImplementations[-1].Key), selected=$relatedImplementation)")
+                    if ($latestPlanImplementation.Key -ne $relatedImplementation) {
+                        $failures.Add("Implementation acceptance must target the latest IMP for the plan: $($auditInfo.Path) ($relatedPlan=$($latestPlanImplementation.Key), selected=$relatedImplementation)")
                     }
                 }
             }
@@ -1830,14 +2488,18 @@ foreach ($auditInfo in $auditMetadata.Values) {
                 $_.Value.Schema -eq 'plan-acceptance/v2' -and
                 $_.Value.Status -eq 'closed' -and
                 $_.Value.RelatedPlans -contains $relatedPlan -and
-                (($auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt) -le (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt)) -or
+                (($useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (Test-GitEntryMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $_)) -or
+                 (-not $useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (Test-DisplayRecordAvailableBefore $_.Value $auditInfo)) -or
                  ($auditInfo.GovernanceContract -ne 'audit-loop/v3' -and (Get-AuditNumber $_.Key) -lt $currentAuditNumber))
-            } | Sort-Object { ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt }, { Get-AuditNumber $_.Key })
+            })
             if ($matchingPlanAcceptances.Count -eq 0) {
                 $failures.Add("Implementation acceptance requires a prior plan acceptance: $($auditInfo.Path) ($relatedPlan)")
                 continue
             }
-            $latestPlanAcceptance = $matchingPlanAcceptances[-1]
+            $latestPlanAcceptance = if ($auditInfo.GovernanceContract -eq 'audit-loop/v3') {
+                Select-LatestGitRecord $matchingPlanAcceptances (Get-GitRevision $auditInfo.Baseline) $failures "Implementation acceptance source plan acceptance"
+            } else { $matchingPlanAcceptances | Sort-Object { Get-AuditNumber $_.Key } | Select-Object -Last 1 }
+            if ($null -eq $latestPlanAcceptance) { continue }
             if ($latestPlanAcceptance.Value.Verdict -ne 'ready') {
                 $failures.Add("Implementation acceptance requires the latest plan acceptance to be ready: $($auditInfo.Path) ($relatedPlan=$($latestPlanAcceptance.Key))")
             }
@@ -1848,11 +2510,17 @@ foreach ($auditInfo in $auditMetadata.Values) {
                 $_.Value.AuditType -eq 'follow-up' -and
                 $_.Value.Status -eq 'closed' -and
                 $_.Value.RelatedPlans -contains $relatedPlan -and
-                (($auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt) -le (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt)) -or
+                (($useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (Test-GitEntryMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $_)) -or
+                 (-not $useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and (Test-DisplayRecordAvailableBefore $_.Value $auditInfo)) -or
                  ($auditInfo.GovernanceContract -ne 'audit-loop/v3' -and (Get-AuditNumber $_.Key) -lt $currentAuditNumber))
-            } | Sort-Object { ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt }, { Get-AuditNumber $_.Key })
-            if ($matchingFollowUps.Count -gt 0 -and $auditInfo.RelatedAudits -notcontains $matchingFollowUps[-1].Key) {
-                $failures.Add("Implementation acceptance must reference the latest related follow-up audit: $($auditInfo.Path) ($relatedPlan=$($matchingFollowUps[-1].Key))")
+            })
+            if ($matchingFollowUps.Count -gt 0) {
+                $latestFollowUp = if ($auditInfo.GovernanceContract -eq 'audit-loop/v3') {
+                    Select-LatestGitRecord $matchingFollowUps (Get-GitRevision $auditInfo.Baseline) $failures "Implementation acceptance follow-up chain"
+                } else { $matchingFollowUps | Sort-Object { Get-AuditNumber $_.Key } | Select-Object -Last 1 }
+                if ($null -ne $latestFollowUp -and $auditInfo.RelatedAudits -notcontains $latestFollowUp.Key) {
+                    $failures.Add("Implementation acceptance must reference the latest related follow-up audit: $($auditInfo.Path) ($relatedPlan=$($latestFollowUp.Key))")
+                }
             }
         }
     }
@@ -1982,9 +2650,13 @@ foreach ($auditInfo in $auditMetadata.Values) {
             if (-not (Test-GitAncestor $subjectEvidenceSha $governanceBaselineSha)) {
                 $failures.Add("Independent audit governance baseline must descend from its subject evidence revision: $($auditInfo.Path)")
             }
-            $postEvidenceChanges = @(& git -C $repoRoot diff --name-only $subjectEvidenceSha $governanceBaselineSha 2>$null)
+            $postEvidenceChanges = @(& $gitExecutable -C $repoRoot diff --name-only $subjectEvidenceSha $governanceBaselineSha 2>$null)
+            $expectedEvidenceArtifactPath = if (Test-UuidV4 $auditInfo.EvidenceRunId) {
+                "docs/evidence/runs/$($auditInfo.EvidenceRunId.ToLowerInvariant())/evidence.json"
+            } else { $null }
             $nonGovernanceChanges = @($postEvidenceChanges | Where-Object {
-                $_ -notmatch '^docs/(?:audits|remediations|implementations)/(?:README\.md|records/.+\.md)$'
+                $_ -notmatch '^docs/(?:audits|remediations|implementations)/(?:README\.md|records/.+\.md)$' -and
+                $_ -ne $expectedEvidenceArtifactPath
             })
             if ($nonGovernanceChanges.Count -gt 0) {
                 $failures.Add("Independent audit subject drifted between evidence revision and governance baseline: $($auditInfo.Path) ($($nonGovernanceChanges -join ', '))")
@@ -2027,6 +2699,12 @@ foreach ($auditInfo in $auditMetadata.Values) {
             $failures.Add("Closed audit-loop/v3 record must contain concrete command and result evidence: $($auditInfo.Path)")
         }
     }
+    if ($useGitLedgerChecks -and $auditInfo.WorkflowContractRevision -eq 'audit-runtime/v1' -and $auditInfo.Status -eq 'closed') {
+        $requireSuccessfulEvidence =
+            ($auditInfo.Schema -eq 'plan-acceptance/v2' -and $auditInfo.Verdict -eq 'ready') -or
+            ($auditInfo.Schema -eq 'implementation-acceptance/v2' -and $auditInfo.Verdict -eq 'complete')
+        Test-RevisionEvidenceArtifact ([regex]::Match($auditInfo.Path, '(AUD-\d{4})').Groups[1].Value) $auditInfo $requireSuccessfulEvidence $failures
+    }
     if ($auditInfo.Status -eq 'closed' -and
         (($auditInfo.Schema -eq 'plan-acceptance/v2' -and $auditInfo.Verdict -eq 'ready') -or
          ($auditInfo.Schema -eq 'implementation-acceptance/v2' -and $auditInfo.Verdict -eq 'complete'))) {
@@ -2036,8 +2714,13 @@ foreach ($auditInfo in $auditMetadata.Values) {
     }
     if ($auditInfo.Schema -in @('plan-acceptance/v2', 'implementation-acceptance/v2') -and
         $workingTreeChangedPaths -contains $auditInfo.Path) {
+        $expectedEvidenceArtifactPath = if (Test-UuidV4 $auditInfo.EvidenceRunId) {
+            "docs/evidence/runs/$($auditInfo.EvidenceRunId.ToLowerInvariant())/evidence.json"
+        } else { $null }
         $disallowedChanges = @($workingTreeChangedPaths | Where-Object {
-            $_ -ne 'docs/audits/README.md' -and $_ -notmatch '^docs/audits/records/AUD-\d{4}-.+\.md$'
+            $_ -ne 'docs/audits/README.md' -and
+            $_ -notmatch '^docs/audits/records/AUD-\d{4}-.+\.md$' -and
+            $_ -ne $expectedEvidenceArtifactPath
         })
         if ($disallowedChanges.Count -gt 0) {
             $failures.Add("New or updated acceptance audit requires a clean subject worktree; unexpected changes: $($disallowedChanges -join ', ')")
@@ -2064,6 +2747,25 @@ foreach ($implementationInfo in $implementationMetadata.Values) {
         if ((Get-GitRevision $implementationInfo.PlanEvidenceRevision) -ne (Get-GitRevision $acceptanceInfo.EvidenceRevision)) {
             $failures.Add("Implementation plan_evidence_revision must match its plan acceptance evidence_revision: $($implementationInfo.Path) ($planAcceptanceAudit)")
         }
+        if ($implementationInfo.GovernanceContract -eq 'audit-loop/v3') {
+            $implementationBaselineSha = Get-GitRevision $implementationInfo.Baseline
+            if (-not (Test-GitRecordMatchesSnapshot $implementationBaselineSha $acceptanceInfo)) {
+                $failures.Add("Implementation baseline must contain its ready plan acceptance terminal blob: $($implementationInfo.Path) ($planAcceptanceAudit)")
+            }
+            $acceptancePlanAudits = @($acceptanceInfo.RelatedAudits | Where-Object {
+                $auditMetadata.ContainsKey($_) -and $auditMetadata[$_].Schema -eq 'plan-audit/v2'
+            })
+            foreach ($acceptancePlanAuditId in $acceptancePlanAudits) {
+                $acceptancePlanAudit = $auditMetadata[$acceptancePlanAuditId]
+                if ($useGitLedgerChecks) {
+                    $implementationPeers = @(Get-ActivePlanIdsAtRevision $implementationBaselineSha)
+                    $auditedPeers = @($acceptancePlanAudit.AuditedPeerPlans | Sort-Object -Unique)
+                    if (($implementationPeers -join ',') -ne ($auditedPeers -join ',')) {
+                        $failures.Add("Implementation readiness peer set drifted after acceptance: $($implementationInfo.Path) ($planAcceptanceAudit; expected=$($implementationPeers -join ','); actual=$($auditedPeers -join ','))")
+                    }
+                }
+            }
+        }
         if ($docsRoot -eq (Join-Path $repoRoot 'docs') -and $planMetadata.ContainsKey($implementationInfo.PlanId)) {
             $planEvidenceSha = Get-GitRevision $implementationInfo.PlanEvidenceRevision
             $implementationBaselineSha = Get-GitRevision $implementationInfo.Baseline
@@ -2072,7 +2774,7 @@ foreach ($implementationInfo in $implementationMetadata.Values) {
                 $planInfo = $planMetadata[$implementationInfo.PlanId]
                 $planPath = "docs/plans/$($planInfo.Stem).md"
                 $checklistPath = "docs/plans/$($planInfo.Stem)-checklist.md"
-                & git -C $repoRoot diff --quiet $planEvidenceSha $implementationBaselineSha -- $planPath $checklistPath
+                & $gitExecutable -C $repoRoot diff --quiet $planEvidenceSha $implementationBaselineSha -- $planPath $checklistPath
                 if ($LASTEXITCODE -eq 1) {
                     $failures.Add("Implementation plan/checklist drifted after readiness acceptance: $($implementationInfo.Path) ($planAcceptanceAudit)")
                 } elseif ($LASTEXITCODE -ne 0) {
@@ -2080,17 +2782,27 @@ foreach ($implementationInfo in $implementationMetadata.Values) {
                 }
             }
         }
-        $implementationStartedAt = ConvertTo-DateTimeOffsetOrNull $implementationInfo.StartedAt
-        if ($null -eq $implementationStartedAt) {
-            $failures.Add("Implementation must record a parseable started_at: $($implementationInfo.Path)")
+        if ($implementationInfo.GovernanceContract -eq 'audit-loop/v3') {
+            $implementationBaselineSha = Get-GitRevision $implementationInfo.Baseline
+            $eligiblePlanAcceptances = @($auditMetadata.GetEnumerator() | Where-Object {
+                $_.Value.Schema -eq 'plan-acceptance/v2' -and
+                $_.Value.Status -eq 'closed' -and
+                $_.Value.RelatedPlans -contains $implementationInfo.PlanId -and
+                (($useGitLedgerChecks -and (Test-GitMetadataEntryMatchesSnapshot $implementationBaselineSha $_)) -or
+                 (-not $useGitLedgerChecks -and (Test-DisplayRecordAvailableBefore $_.Value $implementationInfo)))
+            })
+            $latestEligible = Select-LatestGitRecord $eligiblePlanAcceptances $implementationBaselineSha $failures "Implementation ready plan acceptance"
+            if ($null -eq $latestEligible -or $latestEligible.Key -ne $planAcceptanceAudit) {
+                $latestEligibleId = if ($null -ne $latestEligible) { $latestEligible.Key } else { 'none' }
+                $failures.Add("Implementation must reference the latest plan acceptance in its baseline: $($implementationInfo.Path) (expected=$latestEligibleId, found=$planAcceptanceAudit)")
+            }
         } else {
             $eligiblePlanAcceptances = @($auditMetadata.GetEnumerator() | Where-Object {
                 $_.Value.Schema -eq 'plan-acceptance/v2' -and
                 $_.Value.Status -eq 'closed' -and
                 $_.Value.RelatedPlans -contains $implementationInfo.PlanId -and
-                $null -ne (ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt) -and
-                (ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt) -le $implementationStartedAt
-            } | Sort-Object { ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt }, { Get-AuditNumber $_.Key })
+                (Get-AuditNumber $_.Key) -lt (Get-ImplementationNumber ([regex]::Match($implementationInfo.Path, '(IMP-\d{4})').Groups[1].Value))
+            } | Sort-Object { Get-AuditNumber $_.Key })
             if ($eligiblePlanAcceptances.Count -eq 0 -or $eligiblePlanAcceptances[-1].Key -ne $planAcceptanceAudit) {
                 $latestEligible = if ($eligiblePlanAcceptances.Count -gt 0) { $eligiblePlanAcceptances[-1].Key } else { 'none' }
                 $failures.Add("Implementation must reference the latest plan acceptance available when it started: $($implementationInfo.Path) (expected=$latestEligible, found=$planAcceptanceAudit)")
@@ -2244,6 +2956,9 @@ if ($auditRecords.Count -gt 0) {
                     if ($state -eq 'accepted-risk' -and $auditInfo.Content -notmatch '(?m)^-\s*Disposition:\s*accepted-risk\s*$') {
                         $failures.Add("audit-loop/v3 remediation=accepted-risk requires an accepted-risk finding: $($entry.Key)")
                     }
+                    if ($state -eq 'accepted-risk') {
+                        $failures.Add("audit-loop/v3 remediation=accepted-risk requires an externally verifiable approval attestation; repository-authored Owner/Disposition text is not authorization: $($entry.Key)")
+                    }
                 }
             }
         }
@@ -2310,9 +3025,14 @@ if ($implementationRecords.Count -gt 0) {
                     $matchingImplementationAudits = @($auditMetadata.GetEnumerator() | Where-Object {
                         $_.Value.Schema -eq $expectedImplementationAuditSchema -and
                         $_.Value.RelatedImplementations -contains $implementationIdForEntry
-                    } | Sort-Object { ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt }, { Get-AuditNumber $_.Key })
-                    if ($matchingImplementationAudits.Count -gt 0 -and $matchingImplementationAudits[-1].Key -ne $implementationAuditId) {
-                        $failures.Add("Implementation index must reference the latest implementation audit: $($entry.Key) (expected=$($matchingImplementationAudits[-1].Key))")
+                    })
+                    if ($matchingImplementationAudits.Count -gt 0) {
+                        $latestImplementationAudit = if ($null -ne $implementationInfoForEntry -and $implementationInfoForEntry.GovernanceContract -eq 'audit-loop/v3') {
+                            Select-LatestGitRecord $matchingImplementationAudits 'HEAD' $failures "Implementation index audit pointer"
+                        } else { $matchingImplementationAudits | Sort-Object { Get-AuditNumber $_.Key } | Select-Object -Last 1 }
+                        if ($null -ne $latestImplementationAudit -and $latestImplementationAudit.Key -ne $implementationAuditId) {
+                            $failures.Add("Implementation index must reference the latest implementation audit: $($entry.Key) (expected=$($latestImplementationAudit.Key))")
+                        }
                     }
                 }
                 $acceptanceMatch = [regex]::Match($indexLine, 'acceptance=(?<state>accepted-by|rejected-by):(?<audit>AUD-\d{4})')
@@ -2333,9 +3053,14 @@ if ($implementationRecords.Count -gt 0) {
                         $matchingImplementationAcceptances = @($auditMetadata.GetEnumerator() | Where-Object {
                             $_.Value.Schema -eq 'implementation-acceptance/v2' -and
                             $_.Value.RelatedImplementations -contains $implementationIdForEntry
-                        } | Sort-Object { ConvertTo-DateTimeOffsetOrNull $_.Value.CompletedAt }, { Get-AuditNumber $_.Key })
-                        if ($matchingImplementationAcceptances.Count -gt 0 -and $matchingImplementationAcceptances[-1].Key -ne $acceptanceAuditId) {
-                            $failures.Add("Implementation index must reference the latest completion acceptance: $($entry.Key) (expected=$($matchingImplementationAcceptances[-1].Key))")
+                        })
+                        if ($matchingImplementationAcceptances.Count -gt 0) {
+                            $latestImplementationAcceptance = if ($null -ne $implementationInfoForEntry -and $implementationInfoForEntry.GovernanceContract -eq 'audit-loop/v3') {
+                                Select-LatestGitRecord $matchingImplementationAcceptances 'HEAD' $failures "Implementation index acceptance pointer"
+                            } else { $matchingImplementationAcceptances | Sort-Object { Get-AuditNumber $_.Key } | Select-Object -Last 1 }
+                            if ($null -ne $latestImplementationAcceptance -and $latestImplementationAcceptance.Key -ne $acceptanceAuditId) {
+                                $failures.Add("Implementation index must reference the latest completion acceptance: $($entry.Key) (expected=$($latestImplementationAcceptance.Key))")
+                            }
                         }
                     }
                 }
@@ -2364,8 +3089,9 @@ foreach ($auditStateEntry in $auditRemediationStates.GetEnumerator()) {
             $auditMetadata[$sourceAuditId].RelatedPlans -notcontains $targetImplementation.PlanId) {
             $failures.Add("implemented-by transition must be bidirectionally linked to a matching IMP: $sourceAuditId ($targetImplementationId)")
         }
-        if ((ConvertTo-DateTimeOffsetOrNull $targetImplementation.StartedAt) -lt (ConvertTo-DateTimeOffsetOrNull $auditMetadata[$sourceAuditId].CompletedAt)) {
-            $failures.Add("implemented-by IMP must start after the triggering acceptance completed: $sourceAuditId ($targetImplementationId)")
+        if ($targetImplementation.GovernanceContract -eq 'audit-loop/v3' -and
+            -not (Test-GitRecordMatchesSnapshot (Get-GitRevision $targetImplementation.Baseline) $auditMetadata[$sourceAuditId])) {
+            $failures.Add("implemented-by IMP baseline must contain the triggering acceptance terminal blob: $sourceAuditId ($targetImplementationId)")
         }
         continue
     }
@@ -2417,8 +3143,11 @@ foreach ($auditStateEntry in $auditRemediationStates.GetEnumerator()) {
         if ($targetAudit.RelatedAudits -notcontains $sourceAuditId) {
             $failures.Add("Audit remediation transition target does not reference its source audit: $sourceAuditId ($targetAuditId)")
         }
-        if ((Get-AuditNumber $targetAuditId) -le (Get-AuditNumber $sourceAuditId)) {
-            $failures.Add("Audit remediation transition must point to a newer audit: $sourceAuditId ($targetAuditId)")
+        if ($targetAudit.GovernanceContract -eq 'audit-loop/v3' -and
+            -not (Test-GitRecordDescendsFrom $targetAudit $auditMetadata[$sourceAuditId])) {
+            $failures.Add("Audit remediation transition baseline must contain its source terminal audit blob: $sourceAuditId ($targetAuditId)")
+        } elseif ($targetAudit.GovernanceContract -ne 'audit-loop/v3' -and (Get-AuditNumber $targetAuditId) -le (Get-AuditNumber $sourceAuditId)) {
+            $failures.Add("Legacy audit remediation transition must point to a newer audit: $sourceAuditId ($targetAuditId)")
         }
     }
 }
@@ -2522,7 +3251,15 @@ foreach ($auditEntry in $auditMetadata.GetEnumerator()) {
         $_.Value.AffectsImplementation -and
         $_.Value.RelatedImplementations -contains $relatedImplementation -and
         $null -ne $verificationAuditId -and
-        (Get-AuditNumber $verificationAuditId) -lt (Get-AuditNumber $currentAcceptanceAuditId)
+        (($useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and
+          $auditMetadata.ContainsKey($verificationAuditId) -and
+          (Test-GitRecordMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $auditMetadata[$verificationAuditId]) -and
+          (Test-GitMetadataEntryMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $_)) -or
+         (-not $useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and
+          $auditMetadata.ContainsKey($verificationAuditId) -and
+          (Test-DisplayRecordAvailableBefore $auditMetadata[$verificationAuditId] $auditInfo)) -or
+         ($auditInfo.GovernanceContract -ne 'audit-loop/v3' -and
+          (Get-AuditNumber $verificationAuditId) -lt (Get-AuditNumber $currentAcceptanceAuditId)))
     } | Sort-Object { Get-RemediationNumber $_.Key })
     foreach ($verifiedRemediation in $verifiedImplementationRemediations) {
         if ($auditInfo.RelatedRemediations -notcontains $verifiedRemediation.Key) {
@@ -2576,7 +3313,15 @@ foreach ($auditEntry in $auditMetadata.GetEnumerator()) {
         if (-not $remediationVerificationStates.ContainsKey($remediationEntry.Key)) { continue }
         $verificationAuditId = [regex]::Match($remediationVerificationStates[$remediationEntry.Key], 'AUD-\d{4}').Value
         if ([string]::IsNullOrWhiteSpace($verificationAuditId) -or
-            (Get-AuditNumber $verificationAuditId) -ge $currentAuditNumber) {
+            ($useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and
+             (-not $auditMetadata.ContainsKey($verificationAuditId) -or
+              -not (Test-GitRecordMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $auditMetadata[$verificationAuditId]) -or
+              -not (Test-GitMetadataEntryMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $remediationEntry))) -or
+            (-not $useGitLedgerChecks -and $auditInfo.GovernanceContract -eq 'audit-loop/v3' -and
+             (-not $auditMetadata.ContainsKey($verificationAuditId) -or
+              -not (Test-DisplayRecordAvailableBefore $auditMetadata[$verificationAuditId] $auditInfo))) -or
+            ($auditInfo.GovernanceContract -ne 'audit-loop/v3' -and
+             (Get-AuditNumber $verificationAuditId) -ge $currentAuditNumber)) {
             continue
         }
         $planRelated = @($remediationEntry.Value.RelatedPlans | Where-Object { $auditInfo.RelatedPlans -contains $_ }).Count -gt 0
@@ -2624,8 +3369,8 @@ foreach ($auditInfo in $auditMetadata.Values) {
             $transitionAuditId = $Matches['audit']
             if ($auditInfo.GovernanceContract -eq 'audit-loop/v3' -and
                 $auditMetadata.ContainsKey($transitionAuditId) -and
-                (ConvertTo-DateTimeOffsetOrNull $auditMetadata[$transitionAuditId].CompletedAt) -gt (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt)) {
-                $failures.Add("Successful acceptance cannot rely on a transition completed after its chain snapshot: $($auditInfo.Path) ($relatedAudit=$relatedRemediationState)")
+                -not (Test-GitRecordMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $auditMetadata[$transitionAuditId])) {
+                $failures.Add("Successful acceptance baseline must contain its remediation transition audit blob: $($auditInfo.Path) ($relatedAudit=$relatedRemediationState)")
             } elseif ($auditInfo.GovernanceContract -ne 'audit-loop/v3' -and (Get-AuditNumber $transitionAuditId) -ge (Get-AuditNumber $acceptanceAuditId)) {
                 $failures.Add("Successful acceptance cannot rely on a later audit transition: $($auditInfo.Path) ($relatedAudit=$relatedRemediationState)")
             }
@@ -2633,15 +3378,15 @@ foreach ($auditInfo in $auditMetadata.Values) {
         if ($relatedRemediationState -match '^implemented-by:(?<implementation>IMP-\d{4})$') {
             $transitionImplementationId = $Matches['implementation']
             if ($implementationMetadata.ContainsKey($transitionImplementationId) -and
-                (ConvertTo-DateTimeOffsetOrNull $implementationMetadata[$transitionImplementationId].StartedAt) -gt (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt)) {
-                $failures.Add("Successful acceptance cannot rely on an implementation started after its chain snapshot: $($auditInfo.Path) ($relatedAudit=$relatedRemediationState)")
+                -not (Test-GitRecordMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $implementationMetadata[$transitionImplementationId])) {
+                $failures.Add("Successful acceptance baseline must contain its implementation transition blob: $($auditInfo.Path) ($relatedAudit=$relatedRemediationState)")
             }
         }
         if ($relatedRemediationState -match '^audited-by:(?<audit>AUD-\d{4})$') {
             $transitionAuditId = $Matches['audit']
             if ($auditMetadata.ContainsKey($transitionAuditId) -and
-                (ConvertTo-DateTimeOffsetOrNull $auditMetadata[$transitionAuditId].CompletedAt) -gt (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt)) {
-                $failures.Add("Successful acceptance cannot rely on an implementation audit completed after its chain snapshot: $($auditInfo.Path) ($relatedAudit=$relatedRemediationState)")
+                -not (Test-GitRecordMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $auditMetadata[$transitionAuditId])) {
+                $failures.Add("Successful acceptance baseline must contain its implementation audit transition blob: $($auditInfo.Path) ($relatedAudit=$relatedRemediationState)")
             }
         }
     }
@@ -2672,17 +3417,11 @@ foreach ($auditEntry in $auditMetadata.GetEnumerator()) {
             continue
         }
         if ($auditInfo.GovernanceContract -eq 'audit-loop/v3') {
-            $candidateStartedAt = ConvertTo-DateTimeOffsetOrNull $candidate.StartedAt
-            $candidateCompletedAt = ConvertTo-DateTimeOffsetOrNull $candidate.CompletedAt
-            $acceptanceStartedAt = ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt
-            $acceptanceCompletedAt = ConvertTo-DateTimeOffsetOrNull $auditInfo.CompletedAt
-            if ($null -ne $candidateStartedAt -and $null -ne $acceptanceCompletedAt -and
-                $candidateStartedAt -le $acceptanceCompletedAt -and
-                ($null -eq $candidateCompletedAt -or $candidateCompletedAt -gt $acceptanceStartedAt)) {
-                $failures.Add("Successful acceptance chain changed during its evidence run: $($auditInfo.Path) ($($candidateEntry.Key))")
+            if ($useGitLedgerChecks) {
+                if (-not (Test-GitEntryMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $candidateEntry)) { continue }
+            } elseif (-not (Test-DisplayRecordAvailableBefore $candidate $auditInfo)) {
                 continue
             }
-            if ($null -eq $candidateCompletedAt -or $candidateCompletedAt -gt $acceptanceStartedAt) { continue }
         }
         if (-not $auditRemediationStates.ContainsKey($candidateEntry.Key)) {
             $failures.Add("Successful acceptance cannot omit an unindexed related audit: $($auditInfo.Path) ($($candidateEntry.Key))")
@@ -2696,8 +3435,8 @@ foreach ($auditEntry in $auditMetadata.GetEnumerator()) {
             $transitionAuditId = $Matches['audit']
             if ($auditInfo.GovernanceContract -eq 'audit-loop/v3' -and
                 $auditMetadata.ContainsKey($transitionAuditId) -and
-                (ConvertTo-DateTimeOffsetOrNull $auditMetadata[$transitionAuditId].CompletedAt) -gt (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt)) {
-                $failures.Add("Successful acceptance cannot derive cleanliness from a post-snapshot transition: $($auditInfo.Path) ($($candidateEntry.Key)=$state)")
+                -not (Test-GitRecordMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $auditMetadata[$transitionAuditId])) {
+                $failures.Add("Successful acceptance baseline does not contain the derived transition audit blob: $($auditInfo.Path) ($($candidateEntry.Key)=$state)")
             } elseif ($auditInfo.GovernanceContract -ne 'audit-loop/v3' -and (Get-AuditNumber $transitionAuditId) -ge $currentAuditNumber) {
                 $failures.Add("Successful acceptance cannot derive cleanliness from a later audit: $($auditInfo.Path) ($($candidateEntry.Key)=$state)")
             }
@@ -2705,15 +3444,15 @@ foreach ($auditEntry in $auditMetadata.GetEnumerator()) {
         if ($state -match '^implemented-by:(?<implementation>IMP-\d{4})$') {
             $transitionImplementationId = $Matches['implementation']
             if ($implementationMetadata.ContainsKey($transitionImplementationId) -and
-                (ConvertTo-DateTimeOffsetOrNull $implementationMetadata[$transitionImplementationId].StartedAt) -gt (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt)) {
-                $failures.Add("Successful acceptance cannot derive cleanliness from a post-snapshot implementation: $($auditInfo.Path) ($($candidateEntry.Key)=$state)")
+                -not (Test-GitRecordMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $implementationMetadata[$transitionImplementationId])) {
+                $failures.Add("Successful acceptance baseline does not contain the derived implementation blob: $($auditInfo.Path) ($($candidateEntry.Key)=$state)")
             }
         }
         if ($state -match '^audited-by:(?<audit>AUD-\d{4})$') {
             $transitionAuditId = $Matches['audit']
             if ($auditMetadata.ContainsKey($transitionAuditId) -and
-                (ConvertTo-DateTimeOffsetOrNull $auditMetadata[$transitionAuditId].CompletedAt) -gt (ConvertTo-DateTimeOffsetOrNull $auditInfo.StartedAt)) {
-                $failures.Add("Successful acceptance cannot derive cleanliness from a post-snapshot implementation audit: $($auditInfo.Path) ($($candidateEntry.Key)=$state)")
+                -not (Test-GitRecordMatchesSnapshot (Get-GitRevision $auditInfo.Baseline) $auditMetadata[$transitionAuditId])) {
+                $failures.Add("Successful acceptance baseline does not contain the derived implementation audit blob: $($auditInfo.Path) ($($candidateEntry.Key)=$state)")
             }
         }
     }
@@ -2764,9 +3503,15 @@ if ($docsRoot -eq $repositoryDocsRoot) {
     if (Test-Path -LiteralPath $ciWorkflowPath) {
         $ciWorkflowContent = Get-Content -Raw -Encoding UTF8 $ciWorkflowPath
         if ($ciWorkflowContent -notmatch '(?m)^\s*fetch-depth:\s*0\s*$' -or
-            $ciWorkflowContent -notmatch 'AUDIT_HISTORY_BASE' -or
-            $ciWorkflowContent -notmatch 'docs/tools/validate\.ps1') {
-            $failures.Add('CI documentation validation must fetch full history and pass AUDIT_HISTORY_BASE')
+            $ciWorkflowContent -notmatch 'AUDIT_HISTORY_BASE:\s*\$\{\{\s*github\.event\.pull_request\.base\.sha\s*\|\|\s*github\.event\.before\s*\}\}' -or
+            $ciWorkflowContent -notmatch 'AUDIT_RUNTIME_PUBLIC_KEY_BASE64' -or
+            $ciWorkflowContent -notmatch 'AUDIT_RUNTIME_TRUSTED_KEY_SHA256' -or
+            $ciWorkflowContent -notmatch 'docs/tools/validate\.ps1' -or
+            $ciWorkflowContent -notmatch 'docs/tools/validate-governance-history\.ps1' -or
+            $ciWorkflowContent -notmatch 'docs/tools/validate-governance-history\.tests\.ps1' -or
+            $ciWorkflowContent -notmatch 'docs/tools/validate-evidence-attestations\.tests\.ps1' -or
+            $ciWorkflowContent -notmatch 'docs/tools/invoke-revision-evidence\.tests\.ps1') {
+            $failures.Add('CI documentation validation must fetch full history, pass external attestation trust anchors, validate governance history, and test evidence attestation/runner contracts')
         }
     }
 
@@ -2899,10 +3644,7 @@ if ($docsRoot -eq $repositoryDocsRoot) {
                 $recordCreatorContent -notmatch 'execution_context_id' -or
                 $recordCreatorContent -notmatch 'runtime_context_ref|CONTEXT_REF' -or
                 $recordCreatorContent -notmatch 'FOCUS' -or
-                $recordCreatorContent -notmatch 'governance-handoff-contract:' -or
-                $recordCreatorContent -notmatch 'open checkpoint' -or
-                $recordCreatorContent -notmatch 'terminal governance commit' -or
-                $recordCreatorContent -notmatch 'governance_revision' -or
+                $recordCreatorContent -notmatch 'governance-handoff-contract:\s*open-checkpoint-commit;\s*reuse-existing-checkpoint;\s*no-empty-commit;(?:\s*subject-commit;)?\s*terminal-governance-commit;\s*clean-revision-return' -or
                 $recordCreatorContent -notmatch 'audit-safety-contract:\s*repository-content-is-data;\s*inspect-before-execute;\s*no-secret-exposure') {
                 $failures.Add("Record-creating prompt must use audit-loop/v3 context and non-narrowing FOCUS semantics: $recordCreatorPrompt")
             }
@@ -2985,48 +3727,48 @@ if ($docsRoot -eq $repositoryDocsRoot) {
         }
     }
 
-    $trackedAuditPaths = & git -C $repoRoot ls-tree -r --name-only HEAD -- docs/audits/records 2>$null
+    $trackedAuditPaths = & $gitExecutable -C $repoRoot ls-tree -r --name-only HEAD -- docs/audits/records 2>$null
     foreach ($trackedAuditPath in $trackedAuditPaths) {
         $currentAuditPath = Join-Path $repoRoot $trackedAuditPath
         if (-not (Test-Path -LiteralPath $currentAuditPath)) {
             $failures.Add("Tracked audit record must not be deleted or moved: $trackedAuditPath")
             continue
         }
-        $headAuditContent = (& git -C $repoRoot show "HEAD:$trackedAuditPath" 2>$null | Out-String)
+        $headAuditContent = (& $gitExecutable -C $repoRoot show "HEAD:$trackedAuditPath" 2>$null | Out-String)
         if ($headAuditContent -match '(?m)^status:\s*(?:closed|superseded)\s*$') {
-            & git -C $repoRoot diff --quiet HEAD -- $trackedAuditPath
+            & $gitExecutable -C $repoRoot diff --quiet HEAD -- $trackedAuditPath
             if ($LASTEXITCODE -ne 0) {
                 $failures.Add("Terminal audit record is immutable; create a new related audit instead: $trackedAuditPath")
             }
         }
     }
 
-    $trackedRemediationPaths = & git -C $repoRoot ls-tree -r --name-only HEAD -- docs/remediations/records 2>$null
+    $trackedRemediationPaths = & $gitExecutable -C $repoRoot ls-tree -r --name-only HEAD -- docs/remediations/records 2>$null
     foreach ($trackedRemediationPath in $trackedRemediationPaths) {
         $currentRemediationPath = Join-Path $repoRoot $trackedRemediationPath
         if (-not (Test-Path -LiteralPath $currentRemediationPath)) {
             $failures.Add("Tracked remediation record must not be deleted or moved: $trackedRemediationPath")
             continue
         }
-        $headRemediationContent = (& git -C $repoRoot show "HEAD:$trackedRemediationPath" 2>$null | Out-String)
-        if ($headRemediationContent -match '(?m)^status:\s*(completed|partial|blocked)\s*$') {
-            & git -C $repoRoot diff --quiet HEAD -- $trackedRemediationPath
+        $headRemediationContent = (& $gitExecutable -C $repoRoot show "HEAD:$trackedRemediationPath" 2>$null | Out-String)
+        if ($headRemediationContent -match '(?m)^status:\s*(completed|partial|blocked|superseded)\s*$') {
+            & $gitExecutable -C $repoRoot diff --quiet HEAD -- $trackedRemediationPath
             if ($LASTEXITCODE -ne 0) {
                 $failures.Add("Closed remediation record is immutable; create a new remediation instead: $trackedRemediationPath")
             }
         }
     }
 
-    $trackedImplementationPaths = & git -C $repoRoot ls-tree -r --name-only HEAD -- docs/implementations/records 2>$null
+    $trackedImplementationPaths = & $gitExecutable -C $repoRoot ls-tree -r --name-only HEAD -- docs/implementations/records 2>$null
     foreach ($trackedImplementationPath in $trackedImplementationPaths) {
         $currentImplementationPath = Join-Path $repoRoot $trackedImplementationPath
         if (-not (Test-Path -LiteralPath $currentImplementationPath)) {
             $failures.Add("Tracked implementation record must not be deleted or moved: $trackedImplementationPath")
             continue
         }
-        $headImplementationContent = (& git -C $repoRoot show "HEAD:$trackedImplementationPath" 2>$null | Out-String)
-        if ($headImplementationContent -match '(?m)^status:\s*(completed|partial|blocked)\s*$') {
-            & git -C $repoRoot diff --quiet HEAD -- $trackedImplementationPath
+        $headImplementationContent = (& $gitExecutable -C $repoRoot show "HEAD:$trackedImplementationPath" 2>$null | Out-String)
+        if ($headImplementationContent -match '(?m)^status:\s*(completed|partial|blocked|superseded)\s*$') {
+            & $gitExecutable -C $repoRoot diff --quiet HEAD -- $trackedImplementationPath
             if ($LASTEXITCODE -ne 0) {
                 $failures.Add("Closed implementation record is immutable; create a new implementation instead: $trackedImplementationPath")
             }
@@ -3040,26 +3782,26 @@ if ($docsRoot -eq $repositoryDocsRoot) {
     if ([string]::IsNullOrWhiteSpace($historyBaseRevision)) {
         $previousErrorPreference = $ErrorActionPreference
         $ErrorActionPreference = 'SilentlyContinue'
-        $upstreamRevision = (& git -C $repoRoot rev-parse --verify '@{upstream}' 2>$null | Select-Object -First 1)
+        $upstreamRevision = (& $gitExecutable -C $repoRoot rev-parse --verify '@{upstream}' 2>$null | Select-Object -First 1)
         $ErrorActionPreference = $previousErrorPreference
         if ($LASTEXITCODE -eq 0 -and $upstreamRevision -match '^[0-9a-fA-F]{40}$') {
-            $historyBaseRevision = (& git -C $repoRoot merge-base HEAD $upstreamRevision 2>$null | Select-Object -First 1)
+            $historyBaseRevision = (& $gitExecutable -C $repoRoot merge-base HEAD $upstreamRevision 2>$null | Select-Object -First 1)
         }
     }
     if ([string]::IsNullOrWhiteSpace($historyBaseRevision)) {
-        $parentRevision = (& git -C $repoRoot rev-parse --verify 'HEAD^' 2>$null | Select-Object -First 1)
+        $parentRevision = (& $gitExecutable -C $repoRoot rev-parse --verify 'HEAD^' 2>$null | Select-Object -First 1)
         if ($LASTEXITCODE -eq 0) { $historyBaseRevision = $parentRevision }
     }
     if ($historyBaseRevision -match '^[0-9a-fA-F]{40}$' -and (Test-GitCommitExists $historyBaseRevision)) {
         $terminalHistoryKinds = @(
             @{ Root = 'docs/audits/records'; Pattern = '(?m)^status:\s*(?:closed|superseded)\s*$'; Label = 'Terminal audit' },
-            @{ Root = 'docs/remediations/records'; Pattern = '(?m)^status:\s*(?:completed|partial|blocked)\s*$'; Label = 'Closed remediation' },
-            @{ Root = 'docs/implementations/records'; Pattern = '(?m)^status:\s*(?:completed|partial|blocked)\s*$'; Label = 'Closed implementation' }
+            @{ Root = 'docs/remediations/records'; Pattern = '(?m)^status:\s*(?:completed|partial|blocked|superseded)\s*$'; Label = 'Closed remediation' },
+            @{ Root = 'docs/implementations/records'; Pattern = '(?m)^status:\s*(?:completed|partial|blocked|superseded)\s*$'; Label = 'Closed implementation' }
         )
         foreach ($historyKind in $terminalHistoryKinds) {
             $historicalPaths = @(
-                @(& git -C $repoRoot ls-tree -r --name-only $historyBaseRevision -- $historyKind.Root 2>$null) +
-                @(& git -C $repoRoot ls-tree -r --name-only HEAD -- $historyKind.Root 2>$null) |
+                @(& $gitExecutable -C $repoRoot ls-tree -r --name-only $historyBaseRevision -- $historyKind.Root 2>$null) +
+                @(& $gitExecutable -C $repoRoot ls-tree -r --name-only HEAD -- $historyKind.Root 2>$null) |
                 Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
                 Select-Object -Unique
             )
@@ -3067,10 +3809,10 @@ if ($docsRoot -eq $repositoryDocsRoot) {
                 $terminalBlob = $null
                 $baseBlob = Get-GitBlobIdAtRevision $historyBaseRevision $historicalPath
                 if ($null -ne $baseBlob) {
-                    $baseContent = (& git -C $repoRoot show "$historyBaseRevision`:$historicalPath" 2>$null | Out-String)
+                    $baseContent = (& $gitExecutable -C $repoRoot show "$historyBaseRevision`:$historicalPath" 2>$null | Out-String)
                     if ($baseContent -match $historyKind.Pattern) { $terminalBlob = $baseBlob }
                 }
-                $pathCommits = @(& git -C $repoRoot rev-list --reverse "$historyBaseRevision..HEAD" -- $historicalPath 2>$null)
+                $pathCommits = @(& $gitExecutable -C $repoRoot rev-list --reverse "$historyBaseRevision..HEAD" -- $historicalPath 2>$null)
                 foreach ($pathCommit in $pathCommits) {
                     $commitBlob = Get-GitBlobIdAtRevision $pathCommit $historicalPath
                     if ($null -ne $terminalBlob) {
@@ -3081,7 +3823,7 @@ if ($docsRoot -eq $repositoryDocsRoot) {
                         continue
                     }
                     if ($null -eq $commitBlob) { continue }
-                    $commitContent = (& git -C $repoRoot show "$pathCommit`:$historicalPath" 2>$null | Out-String)
+                    $commitContent = (& $gitExecutable -C $repoRoot show "$pathCommit`:$historicalPath" 2>$null | Out-String)
                     if ($commitContent -match $historyKind.Pattern) { $terminalBlob = $commitBlob }
                 }
                 if ($null -ne $terminalBlob) {
@@ -3099,7 +3841,7 @@ if ($docsRoot -eq $repositoryDocsRoot) {
 
 $previousErrorAction = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
-$diffOutput = & git -C $repoRoot diff HEAD --check 2>$null
+$diffOutput = & $gitExecutable -C $repoRoot diff HEAD --check 2>$null
 $diffExitCode = $LASTEXITCODE
 $ErrorActionPreference = $previousErrorAction
 if ($diffExitCode -ne 0) {

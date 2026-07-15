@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://allinme.local/schemas/governance-loop-run-v1.json",
+  "title": "Governance Loop Run State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "run_id",
+    "workflow",
+    "goal_mode",
+    "step_mode",
+    "target",
+    "peer_set",
+    "advance_set",
+    "max_cycles",
+    "max_stagnant_cycles",
+    "generation",
+    "cycle",
+    "previous_governance_revision",
+    "plans",
+    "updated_at"
+  ],
+  "properties": {
+    "schema": { "const": "governance-loop-run/v1" },
+    "run_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{7,127}$" },
+    "workflow": {
+      "enum": [
+        "backend-plan-audit-until-ready",
+        "backend-implement-audit-until-complete"
+      ]
+    },
+    "goal_mode": { "enum": ["standalone", "child"] },
+    "step_mode": { "enum": ["loop", "single-transition"] },
+    "target": { "$ref": "#/$defs/planSet" },
+    "peer_set": { "$ref": "#/$defs/planSet" },
+    "advance_set": { "$ref": "#/$defs/planSet" },
+    "max_cycles": { "type": "integer", "minimum": 1, "maximum": 20 },
+    "max_stagnant_cycles": { "type": "integer", "minimum": 1, "maximum": 3 },
+    "generation": { "type": "integer", "minimum": 0 },
+    "cycle": { "type": "integer", "minimum": 0, "maximum": 20 },
+    "previous_governance_revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "plans": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/planState" }
+    },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "planSet": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^PLN-[0-9]{4}$" }
+    },
+    "planState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan", "stage", "fingerprint", "stagnant_count", "blocker_code"],
+      "properties": {
+        "plan": { "type": "string", "pattern": "^PLN-[0-9]{4}$" },
+        "stage": { "type": "string", "pattern": "^[A-Za-z0-9._:-]+$" },
+        "fingerprint": { "type": "string", "minLength": 1 },
+        "stagnant_count": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "blocker_code": { "type": "string", "pattern": "^[A-Za-z0-9._:-]+$" }
+      }
+    }
+  }
+}

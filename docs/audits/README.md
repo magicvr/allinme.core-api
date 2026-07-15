@@ -23,14 +23,15 @@ supersedes: none
 related_plans: PLN-0005
 ```
 
-- 新闭环中的 `baseline` 固定审计开始前的干净治理快照；`evidence_revision` 固定实际被测试的 subject revision。subject-specific 命令必须通过 `docs/tools/invoke-revision-evidence.ps1` 在 detached worktree 执行，并记录 `evidence_worktree_revision` 与 runner 路径，禁止在治理 HEAD 上代跑后归属到旧 revision。
+- 新闭环中的 `baseline` 固定审计开始前的干净治理快照；`evidence_revision` 固定实际被测试的 subject revision。subject-specific 命令必须通过 `docs/tools/invoke-revision-evidence.ps1` 在 detached worktree 执行，并记录 `evidence_worktree_revision` 与 runner 路径，禁止在治理 HEAD 上代跑后归属到旧 revision。关闭 AUD 前还必须取得仓库外 signer 对 artifact 原始摘要、run/revision/tree/argv/exit/image 的 `evidence_attestation`；缺少外部 trust anchor 时停止。
 - `plan-audit/v2` 的新合同记录还必须填写 `audited_peer_plans` 和 `audited_subject_paths`；前者冻结完整活跃 peer 集合，后者必须包含每个 peer 的 plan/checklist 及直接事实源/代码/配置文件。peer 集合增删或任一路径漂移都会使既有计划审计和 ready 验收失效。
 - `audit_type` 描述方法，如 `full`、`targeted`、`follow-up`、`governance`、`security`。
 - `scope` 写精确对象，例如 `repository:allinme.core-api`、`plan:PLN-0005`、`feature:attachment-lifecycle`。
 - 审计者身份以 frontmatter 为准，文件名只保存便于检索的 slug。
-- 新记录继续使用 `governance_contract: audit-loop/v3`，并增加 `workflow_contract_revision: audit-runtime/v1` 以启用 peer snapshot、detached evidence 和 runtime ref 强约束；历史 v3 记录保持不可变且不冒充新合同。`execution_context_id` 是 UUIDv4 correlation ID，`runtime_context_ref` 才记录真实 task/agent/thread 引用。
+- 相对 CI `HistoryBase` 的所有新增 AUD/REM/IMP 必须使用 `governance_contract: audit-loop/v3` 与 `workflow_contract_revision: audit-runtime/v1`；删除任一字段不得降级成 legacy。历史 v3 记录保持不可变且不冒充新合同。每份新记录必须由真实、独立的逐记录 runtime task/context 创建，并使用在全部 AUD/REM/IMP 中全局唯一的 UUIDv4 `execution_context_id`；批量 dispatcher 不得复用一个 ID/ref。`execution_context_id` 只是逐记录 correlation ID，`runtime_context_ref` 才记录真实 task/agent/thread 引用。
 - 计划审计和实施审计也严格一计划/一 IMP 一 AUD；多目标计划审计先做集合级交叉检查，再把冲突 finding 分别落入每个受影响计划的 AUD。共享结论不得只放在最终汇报，也不得共享 remediation 状态。
 - 实施审计、两类验收及 follow-up 必须在新执行上下文运行，记录 `independence_basis: separate-context`、`runtime_context_ref`、`source_context_refs`、`execution_context_id`、`source_context_ids` 和唯一 `evidence_run_id`。当前 runtime ref 不得出现在可用 source refs 中；缺少真实 child ref 时停止，不得用 UUID、时间戳或自造文本冒充。旧源缺少 ref 时使用 `legacy-unavailable`。
+- 新记录自己的 `runtime_context_attestation` 必须与 open record/index 在同一原子治理提交中落库；关闭 audit-runtime AUD 时，主 `evidence.json` 和对应 `attestation.json` 必须与 terminal record/index 在同一精确路径事务中提交。
 - 两类验收仍使用 v2 schema，并严格一计划一 AUD。实施完成的 `effective_result_revision` 必须由 IMP 与已验证实施 REM 形成线性 Git 祖先链，不得按记录编号猜测链尾。
 
 ## 记录和追溯原则
@@ -97,8 +98,8 @@ $backend-plan-audit TARGET="PLN-0005,PLN-0006" FOCUS=recovery
 - 计划审计的 `TARGET` 缺省为 `active`，也可指定一个或多个 `PLN` ID；它只证明选中计划的质量，不代表全仓审计。
 - 计划和实施验收的 `TARGET` 缺省为全部活跃且未归档计划；批量调用按计划分别创建 AUD。验收必须独立读取计划、IMP、代码、测试和 Evidence，并针对开始写治理记录前的干净不可变 subject revision 关闭。
 - 实施审计只接受 completed IMP；实施闭环不能绕过计划可实施验收，也不能自动归档计划。
-- 两个闭环把外层 `TARGET` 固定为完整 peer 集合，并只向各原子入口传递从中派生的精确对象；每份计划审计持久化完整 `audited_peer_plans` 与 peer plan/checklist 路径。`ADVANCE_SET` 只决定本轮推进对象，不能让 peer 漂移后的旧 ready 继续有效。
-- 每个 AUD/REM/IMP 原子流程必须先提交 open checkpoint，再执行 subject/evidence 工作，关闭时提交 terminal governance transition 并返回干净 `governance_revision`。follow-up、实施审计和两类验收必须由运行时创建真实新 task/agent；UUID 只记录上下文，不能替代上下文隔离。
+- 两个闭环把外层 `TARGET` 固定为用户授权、不可扩大的 goal 子集，把 `PEER_SET` 固定为启动时完整活跃未归档 peer 集合；`ADVANCE_SET` 只决定本轮实际推进的 `TARGET` 子集。各原子入口只接收从这些集合派生的精确对象；每份计划审计仍持久化完整 `audited_peer_plans` 与 peer plan/checklist 路径。`PEER_SET` 只扩大交叉检查边界，不得扩大审计或实施 goal；peer 漂移后的旧 ready 不能继续有效。
+- 每个 AUD/REM/IMP 原子流程必须通过 `docs/tools/invoke-governance-transaction.ps1` 的 Git common-dir 锁、精确路径与 HEAD/shared-ref 双 CAS 提交 open checkpoint；再执行并单独提交 subject/result（AUD 绑定 open 之前的 evidence revision）；关闭或 supersede 时仍通过同一 helper 提交 terminal governance transition 并返回干净 `governance_revision`。禁止裸提交、预暂存或混入用户/并行改动。每份新记录（包括批量入口中的每一项）都必须由运行时创建真实、独立的逐记录 task/agent；UUID 只记录上下文，不能替代上下文隔离。
 - 审计提示词只生成审计记录，不直接整改。整改必须生成独立 [`REM`](../remediations/README.md)，复审再生成新的 follow-up `AUD`。
 - Codex 官方已弃用只存在于个人 `~/.codex/prompts` 的 custom prompts；仓库使用可版本化的 `.agents/skills`，通过 `$skill-name` 显式调用，并关闭隐式触发。
 
@@ -112,7 +113,7 @@ $backend-plan-audit TARGET="PLN-0005,PLN-0006" FOCUS=recovery
 - `remediation=verified-by:AUD-NNNN`：follow-up audit 已确认修正完成。
 - `remediation=continued-by:AUD-NNNN`：部分或未修正，当前整改队列已转移到新的 follow-up audit。
 - `remediation=none`：无 finding 或无需整改。
-- `remediation=accepted-risk`：剩余问题已由明确责任人接受风险。
+- `remediation=accepted-risk`：当前合同保留该历史枚举但不允许新流程写入；系统尚无外部可验证的风险批准 attestation，仓库作者、执行者或审计者文本不能构成授权。需要接受风险时保持 finding 未解决并使用 `remediation=decision-required`。
 - `remediation=decision-required`：外部权限、依赖或用户决策阻断，不进入自动整改队列。
 - `remediation=implementation-required`：完成验收确认缺少实施尝试或必须新建 IMP，路由到实施入口，不进入 REM 队列。
 - `remediation=audit-required`：完成验收确认 completed IMP 只缺实施审计，路由到实施审计，不进入 REM 队列。
@@ -121,6 +122,6 @@ $backend-plan-audit TARGET="PLN-0005,PLN-0006" FOCUS=recovery
 
 索引中的 `status=superseded; remediation=none` 表示审计因 baseline/链条漂移或独立 runtime context 丢失而在形成有效结论前被替代；替代 AUD 通过旧记录的 `superseded_by` 追溯。`context-loss` 仅适用于 `audit-runtime/v1` 独立审计，替代记录必须保持同类型、scope、baseline/evidence revision，并使用新的真实 runtime ref。
 
-新合同记录中，`required` 必须对应 `open`/`partially-resolved` finding；`none` 不得保留 open finding；`accepted-risk` 必须有完整 owner 与 `Disposition: accepted-risk`。索引不能脱离记录正文单独改成“干净”。
+新合同记录中，`required` 必须对应 `open`/`partially-resolved` finding；`none` 不得保留 open finding；在外部风险批准 attestation 合同实现前，任何新 `accepted-risk` 都必须失败关闭并改走 `decision-required`。索引不能脱离记录正文单独改成“干净”。
 
 创建审计时同时增加 `status=open; remediation=pending` 索引；正常关闭时同步更新 `status=closed` 和最终 remediation 状态，因漂移替代时同步更新 `status=superseded; remediation=none`。未更新索引视为审计流程未完成。
