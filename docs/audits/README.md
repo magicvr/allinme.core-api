@@ -22,6 +22,7 @@
 
 ## 当前索引
 
+- [`AUD-0010`](./records/AUD-0010-20260716-claude-governance-goal-drift.md)：`status=open`；目标漂移专项；关联 `PLN-0006`。
 - [`AUD-0009`](./records/AUD-0009-20260714-codex-follow-up-rem-0005-active-audits.md)：`status=closed`；`remediation=retired-by-scope`。
 - [`AUD-0008`](./records/AUD-0008-20260714-codex-follow-up-rem-0004-contract-clause-parsers.md)：`status=closed`；`remediation=retired-by-scope`。
 - [`AUD-0007`](./records/AUD-0007-20260714-codex-plan-pln-0005-phase-05-attachment-lifecycle.md)：`status=closed`；`remediation=retired-by-scope`。

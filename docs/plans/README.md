@@ -36,6 +36,7 @@ applies_to: implementation roadmap phase 6 pages
 
 ## 当前活跃计划
 
+- `PLN-0006`：[目标漂移纠偏与交付重心恢复计划](./PLN-0006-goal-drift-governance-realignment.md) / [checklist](./PLN-0006-goal-drift-governance-realignment-checklist.md)
 - `PLN-0005`：[阶段五附件生命周期开发计划](./PLN-0005-phase-05-attachment-lifecycle.md) / [checklist](./PLN-0005-phase-05-attachment-lifecycle-checklist.md)
 
 ## 稳定路径归档计划
