@@ -36,6 +36,9 @@
 
 ### Changed
 
+- 重新锚定仓库为 Demo/Reference API：增加项目宪章、Admin 场景与复用完成指标、70/20/10 投入参考和里程碑防漂移检查；治理工作流改为按风险选用。
+- 将 `validate-audit-workflows.ps1` 移出默认产品 CI，保留 `validate.ps1` 的 frontmatter、链接、编号、索引与终态历史保护；工作流拓扑校验仅在维护 prompt/skill 时运行。
+- 原地归档未实施且过重的 `PLN-0005`，以轻量 `PLN-0007` 作为阶段五附件 MVP 唯一实现入口；阶段五不再以前置 crash harness、调度 profile、capability binary 或 Evidence 供应链为开工条件。
 - 增加 additive migration v5 与独立 snapshot SHA-256，拒绝合法 item ID 替换；补充非 UTC `Z` 损坏时间、COUNT/page 同 SQLite snapshot 并发证据和 listener 提前失败 watcher 回收。
 - 修复订单读取聚合完整性、v4 幂等记录升级重放、shutdown 超时强制关闭、严格 query string 解析、重复 CORS 单值 header 和编辑资源错误优先级；补充对应损坏数据与回归测试。
 - 修复阶段三验收复核发现的 shutdown 超时资源生命周期、订单 `405`/`Allow`、写请求短路顺序、只读 SQLite 错误分类、64 KiB body 上限、非 ASCII 搜索原值和幂等快照完整性校验偏差，并更新项目总纲。

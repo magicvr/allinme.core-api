@@ -1,7 +1,7 @@
 ---
 status: active
 owner: 后端团队
-last_updated: 2026-07-14
+last_updated: 2026-07-16
 applies_to: allinme.core-api
 ---
 
@@ -13,7 +13,6 @@ applies_to: allinme.core-api
 go test ./...
 go vet ./...
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate-audit-workflows.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.tests.ps1
 ```
 
@@ -21,8 +20,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.test
 |---|---|---|
 | `go test ./...` | HTTP 与协议算法测试、共享 fixtures 的当前行为 | 生产依赖可用或远端部署健康 |
 | `go vet ./...` | Go 静态分析未发现已知问题 | 并发安全和业务语义完整 |
-| `docs/tools/validate.ps1` | 文档 frontmatter、链接、计划/审计/整改命名与索引、Copilot/Codex 工作流入口规则 | 文档内容本身的业务正确性 |
-| `docs/tools/validate-audit-workflows.ps1` | prompt/skill 映射、独立复审、先复审后整改、cycle 上限与停止条件 | 运行时实际遵守提示词或审计结论正确 |
+| `docs/tools/validate.ps1` | 文档 frontmatter、相对链接、计划/checklist 配对、AUD/REM/IMP 编号与索引、终态历史不可变及 `git diff HEAD --check` | 文档内容本身的业务正确性 |
+| `docs/tools/validate.tests.ps1` | 默认文档结构 validator 的合法与失败 fixture | 产品行为或审计结论正确 |
 
 涉及共享状态、goroutine 或并发 handler 时增加：
 
@@ -31,6 +30,21 @@ go test -race ./...
 ```
 
 依赖变化后运行 `go mod tidy`，并确认 `go.mod` / `go.sum` 的 diff 只包含预期变化。
+
+### 治理最小集与扩张冻结
+
+产品变更的默认治理最小集是：Go test/vet（涉及并发时增加 race）、当前/目标事实源分离、ADR/CHANGELOG、能力验证矩阵，以及 `validate.ps1` 保护的基础文档结构和终态历史。审计工作流按风险选用，不是每个产品变更的默认前置。
+
+在附件 MVP 完成前：
+
+- 不新增 AUD 工作流类型、skill/prompt 配对或新的 until-ready 编排；
+- 不新增只用于校验治理拓扑的 validator 规则；
+- 不把 production-grade Evidence 供应链、capability binary 或发布矩阵作为 Demo P0；
+- 不对校验器和编排器再开审计闭环，除非它们已经阻塞默认产品门禁且没有更轻的修复。
+
+`docs/tools/validate-audit-workflows.ps1` 保留为治理工作流维护检查。只有修改 `.github/prompts/backend-*`、`.agents/skills/backend-*` 或该脚本本身时才运行；它不再是产品 PR 的默认本地或 CI 门禁，也不能代替 subject-specific 测试。
+
+交付重心、投入预算和里程碑防漂移检查以[项目宪章](./00-overview.md#2-项目宪章与防漂移规则)为唯一事实源。
 
 ## 2. Conformance 输入
 
@@ -68,7 +82,7 @@ go test ./...
 | 订单履约 Action | yes | `go test ./internal/order ./internal/store ./internal/httpapi ./internal/app -count=1` | 覆盖乐观锁、全部合法状态转换、非法转换、版本冲突、真实 token 和关闭 Action 路由回退；不等待 CORS 门禁 |
 | CORS | yes | `go test ./internal/config ./internal/httpapi ./internal/app -count=1` | 配置失败、actual/preflight、Vary、Expose-Headers、Max-Age、route metadata、短路优先级和自动化跨源 smoke |
 | 退款 | yes | `go test ./internal/order ./internal/store ./internal/httpapi ./internal/app -count=1` | 覆盖可退金额、申请/审批分离、幂等 snapshot、审批事务、真实 JWT、非法 UTF-8、并发竞争和订单支付状态一致性 |
-| 附件 | no | 阶段五新增文件集成测试时 | 临时目录覆盖超限、类型伪造、危险文件名、摘要、绑定权限、鉴权下载、失败清理和过期清理；内部 ORDER_DELETE 覆盖 DRAFT/expected-version/退款历史门禁、文件隔离恢复，以及删除后同 create key 只重放冻结 snapshot 且不创建第二个订单 |
+| 附件 | no | 阶段五新增文件集成测试时 | 临时目录覆盖超限、类型伪造、危险文件名、摘要、上传者/过期/绑定权限、鉴权下载、失败清理和过期清理；真实 HTTP 覆盖上传 → 创建绑定 → 重查 → 下载 → 删除未绑定附件，相同幂等 key 不创建第二个订单 |
 | 看板 | yes | `go test ./internal/order ./internal/store ./internal/httpapi ./internal/app -count=1` | 固定 seed 下 summary/status/trend 快照与订单/退款查询交叉一致，覆盖 UTC 7/30 日窗口、负 trend bucket、退款后变化和双路由禁用装配 |
 | 页面 | no | 阶段六创建 `internal/pages/yaml/*.yaml` 时 | 全部 YAML 通过固定 Schema-UI 版本 L0-L4 校验，页面引用的 endpoint 与 Action 均存在集成测试 |
 

@@ -48,9 +48,7 @@ jobs:
 
       - name: Validate documentation
         shell: pwsh
-        run: |
-          ./docs/tools/validate.ps1
-          ./docs/tools/validate-audit-workflows.ps1
+        run: ./docs/tools/validate.ps1
 
       - name: Test documentation validator
         shell: pwsh

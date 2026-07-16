@@ -8,6 +8,8 @@ Go API service for Allinme.
 
 当前已实现阶段一运行基础、阶段二认证授权、阶段三订单查询与履约，以及阶段四退款和经营看板：SQLite migration/seed/reset、`GET /healthz`、`GET /readyz`、login/me/logout JWT Bearer API、订单列表/详情、幂等订单创建、草稿编辑、履约 Action、可信 origin CORS、幂等退款申请、审批/拒绝、可退金额，以及 summary、订单状态分布和 UTC 7/30 日趋势。附件和 Schema-UI 页面仍按 [`docs/06-implementation-roadmap.md`](./docs/06-implementation-roadmap.md) 分阶段实施。
 
+项目首先交付可运行的订单运营 Demo API，其次支撑通用 Admin 前台的真实联调场景，最后从已验证实现中提炼后续 API 项目可复用的结构。目标优先级、非目标、资产分层和防漂移规则见[项目宪章](./docs/00-overview.md#2-项目宪章与防漂移规则)。
+
 ## Development
 
 Run the service:

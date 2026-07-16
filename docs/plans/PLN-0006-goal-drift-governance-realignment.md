@@ -1,5 +1,5 @@
 ---
-status: active
+status: archived
 plan_id: PLN-0006
 owner: 后端团队
 created: 2026-07-16
@@ -107,11 +107,12 @@ applies_to: goal-drift governance realignment and demo delivery recovery
    - 180 天 artifact 保留与完整 Evidence 供应链；
    - requirements-to-test machine matrix 作为实现前置；
    - 跨平台掉电安全与完整 orphan 接管编排。
-7. **对 PLN-0005 的处置**：
-   - 不静默覆盖 closed 审计；
-   - 实现前必须先有“MVP 切片说明”：可在本计划 WP-Phase5-Slice 完成后，将 `PLN-0005` 标为 `archived` 并链接替代切片计划，**或** 在 `PLN-0005` 顶部增加 active 警告并缩减 P0 为 MVP（二选一，优先新建轻量 `PLN-0007` 实现附件，避免在 400+ 行规格上局部打补丁）。
+7. **对 PLN-0005 的处置（已选定）**：
+   - `PLN-0005` 与 checklist 原地 `archived`，保留全部历史规格、未勾选项和 closed 审计链接；
+   - 轻量 [`PLN-0007`](./PLN-0007-phase-05-attachment-mvp.md) 是唯一阶段五实现入口；
+   - 不从 `PLN-0005` 复制 capability binary、crash harness、调度 profile 或 Evidence 供应链作为 MVP 前置。
 8. **投入预算（正常阶段）**：约 70% 产品/场景，20% 测试与契约，10% 文档与治理。连续迭代治理 >20% 必须书面说明解除了哪个产品阻塞。
-9. **抽象规则**：第一次实现业务；第二次发现重复；第三次才稳定抽取公共模块。
+9. **抽象规则**：先完成业务实现；只有第二个真实项目出现相同需求时才稳定抽取，禁止为想象中的后续项目预建框架。
 10. **本计划成功不看**：新增 AUD 数量、新增 validator 行数、闭环轮次。
 
 ## 工作包与负责人
@@ -125,6 +126,17 @@ applies_to: goal-drift governance realignment and demo delivery recovery
 | WP-Handoff | 后端团队 | 上述出口 | 下一实现入口与 AUD-0010 finding 映射表 |
 
 每个工作包完成后在 checklist 记录：日期、revision、改动路径、验证命令与结果。
+
+## 交接与审计映射
+
+| AUD-0010 finding | 本计划处置 | 后续关闭证据 |
+|---|---|---|
+| F001 近期重心治理化 | WP-Freeze 将工作流拓扑校验移出默认产品 CI，并冻结新增治理入口 | `PLN-0007` 产生附件产品实现提交，主线恢复产品里程碑 |
+| F002 阶段五过重 | `PLN-0005` 原地归档；`PLN-0007` 定义附件 MVP 范围与停止条件 | `PLN-0007` 进入实现并交付 upload → bind → download 场景 |
+| F003 治理维护税 | `04-validation.md` 定义最小门禁；九套工作流改为按风险选用 | 非最小治理不再阻塞默认产品 PR，且附件 MVP 前不再扩张 |
+| F004 Admin/复用完成定义缺失 | `00-overview.md` 成为项目宪章、防漂移和资产分层事实源 | 后续路线与交付引用宪章指标 |
+
+下一产品实现入口为 [`PLN-0007`](./PLN-0007-phase-05-attachment-mvp.md)。`PLN-0006` checklist 完成只表示治理纠偏已经落地，不表示附件已经实现；`AUD-0010` 保持 open，直到上述产品证据满足其关闭条件。
 
 ## 风险、回退与停止条件
 
@@ -162,11 +174,10 @@ applies_to: goal-drift governance realignment and demo delivery recovery
 
 ### 建议后续（本计划外）
 
-1. 新建轻量附件实现计划（建议 `PLN-0007`）或切片后的阶段五计划；
-2. 实现附件 MVP；
-3. OpenAPI 最小导出；
-4. 页面下发；
-5. Admin 前台端到端联调；
-6. 再抽取 runtime kit。
+1. 按 [`PLN-0007`](./PLN-0007-phase-05-attachment-mvp.md) 实现附件 MVP；
+2. OpenAPI 最小导出；
+3. 页面下发；
+4. Admin 前台端到端联调；
+5. 第二个真实项目出现相同需求后再抽取 runtime kit。
 
 配套 checklist：`PLN-0006-goal-drift-governance-realignment-checklist.md`。

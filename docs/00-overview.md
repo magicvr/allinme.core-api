@@ -1,7 +1,7 @@
 ---
 status: active
 owner: 后端团队
-last_updated: 2026-07-14
+last_updated: 2026-07-16
 applies_to: allinme.core-api
 ---
 
@@ -33,7 +33,51 @@ applies_to: allinme.core-api
 
 本仓库不负责定义 Schema-UI 字段和跨端语义。前后端联调、页面配置生成和协议升级都必须以 [`schema-ui-docs`](../../schema-ui-docs/README.md) 为核心契约。
 
-## 2. 文档地图
+## 2. 项目宪章与防漂移规则
+
+目标优先级固定为：**Demo 闭环 > Admin 可联调场景 > 模板抽象 > 流程优化**。
+
+| 层级 | 目标 | 可观察完成结果 |
+|---|---|---|
+| 主目标 | 可运行、可重置且具有真实状态变化的订单运营 Demo API | 从全新数据目录可完成登录、查询、写入、履约、审批、看板、附件和页面加载场景 |
+| 次目标 | 为通用 Admin 前台提供真实后台交互 | 场景覆盖认证、列表、表单、权限、状态机、审批、看板、附件和服务端页面配置 |
+| 派生目标 | 从已验证实现提炼后续 API 项目可复用的结构 | 复用边界由第二个真实消费者验证，不以预建框架或复制治理历史代替 |
+
+本仓默认不以以下方向为目标：
+
+- 通用 BaaS、无代码 CRUD 平台或多租户管理平台；
+- 生产级分布式订单系统及其完整发布、调度和灾难恢复体系；
+- AI 审计或开发治理框架。治理工具可以辅助交付，但默认不作为模板产品的一部分。
+
+资产按迁移价值解释：
+
+| 资产 | 默认策略 |
+|---|---|
+| `cmd` / `app` / `config` / HTTP 基础设施 / migration 等 runtime 骨架 | 可作为后续 API 项目的结构参考，经真实复用后再抽取 |
+| `auth` | 可选能力；身份模型不同的项目应替换，不把当前四角色视为框架契约 |
+| `order` / refund / dashboard | 示例领域；复用状态机、幂等和乐观锁模式，不默认复制业务模型 |
+| `protocol` | Schema-UI 生态消费者；仅同协议项目启用 |
+| audits / remediations / skills / prompts 等 governance 资产 | 可选维护工具；默认不复制到新 API 项目，也不作为产品完成度 |
+
+完成度使用三类指标，不使用 AUD、REM、validator 或文档行数代替：
+
+1. **端到端 Admin 场景数**：以[场景目录](./scenarios/README.md)和[路线图完整验收](./06-implementation-roadmap.md#8-完整验收)为证据；
+2. **current API 覆盖**：以[当前 API](./03-http-api.md)和[验证矩阵](./04-validation.md#4-目标-demo-验证矩阵)中 `enabled: yes` 的真实入口为证据；
+3. **可复用边界**：记录第二个真实项目实际复用或替换了哪些 runtime、auth、domain 和 protocol 资产。
+
+正常迭代的投入参考为约 **70% 产品/场景、20% 测试与契约、10% 文档与治理**。连续迭代中治理投入超过 20% 时，必须说明它解除的具体产品阻塞；不能只以治理完整性作为理由。
+
+每个里程碑结束时检查：
+
+1. 最近提交是否仍以产品能力和用户场景为主；
+2. 路线图当前阶段是否出现了对应产品代码进展；
+3. 是否出现尚无第二个真实消费者的抽象或框架；
+4. 流程和校验是否在服务自身，而不是解除产品交付阻塞；
+5. 本周期是否新增了可运行、可演示的 Admin 场景。
+
+抽象规则：先完成业务实现；只有第二个真实项目出现相同需求时才稳定抽取，禁止为想象中的后续项目预建框架。
+
+## 3. 文档地图
 
 | 文档 | 读者 | 用途 |
 |---|---|---|
@@ -52,7 +96,7 @@ applies_to: allinme.core-api
 | [remediations/](./remediations/README.md) | 维护者 / AI | 审计整改记录及复审队列 |
 | [CHANGELOG.md](./CHANGELOG.md) | 所有人 | 本仓变更记录 |
 
-## 3. 代码地图
+## 4. 代码地图
 
 | 路径 | 职责 |
 |---|---|
@@ -72,7 +116,7 @@ applies_to: allinme.core-api
 | `internal/protocol/upload_execution.go` | 上传执行契约 |
 | `internal/protocol/scenario_execution.go` | 官方场景步骤编排 |
 
-## 4. 当前态与目标态
+## 5. 当前态与目标态
 
 | 能力 | 当前状态 | 目标状态 |
 |---|---|---|
@@ -84,7 +128,7 @@ applies_to: allinme.core-api
 
 目标能力在对应文档中使用 `target` 或 `planned` 标记；只有实现、测试和文档证据齐全后才能改为 `active`。
 
-## 5. 核心边界
+## 6. 核心边界
 
 - Schema-UI 定义页面、请求和映射语义；本仓提供经过鉴权和业务校验的 API。
 - 前端显隐、禁用、确认和 capability 检查不能替代后端鉴权与数据校验。
@@ -92,7 +136,7 @@ applies_to: allinme.core-api
 - 业务 API 必须明确请求、响应、错误、幂等和权限，不得依赖前端猜测。
 - 当前 HTTP 面以 [当前 API](./03-http-api.md) 为准；附件和页面端点仍是后续阶段目标。
 
-## 6. 开始工作
+## 7. 开始工作
 
 - 修改当前 HTTP 服务：先读 [01-architecture.md](./01-architecture.md) 与 [03-http-api.md](./03-http-api.md)。
 - 实现业务端点：再读 [03-http-api-target.md](./03-http-api-target.md)，实现时收敛对应 draft 并补充证据。

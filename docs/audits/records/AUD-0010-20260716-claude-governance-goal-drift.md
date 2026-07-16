@@ -11,7 +11,7 @@ completed_at: pending
 last_updated: 2026-07-16
 related_audits: AUD-0001
 related_remediations: none
-related_plans: PLN-0005, PLN-0006
+related_plans: PLN-0005, PLN-0006, PLN-0007
 ---
 
 # 项目目标漂移专项审计
@@ -76,7 +76,7 @@ git log --since=2026-07-14T00:00:00+08:00 --pretty=%h %ad %s --date=short
 - Impact: 仓库注意力与变更历史已更像“AI 审计操作系统宿主”，而非“继续交付订单运营 demo / Admin 后台支撑 / 可复用 API 骨架”。后续贡献者与自动化容易把治理完善误认为主交付。
 - Recommendation: 冻结新增 AUD 类型、skill/prompt 工作流和治理拓扑门禁扩张；将主线切回产品里程碑，并以 `PLN-0006` 记录纠偏范围、预算与停止条件。
 - Owner: 后端团队
-- Disposition: open
+- Disposition: partially-resolved。`PLN-0006` 已冻结新增治理入口，工作流拓扑校验已移出默认产品 CI；主线是否恢复产品交付仍需 `PLN-0007` 的附件实现提交证明。
 
 ### AUD-0010-F002 - 阶段五计划复杂度显著超过 Demo 边界，且产品代码仍未启动
 
@@ -85,7 +85,7 @@ git log --since=2026-07-14T00:00:00+08:00 --pretty=%h %ad %s --date=short
 - Impact: 下一阶段在实现前即被生产级发布/恢复/证据供应链规格阻塞，最短可演示闭环（upload → bind → download）无法进入代码。Demo ADR（`docs/decisions/0001-stateful-local-demo-runtime.md`）选择零外部依赖本地运行时的意图被计划复杂度抵消。
 - Recommendation: 不覆盖改写 closed 审计历史。新建 `PLN-0006` 定义纠偏与阶段五裁剪原则；将 `PLN-0005` 标记为需切片或 supersede 的过重计划，先交付最小附件闭环，其余生产级恢复与证据供应链降为后续可选。
 - Owner: 后端团队
-- Disposition: open
+- Disposition: partially-resolved。过重的 `PLN-0005` 已原地归档，轻量 `PLN-0007` 已成为唯一阶段五入口；附件 MVP 尚未进入产品实现。
 
 ### AUD-0010-F003 - 治理文档与工作流体量已超过产品说明，形成自我指涉维护税
 
@@ -94,7 +94,7 @@ git log --since=2026-07-14T00:00:00+08:00 --pretty=%h %ad %s --date=short
 - Impact: 单功能交付前固定成本被抬高；新人或后续项目若照搬模板会先复制流程工厂。治理规则开始审计/整改自身，收益对 Demo/Admin/复用三项目标递减。
 - Recommendation: 保留轻量纪律（current/target、ADR、验证矩阵、基础 frontmatter/链接检查、go test/vet/race）。将 9 工作流闭环、终态账本强制与 audit-workflow 拓扑校验降为可选或外置；禁止无产品阻塞时新增治理规则。
 - Owner: 后端团队
-- Disposition: open
+- Disposition: resolved。`docs/04-validation.md` 已定义治理最小集，`validate-audit-workflows.ps1` 已移出默认 CI 并保留为可选维护检查；九套入口明确为按风险选用。
 
 ### AUD-0010-F004 - 对 Admin 前台与后续项目复用目标的完成定义缺失，导致“工程完成”被误读为“目标完成”
 
@@ -103,7 +103,7 @@ git log --since=2026-07-14T00:00:00+08:00 --pretty=%h %ad %s --date=short
 - Impact: 贡献者可能继续优化流程与垂直深度，却不补齐 Admin 联调与模板可迁移性；也可能误判当前仓已是通用 admin 后端或完整脚手架。
 - Recommendation: 在 README/overview 增加项目宪章：主目标/次目标/派生目标/非目标，以及完成指标（端到端 Admin 场景数、current API 覆盖、第二个项目实际复用项）。明确 runtime 可复用、order 为示例域、governance 默认不复制。
 - Owner: 后端团队
-- Disposition: open
+- Disposition: resolved。README 已链接项目宪章；`docs/00-overview.md` 已定义主/次/派生目标、非目标、完成指标、资产分层、投入预算与防漂移检查。
 
 ## 验证结果
 
@@ -111,8 +111,10 @@ git log --since=2026-07-14T00:00:00+08:00 --pretty=%h %ad %s --date=short
 - 产品完成态：阶段一至四实现与路线图一致；附件与页面未实现；`internal/files`、`internal/pages` 不存在。
 - 提交重心：近 50 次治理相关约 34、产品相关约 5；2026-07-14 后无附件/页面产品提交。
 - 治理链：AUD-0001 合理；AUD-0002–0009 主要服务计划/校验器闭环；implementation records 空。
-- 本次未运行 `go test` / `go vet` / race：审计不修改 Go 源码，产品回归不在本记录验证范围。
-- 本次未运行 `docs/tools/validate.ps1`：将在写入本记录与 `PLN-0006` 后执行，作为文档创建后的结构门禁，不作为本审计对象正确性证明。
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.ps1`：通过，63 个 Markdown 文件的结构、链接、记录、索引与终态历史检查通过。
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate.tests.ps1`：通过，合法结构与主要失败 fixture 符合预期。
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs/tools/validate-audit-workflows.ps1`：作为可选维护检查通过，证明移出默认 CI 未破坏脚本本身。
+- 未运行 `go test` / `go vet` / race：本轮未修改 Go 源码、依赖或运行时行为；产品交付证据仍由 `PLN-0007` 产生。
 
 ## 未执行项与剩余风险
 
@@ -123,7 +125,7 @@ git log --since=2026-07-14T00:00:00+08:00 --pretty=%h %ad %s --date=short
 
 ## 关闭结论
 
-本审计保持 `open`。四个 finding 均成立且未整改。纠偏实施计划为 `PLN-0006`；整改与复审不得改写本记录，完成后应通过新的 follow-up AUD 或关闭前更新 disposition（若本记录仍 open 且尚未终态）。关闭条件：
+本审计保持 `open`。F003 与 F004 已解决；F001 与 F002 已完成治理冻结和计划切片，但仍缺少附件产品实现证据。`PLN-0006` 已完成并归档，后续不得改写其历史；产品纠偏由 `PLN-0007` 承接。关闭条件：
 
 1. F001：主线恢复产品里程碑，治理扩张已冻结并有证据；
 2. F002：阶段五已裁剪为最小闭环，或被同目标更轻计划明确替代，且附件 MVP 进入实现；

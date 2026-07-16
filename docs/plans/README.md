@@ -36,12 +36,14 @@ applies_to: implementation roadmap phase 6 pages
 
 ## 当前活跃计划
 
-- `PLN-0006`：[目标漂移纠偏与交付重心恢复计划](./PLN-0006-goal-drift-governance-realignment.md) / [checklist](./PLN-0006-goal-drift-governance-realignment-checklist.md)
-- `PLN-0005`：[阶段五附件生命周期开发计划](./PLN-0005-phase-05-attachment-lifecycle.md) / [checklist](./PLN-0005-phase-05-attachment-lifecycle-checklist.md)
+- `PLN-0007`：[阶段五附件 MVP 实施计划](./PLN-0007-phase-05-attachment-mvp.md) / [checklist](./PLN-0007-phase-05-attachment-mvp-checklist.md)
 
 ## 稳定路径归档计划
 
-暂无。旧版移动式归档记录见 [`archived/`](./archived/README.md)。
+- `PLN-0006`：[目标漂移纠偏与交付重心恢复计划](./PLN-0006-goal-drift-governance-realignment.md) / [checklist](./PLN-0006-goal-drift-governance-realignment-checklist.md)；治理工作已完成，产品关闭证据由 `PLN-0007` 承接。
+- `PLN-0005`：[阶段五附件生命周期历史规格](./PLN-0005-phase-05-attachment-lifecycle.md) / [checklist](./PLN-0005-phase-05-attachment-lifecycle-checklist.md)；未实施，由 `PLN-0007` 替代。
+
+旧版移动式归档记录见 [`archived/`](./archived/README.md)。
 
 ## 关联审计
 
@@ -49,8 +51,8 @@ applies_to: implementation roadmap phase 6 pages
 - 审计发现需要大规模整改时，新建计划并在审计中引用；任何实际修复都必须通过独立 REM 或新的实施 IMP 完成，审计记录本身不得直接整改。
 - 计划完成不自动关闭审计。审计者必须复核修复或明确记录接受风险后，才能关闭审计。
 
-## 计划审计闭环与验收
+## 可选计划审计与验收
 
-计划审计闭环使用 `$backend-plan-audit-until-ready`。`TARGET` 是用户授权且不可扩大的计划集合；每轮按“复审待验证整改 → 整改 findings → 补充或刷新计划审计 → 独立就绪验收”的顺序推进。整改后必须先复审，follow-up 和最终验收必须由不同运行时 task/agent 执行。计划审计记录绑定 `evidence_revision`、完整 peer 集合和 `audited_subject_paths`；对象漂移后旧 ready 失效。
+计划审计、整改复审和实施验收按变更风险选用，不是每个产品计划的默认前置。需要正式审计时仍遵守一计划一 AUD、独立基线、整改与复审分离及终态历史不可改写；工作流入口见 [`../audits/README.md`](../audits/README.md)。
 
-计划验收审计不依赖闭环运行上下文，可单独执行，但必须独立重建并检查完整计划 AUD/REM/follow-up 链；无 `TARGET` 时选择所有活跃且未归档计划，但必须为每个计划分别创建一份 AUD 并给出 `ready`、`not-ready` 或 `blocked`，禁止用一个全局 verdict 混合多个计划。只有 `PLAN_AUDIT_CHAIN_CLEAN=pass` 且 verdict 为 `ready` 的计划才允许进入 `$backend-implement-plan`。
+产品计划进入实施的默认条件是：范围与非目标清晰、事实源一致、最小可证伪测试和回退边界已写入 plan/checklist。高风险或用户明确要求时，再使用 `$backend-plan-audit-until-ready` 或独立就绪验收；不得用治理闭环代替产品验证。

@@ -1,13 +1,15 @@
 ---
-status: active
+status: archived
 plan_id: PLN-0005
 owner: 后端团队
 created: 2026-07-13
-last_updated: 2026-07-14
+last_updated: 2026-07-16
 applies_to: implementation roadmap phase 5 attachments
 ---
 
 # 阶段五：附件生命周期实施 Checklist
+
+> **历史 checklist，未执行。** 本清单对应的过重规格已由 [`PLN-0007`](./PLN-0007-phase-05-attachment-mvp.md) 替代；所有未勾选项保持原样，不伪造 Evidence，也不再作为阶段五实现门禁。替代原因与治理决定见 [`AUD-0010`](../audits/records/AUD-0010-20260716-claude-governance-goal-drift.md) 和 [`PLN-0006`](./PLN-0006-goal-drift-governance-realignment.md)。
 
 配套计划：[阶段五附件生命周期开发计划](./PLN-0005-phase-05-attachment-lifecycle.md)。除非条目按下列固定模板记录实际 Evidence，否则不得勾选；真实进程、跨平台、ENOSPC 和部署证据必须使用全局唯一 run ID，最终报告必须引用这些 run ID。
 

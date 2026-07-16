@@ -1,13 +1,15 @@
 ---
-status: active
+status: archived
 plan_id: PLN-0005
 owner: 后端团队
 created: 2026-07-13
-last_updated: 2026-07-14
+last_updated: 2026-07-16
 applies_to: implementation roadmap phase 5 attachments
 ---
 
 # 阶段五：附件生命周期开发计划
+
+> **历史规格，已停止实施。** 本计划在产生附件产品代码前因 [`AUD-0010-F002`](../audits/records/AUD-0010-20260716-claude-governance-goal-drift.md) 判定为超出 Demo 边界，由 [`PLN-0006`](./PLN-0006-goal-drift-governance-realignment.md) 完成切片，并由轻量 [`PLN-0007`](./PLN-0007-phase-05-attachment-mvp.md) 替代为唯一阶段五实现入口。本文保留 2026-07-13 至 2026-07-14 的规格与审计历史，不再作为开工、实现或发布门禁；未来若需要生产级恢复、调度或 Evidence 供应链，应新建独立计划。
 
 配套路线：[实施路线图](../06-implementation-roadmap.md)。本阶段在阶段四订单、退款和看板闭环之上交付“先上传、后绑定、鉴权下载、可持久化恢复”的本地附件能力；页面 YAML、页面下发、真实对象存储、病毒扫描服务、CDN、断点续传、多文件单请求上传和公开分享链接不进入本轮。
 

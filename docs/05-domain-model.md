@@ -1,7 +1,7 @@
 ---
 status: target
 owner: 后端团队
-last_updated: 2026-07-13
+last_updated: 2026-07-16
 applies_to: order operations demo
 ---
 
@@ -90,11 +90,10 @@ DRAFT -> CONFIRMED -> FULFILLING -> SHIPPED -> COMPLETED
 ## 6. 附件生命周期
 
 - 上传接口先写入临时受控目录，校验文件大小、允许类型和摘要后创建未绑定附件记录；不得信任客户端文件名或 `Content-Type`。
-- 创建或编辑订单时提交附件 ID，服务端在事务中校验附件所有者、有效期和绑定状态。
+- 阶段五 MVP 只在创建订单时提交附件 ID，服务端在事务中校验附件所有者、有效期和绑定状态；订单编辑的附件增删与重排留给后续计划。
 - 附件内容位于应用数据目录，SQLite 只保存元数据；文件路径不得由请求直接指定或返回。
-- 下载使用附件 ID 并重新执行订单查看权限。阶段五不提供订单删除 HTTP，只提供受信任 admin maintenance 编排可调用的内部 `ORDER_DELETE` cleanup 原语：仅允许当前仍为 `DRAFT`、expected version 匹配且不存在任何退款或退款幂等历史的订单；按“资源存在性 → version → 状态 → 退款历史”分类失败，并在取得附件 ownership 前拒绝。
-- `ORDER_DELETE` 成功后永久保留历史 order-create v1/v2 idempotency snapshot，不以外键关联当前订单。相同主体/method/route/key 的重试继续返回首次冻结响应，即使响应中的订单已被内部清理；不得删除该记录后以同 key 创建第二个订单。该历史响应不表示订单仍存在，后续订单读取仍返回 not found。
-- 未绑定上传应有过期清理机制，目标默认保留 24 小时。
+- 下载使用附件 ID 并重新执行订单查看权限；创建者可删除本人尚未绑定的附件，已绑定附件不能通过附件删除端点移除。
+- 未绑定上传默认保留 24 小时，并由可重复 cleanup 命令清理。阶段五 MVP 不交付订单删除 HTTP、内部 `ORDER_DELETE`、跨进程接管或生产级灾难恢复；真实需求出现后另开计划。
 
 ## 7. 看板口径
 

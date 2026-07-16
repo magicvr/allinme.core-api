@@ -1,7 +1,7 @@
 ---
 status: active
 owner: 后端团队
-last_updated: 2026-07-13
+last_updated: 2026-07-16
 applies_to: order operations demo target
 ---
 
@@ -67,11 +67,13 @@ applies_to: order operations demo target
 
 ## 6. 阶段五：附件
 
+当前实现入口为[阶段五附件 MVP 计划](./plans/PLN-0007-phase-05-attachment-mvp.md)与[checklist](./plans/PLN-0007-phase-05-attachment-mvp-checklist.md)。原 `PLN-0005` 因在产品代码开工前引入生产级发布、恢复和 Evidence 供应链前置而原地归档，仅保留历史审计语境。
+
 目标：完成先上传、后绑定、鉴权下载的文件生命周期。
 
 - 实现 multipart 限制、允许类型、服务端文件名、摘要和临时附件记录；
-- 创建/编辑订单时绑定附件，拒绝绑定他人、过期或已绑定附件；
-- 实现鉴权下载、未绑定文件过期清理，以及仅供受信任 admin maintenance 编排的 DRAFT 订单内部清理原语；不新增订单删除 HTTP，且保留订单创建幂等 snapshot 供删除后同 key 重放；
+- 创建订单时绑定附件，拒绝绑定他人、过期或已绑定附件；订单编辑的附件增删与重排留给后续计划；
+- 实现鉴权下载、本人未绑定附件删除和过期未绑定文件的可重复清理；阶段五 MVP 不交付订单删除或内部 ORDER_DELETE；
 - 测试超限、伪造类型、路径穿越、部分失败和磁盘错误。
 
 完成证据：上传 endpoint 返回可供阶段六 UploadAction 消费的稳定附件 ID，订单提交后可通过受保护 API 下载；本阶段不验收页面 YAML、UploadAction 映射或页面回归。

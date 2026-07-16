@@ -3,7 +3,7 @@ status: target
 principles_stage: baseline
 endpoints_stage: draft
 owner: 后端团队
-last_updated: 2026-07-13
+last_updated: 2026-07-16
 applies_to: order operations demo HTTP API target
 ---
 
@@ -42,7 +42,7 @@ applies_to: order operations demo HTTP API target
 
 已实现的订单查询、创建、编辑和履约 Action 契约见[当前 HTTP API](./03-http-api.md)。状态转换、角色权限、金额计算和业务不变量只在[领域模型](./05-domain-model.md)维护。列表可返回按当前主体与资源计算的 `canXxx` 展示字段，但 Action 会重新鉴权和校验。
 
-附件摘要随阶段五附件生命周期一起新增并冻结；阶段三订单 DTO 不预留 `attachments` 字段。
+附件摘要随阶段五附件 MVP 一起新增并冻结；阶段三订单 DTO 不预留 `attachments` 字段。阶段五只在订单创建时接受 `attachmentIds`，订单 PATCH 的附件增删与重排留给后续计划。
 
 ## 5. 退款（已迁入当前 API）
 
@@ -56,9 +56,9 @@ applies_to: order operations demo HTTP API target
 | `GET` | `/api/v1/attachments/{attachmentId}` | viewer | 鉴权下载已绑定附件 |
 | `DELETE` | `/api/v1/attachments/{attachmentId}` | operator | 删除本人创建且未绑定的附件 |
 
-首版目标允许 PDF、PNG 和 JPEG，单文件目标上限 10 MiB；允许类型和上限在阶段五威胁测试完成后冻结。服务端检测内容、生成文件名并计算摘要，不返回本地路径或公开静态 URL。
+首版目标允许 PDF、PNG 和 JPEG，单文件目标上限 10 MiB；服务端检测内容、生成存储键并计算摘要，不返回本地路径或公开静态 URL。上传产生 24 小时有效的未绑定附件，订单创建时校验所有者、有效期和绑定状态。
 
-阶段五不新增订单删除 endpoint。内部 `ORDER_DELETE` cleanup 原语只供受信任 admin maintenance 编排直接调用，其 DRAFT/version/退款历史和订单创建幂等 snapshot 规则由[领域模型](./05-domain-model.md)持有，不能通过附件或订单 HTTP surface 触发。
+阶段五 MVP 不新增订单删除 endpoint，也不交付内部 `ORDER_DELETE`、订单编辑附件重排或生产级恢复编排；这些能力只有出现真实产品需求后才通过新计划扩展。
 
 ## 7. 看板（已迁入当前 API）
 

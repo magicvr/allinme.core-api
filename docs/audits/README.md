@@ -37,6 +37,8 @@
 
 ## 工作流入口
 
+以下入口是按风险选用的 agent 辅助工具，不是每个产品变更的默认前置或 CI 门禁。默认产品门禁以 [`../04-validation.md`](../04-validation.md) 为准；只有维护 prompt/skill 时才额外运行 `validate-audit-workflows.ps1`。
+
 | 工作类型 | Prompt | Skill |
 |---|---|---|
 | 计划审计 | [prompt](../../.github/prompts/backend-plan-audit.prompt.md) | [skill](../../.agents/skills/backend-plan-audit/SKILL.md) |
