@@ -20,7 +20,7 @@ func TestCORSActualRequestsAndShortCircuitOrder(t *testing.T) {
 	allowed := corsRequest(http.MethodGet, "/api/v1/orders", testAllowedOrigin)
 	allowedResponse := httptest.NewRecorder()
 	handler.ServeHTTP(allowedResponse, allowed)
-	if allowedResponse.Code != http.StatusUnauthorized || allowedResponse.Header().Get("Access-Control-Allow-Origin") != testAllowedOrigin || allowedResponse.Header().Get("Access-Control-Expose-Headers") != "X-Request-ID" || !headerContains(allowedResponse.Header(), "Vary", "Origin") {
+	if allowedResponse.Code != http.StatusUnauthorized || allowedResponse.Header().Get("Access-Control-Allow-Origin") != testAllowedOrigin || allowedResponse.Header().Get("Access-Control-Expose-Headers") != "X-Request-ID, Content-Disposition" || !headerContains(allowedResponse.Header(), "Vary", "Origin") {
 		t.Fatalf("allowed actual = %d headers=%v body=%s", allowedResponse.Code, allowedResponse.Header(), allowedResponse.Body.String())
 	}
 
@@ -103,7 +103,7 @@ func TestCORSPreflightMatrixUsesKnownRoutes(t *testing.T) {
 				}
 			}
 			if test.status == http.StatusNoContent {
-				if response.Header().Get("Access-Control-Allow-Origin") != testAllowedOrigin || response.Header().Get("Access-Control-Allow-Methods") != "GET, POST, PATCH, OPTIONS" || response.Header().Get("Access-Control-Allow-Headers") != "Authorization, Content-Type, Idempotency-Key, X-Request-ID" || response.Header().Get("Access-Control-Max-Age") != "600" || response.Header().Get("Access-Control-Expose-Headers") != "X-Request-ID" {
+				if response.Header().Get("Access-Control-Allow-Origin") != testAllowedOrigin || response.Header().Get("Access-Control-Allow-Methods") != "GET, POST, PATCH, DELETE, OPTIONS" || response.Header().Get("Access-Control-Allow-Headers") != "Authorization, Content-Type, Idempotency-Key, X-Request-ID" || response.Header().Get("Access-Control-Max-Age") != "600" || response.Header().Get("Access-Control-Expose-Headers") != "X-Request-ID, Content-Disposition" {
 					t.Fatalf("preflight headers = %v", response.Header())
 				}
 			} else if response.Header().Get("Access-Control-Allow-Origin") != "" {

@@ -102,10 +102,11 @@ applies_to: allinme.core-api
 |---|---|
 | `cmd/api/main.go` | API 进程入口与监听配置 |
 | `internal/app/api.go` | API 装配、共享数据库/进程锁所有权与有序 shutdown |
-| `internal/httpapi/` | health/readiness、认证、订单、退款、看板和 CORS 路由及稳定错误映射 |
+| `internal/httpapi/` | health/readiness、认证、订单、退款、附件、看板和 CORS 路由及稳定错误映射 |
 | `internal/auth/` | 本地账号、JWT、session 与角色授权 |
-| `internal/order/` | 订单/退款领域模型、查询/写入/看板 service、状态机与幂等快照 |
-| `internal/store/` | SQLite、migration/seed、认证、订单、退款与看板 repository |
+| `internal/order/` | 订单/退款/附件领域模型、查询/写入/看板 service、状态机与幂等快照 |
+| `internal/store/` | SQLite、migration/seed、认证、订单、退款、附件与看板 repository |
+| `internal/files/` | `DATA_DIR/attachments` 本地文件、内容探测、摘要和受控清理 |
 | `internal/protocol/version_negotiation.go` | 页面协议版本与能力协商 |
 | `internal/protocol/request_construction.go` | 结构化请求构造 |
 | `internal/protocol/response_mapping.go` | 响应映射 |
@@ -120,11 +121,11 @@ applies_to: allinme.core-api
 
 | 能力 | 当前状态 | 目标状态 |
 |---|---|---|
-| HTTP | health/readiness、认证、订单查询/写入/履约 Action、退款、看板、CORS | 页面和附件 API |
-| 持久化 | SQLite + 可重复 migrations/seed/reset；账号、session、订单、退款和幂等快照 | 附件元数据与页面配置持久化 |
-| 认证授权 | 本地账号、JWT Bearer、可撤销 session 与四角色订单/退款/看板授权 | 附件和页面资源级授权 |
+| HTTP | health/readiness、认证、订单查询/写入/履约 Action、退款、看板、附件和 CORS | 页面 API |
+| 持久化 | SQLite + 可重复 migrations/seed/reset；账号、session、订单、退款、附件和幂等快照 | 页面配置持久化 |
+| 认证授权 | 本地账号、JWT Bearer、可撤销 session 与四角色订单/退款/附件/看板授权 | 页面资源级授权 |
 | 页面配置 | 无 | YAML 源文件校验后以 JSON 下发 |
-| 文件 | 无 | 本地受控目录 + SQLite 元数据 + 鉴权下载 |
+| 文件 | `DATA_DIR/attachments` 受控目录 + SQLite 元数据 + 鉴权下载 + 一次性 cleanup | 对象存储等生产扩展仅按真实需求规划 |
 
 目标能力在对应文档中使用 `target` 或 `planned` 标记；只有实现、测试和文档证据齐全后才能改为 `active`。
 
@@ -134,7 +135,7 @@ applies_to: allinme.core-api
 - 前端显隐、禁用、确认和 capability 检查不能替代后端鉴权与数据校验。
 - `internal/protocol` 用于证明 Go 对共享契约的解释一致，不代表所有算法都应暴露为 HTTP 端点。
 - 业务 API 必须明确请求、响应、错误、幂等和权限，不得依赖前端猜测。
-- 当前 HTTP 面以 [当前 API](./03-http-api.md) 为准；附件和页面端点仍是后续阶段目标。
+- 当前 HTTP 面以 [当前 API](./03-http-api.md) 为准；页面端点仍是后续阶段目标。
 
 ## 7. 开始工作
 

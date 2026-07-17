@@ -32,22 +32,24 @@ const orderActionBodyLimit = 1 * 1024
 var validIdempotencyKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 type orderDTO struct {
-	ID                    string              `json:"id"`
-	CustomerName          string              `json:"customerName"`
-	Status                order.Status        `json:"status"`
-	PaymentStatus         order.PaymentStatus `json:"paymentStatus"`
-	Currency              string              `json:"currency"`
-	TotalAmount           int64               `json:"totalAmount"`
-	AvailableRefundAmount int64               `json:"availableRefundAmount"`
-	Version               int64               `json:"version"`
-	CreatedAt             string              `json:"createdAt"`
-	UpdatedAt             string              `json:"updatedAt"`
-	CanEdit               bool                `json:"canEdit"`
-	CanAdvance            bool                `json:"canAdvance"`
-	CanCancel             bool                `json:"canCancel"`
-	CanRequestRefund      bool                `json:"canRequestRefund"`
-	CanApproveRefund      bool                `json:"canApproveRefund"`
-	Items                 []orderItemDTO      `json:"items,omitempty"`
+	ID                    string                  `json:"id"`
+	CustomerName          string                  `json:"customerName"`
+	Status                order.Status            `json:"status"`
+	PaymentStatus         order.PaymentStatus     `json:"paymentStatus"`
+	Currency              string                  `json:"currency"`
+	TotalAmount           int64                   `json:"totalAmount"`
+	AvailableRefundAmount int64                   `json:"availableRefundAmount"`
+	Version               int64                   `json:"version"`
+	CreatedAt             string                  `json:"createdAt"`
+	UpdatedAt             string                  `json:"updatedAt"`
+	CanEdit               bool                    `json:"canEdit"`
+	CanAdvance            bool                    `json:"canAdvance"`
+	CanCancel             bool                    `json:"canCancel"`
+	CanRequestRefund      bool                    `json:"canRequestRefund"`
+	CanApproveRefund      bool                    `json:"canApproveRefund"`
+	AttachmentCount       int64                   `json:"attachmentCount"`
+	Items                 []orderItemDTO          `json:"items,omitempty"`
+	Attachments           *[]attachmentSummaryDTO `json:"attachments,omitempty"`
 }
 type orderItemDTO struct {
 	ID        string `json:"id"`
@@ -223,9 +225,10 @@ type writeItemInput struct {
 }
 
 type createOrderInput struct {
-	CustomerName string           `json:"customerName"`
-	Currency     string           `json:"currency"`
-	Items        []writeItemInput `json:"items"`
+	CustomerName  string           `json:"customerName"`
+	Currency      string           `json:"currency"`
+	Items         []writeItemInput `json:"items"`
+	AttachmentIDs []string         `json:"attachmentIds"`
 }
 
 func decodeCreateCommand(response http.ResponseWriter, request *http.Request) (order.CreateCommand, error) {
@@ -237,13 +240,16 @@ func decodeCreateCommand(response http.ResponseWriter, request *http.Request) (o
 	if err != nil {
 		return order.CreateCommand{}, err
 	}
-	return order.CreateCommand{CustomerName: input.CustomerName, Currency: input.Currency, Items: items}, nil
+	attachmentIDs := append([]string{}, input.AttachmentIDs...)
+	return order.CreateCommand{CustomerName: input.CustomerName, Currency: input.Currency, Items: items, AttachmentIDs: attachmentIDs}, nil
 }
 
 func decodeEditCommand(response http.ResponseWriter, request *http.Request) (order.EditCommand, error) {
 	var input struct {
-		createOrderInput
-		Version json.RawMessage `json:"version"`
+		CustomerName string           `json:"customerName"`
+		Currency     string           `json:"currency"`
+		Items        []writeItemInput `json:"items"`
+		Version      json.RawMessage  `json:"version"`
 	}
 	if err := decodeOrderJSON(response, request, &input); err != nil {
 		return order.EditCommand{}, err
@@ -317,17 +323,31 @@ func handleOrderInputError(response http.ResponseWriter, request *http.Request, 
 
 func makeOrderDTO(principal auth.Principal, value order.Order, includeItems bool) orderDTO {
 	capabilities := order.CapabilitiesForOrder(principal, value)
-	dto := orderDTO{ID: value.ID, CustomerName: value.CustomerName, Status: value.Status, PaymentStatus: value.PaymentStatus, Currency: value.Currency, TotalAmount: value.TotalAmount, AvailableRefundAmount: value.AvailableRefundAmount, Version: value.Version, CreatedAt: order.FormatTime(value.CreatedAt), UpdatedAt: order.FormatTime(value.UpdatedAt), CanEdit: capabilities.CanEdit, CanAdvance: capabilities.CanAdvance, CanCancel: capabilities.CanCancel, CanRequestRefund: capabilities.CanRequestRefund, CanApproveRefund: capabilities.CanApproveRefund}
+	dto := orderDTO{ID: value.ID, CustomerName: value.CustomerName, Status: value.Status, PaymentStatus: value.PaymentStatus, Currency: value.Currency, TotalAmount: value.TotalAmount, AvailableRefundAmount: value.AvailableRefundAmount, Version: value.Version, CreatedAt: order.FormatTime(value.CreatedAt), UpdatedAt: order.FormatTime(value.UpdatedAt), CanEdit: capabilities.CanEdit, CanAdvance: capabilities.CanAdvance, CanCancel: capabilities.CanCancel, CanRequestRefund: capabilities.CanRequestRefund, CanApproveRefund: capabilities.CanApproveRefund, AttachmentCount: value.AttachmentCount}
 	if includeItems {
 		dto.Items = make([]orderItemDTO, 0, len(value.Items))
 		for _, item := range value.Items {
 			dto.Items = append(dto.Items, orderItemDTO{ID: item.ID, SKU: item.SKU, Name: item.Name, Quantity: item.Quantity, UnitPrice: item.UnitPrice})
 		}
+		attachments := make([]attachmentSummaryDTO, 0, len(value.Attachments))
+		for _, attachment := range value.Attachments {
+			attachments = append(attachments, makeAttachmentSummaryDTO(attachment.Summary()))
+		}
+		dto.Attachments = &attachments
 	}
 	return dto
 }
 
 func handleOrderError(response http.ResponseWriter, request *http.Request, err error) bool {
+	return handleOrderErrorWithOptions(response, request, err, orderErrorOptions{})
+}
+
+type orderErrorOptions struct {
+	notFoundMessage      string
+	stateConflictMessage string
+}
+
+func handleOrderErrorWithOptions(response http.ResponseWriter, request *http.Request, err error, options orderErrorOptions) bool {
 	if err == nil {
 		return false
 	}
@@ -339,7 +359,11 @@ func handleOrderError(response http.ResponseWriter, request *http.Request, err e
 		return true
 	}
 	if errors.Is(err, order.ErrNotFound) {
-		writeError(response, request, http.StatusNotFound, "NOT_FOUND", "order not found")
+		message := options.notFoundMessage
+		if message == "" {
+			message = "order not found"
+		}
+		writeError(response, request, http.StatusNotFound, "NOT_FOUND", message)
 		return true
 	}
 	if details, ok := order.ValidationDetails(err); ok {
@@ -355,7 +379,11 @@ func handleOrderError(response http.ResponseWriter, request *http.Request, err e
 		return true
 	}
 	if errors.Is(err, order.ErrStateConflict) {
-		writeError(response, request, http.StatusConflict, "STATE_CONFLICT", "order state conflict")
+		message := options.stateConflictMessage
+		if message == "" {
+			message = "order state conflict"
+		}
+		writeError(response, request, http.StatusConflict, "STATE_CONFLICT", message)
 		return true
 	}
 	if errors.Is(err, order.ErrIdempotencyConflict) {

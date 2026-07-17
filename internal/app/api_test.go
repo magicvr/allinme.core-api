@@ -3,10 +3,14 @@ package app_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,6 +23,7 @@ import (
 	"github.com/magicvr/allinme.core-api/internal/app"
 	"github.com/magicvr/allinme.core-api/internal/auth"
 	"github.com/magicvr/allinme.core-api/internal/config"
+	"github.com/magicvr/allinme.core-api/internal/order"
 	"github.com/magicvr/allinme.core-api/internal/store"
 )
 
@@ -160,7 +165,7 @@ func TestAuthenticatedAPIFlowWithSQLite(t *testing.T) {
 	crossOriginRequest.Header.Set("Origin", configuration.CORSAllowedOrigin)
 	crossOriginResponse := httptest.NewRecorder()
 	application.Handler().ServeHTTP(crossOriginResponse, crossOriginRequest)
-	if crossOriginResponse.Code != http.StatusOK || crossOriginResponse.Header().Get("Access-Control-Allow-Origin") != configuration.CORSAllowedOrigin || crossOriginResponse.Header().Get("Access-Control-Expose-Headers") != "X-Request-ID" {
+	if crossOriginResponse.Code != http.StatusOK || crossOriginResponse.Header().Get("Access-Control-Allow-Origin") != configuration.CORSAllowedOrigin || crossOriginResponse.Header().Get("Access-Control-Expose-Headers") != "X-Request-ID, Content-Disposition" {
 		t.Fatalf("cross origin orders = %d headers=%v body=%s", crossOriginResponse.Code, crossOriginResponse.Header(), crossOriginResponse.Body.String())
 	}
 	if response := requestWithToken(http.MethodGet, "/api/v1/orders/ord_00000000000000000000000000000001"); response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"items":[{"id":"itm_`)) {
@@ -787,6 +792,459 @@ func TestAuthenticatedAPIRefundFlowWithSQLite(t *testing.T) {
 			t.Fatalf("disabled dashboard route %s = %d %s", path, response.Code, response.Body.String())
 		}
 	}
+}
+
+func TestAuthenticatedAPIAttachmentCompositionWithDependencies(t *testing.T) {
+	ctx := context.Background()
+	authNow := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	attachmentNow := time.Date(2026, 7, 17, 9, 30, 0, 0, time.UTC)
+	base, err := config.LoadBase(mapLookup(map[string]string{"DATA_DIR": t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.Open(ctx, base.DatabasePath, store.OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Migrate(ctx); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	passwords, err := auth.NewPasswords()
+	if err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	if _, err := database.SeedAuthDemo(ctx, passwords, "123456789012", authNow, auth.RandomID); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	configuration := config.APIConfig{Config: base, JWTSigningKey: []byte("12345678901234567890123456789012")}
+	attachmentID := "att_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	attachmentFiles := &appAttachmentFiles{}
+	dependencies := app.AuthDependencies{
+		Clock:               func() time.Time { return authNow },
+		LimiterClock:        func() time.Time { return authNow },
+		NewID:               func() (string, error) { return "attachment-session-id", nil },
+		AttachmentClock:     func() time.Time { return attachmentNow },
+		NewAttachmentID:     func() (string, error) { return attachmentID, nil },
+		AttachmentFileStore: attachmentFiles,
+	}
+	application, err := app.NewAuthenticatedAPIWithDependencies(configuration, dependencies, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	login := loginResponse(application.Handler(), "operator", "123456789012", "attachment-login")
+	if login.Code != http.StatusOK {
+		application.Close()
+		t.Fatalf("login = %d %s", login.Code, login.Body.String())
+	}
+	var session struct {
+		AccessToken string `json:"accessToken"`
+	}
+	if err := json.NewDecoder(login.Body).Decode(&session); err != nil || session.AccessToken == "" {
+		application.Close()
+		t.Fatalf("decode login: %v", err)
+	}
+
+	content := []byte("%PDF-1.4\napp attachment composition")
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "invoice.pdf")
+	if err != nil {
+		application.Close()
+		t.Fatal(err)
+	}
+	if _, err := part.Write(content); err != nil {
+		application.Close()
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		application.Close()
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/attachments", &body)
+	request.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response := httptest.NewRecorder()
+	application.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || !bytes.Contains(response.Body.Bytes(), []byte(`"id":"`+attachmentID+`"`)) || !bytes.Contains(response.Body.Bytes(), []byte(`"createdAt":"2026-07-17T09:30:00Z"`)) || !bytes.Contains(response.Body.Bytes(), []byte(`"expiresAt":"2026-07-18T09:30:00Z"`)) {
+		application.Close()
+		t.Fatalf("upload = %d %s", response.Code, response.Body.String())
+	}
+	if attachmentFiles.storageKey != attachmentID || attachmentFiles.fileName != "invoice.pdf" || !bytes.Equal(attachmentFiles.content, content) {
+		application.Close()
+		t.Fatalf("file write = key %q name %q content %q", attachmentFiles.storageKey, attachmentFiles.fileName, attachmentFiles.content)
+	}
+	if _, err := os.Stat(filepath.Join(base.DataDir, "attachments")); !os.IsNotExist(err) {
+		application.Close()
+		t.Fatalf("injected file store created local storage: %v", err)
+	}
+	application.Close()
+
+	dependencies.DisableAttachmentRoutes = true
+	disabled, err := app.NewAuthenticatedAPIWithDependencies(configuration, dependencies, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer disabled.Close()
+	disabledRequest := httptest.NewRequest(http.MethodPost, "/api/v1/attachments", nil)
+	disabledRequest.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	disabledResponse := httptest.NewRecorder()
+	disabled.Handler().ServeHTTP(disabledResponse, disabledRequest)
+	if disabledResponse.Code != http.StatusNotFound {
+		t.Fatalf("disabled attachment route = %d %s", disabledResponse.Code, disabledResponse.Body.String())
+	}
+}
+
+func TestAuthenticatedAPIAttachmentRequiredFlowWithLocalFilesAndSQLite(t *testing.T) {
+	ctx := context.Background()
+	authNow := time.Date(2026, 7, 17, 8, 0, 0, 0, time.UTC)
+	attachmentNow := time.Now().UTC().Truncate(time.Second)
+	base, err := config.LoadBase(mapLookup(map[string]string{"DATA_DIR": t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.Open(ctx, base.DatabasePath, store.OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Migrate(ctx); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	passwords, err := auth.NewPasswords()
+	if err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	seedID := 0
+	if _, err := database.SeedAuthDemo(ctx, passwords, "123456789012", authNow, func() (string, error) {
+		seedID++
+		return "attachment-flow-user-" + strconv.Itoa(seedID), nil
+	}); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	attachmentIDs := []string{
+		"att_00000000000000000000000000000071",
+		"att_00000000000000000000000000000072",
+	}
+	authID := 0
+	attachmentID := 0
+	dependencies := app.AuthDependencies{
+		Clock:        func() time.Time { return authNow },
+		LimiterClock: func() time.Time { return authNow },
+		NewID: func() (string, error) {
+			authID++
+			return "attachment-flow-session-" + strconv.Itoa(authID), nil
+		},
+		AttachmentClock: func() time.Time { return attachmentNow },
+		NewAttachmentID: func() (string, error) {
+			if attachmentID >= len(attachmentIDs) {
+				return "", errors.New("attachment ID sequence exhausted")
+			}
+			value := attachmentIDs[attachmentID]
+			attachmentID++
+			return value, nil
+		},
+	}
+	configuration := config.APIConfig{Config: base, JWTSigningKey: []byte("12345678901234567890123456789012")}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	application, err := app.NewAuthenticatedAPIWithDependencies(configuration, dependencies, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if application != nil {
+			application.Close()
+		}
+	}()
+
+	operatorToken := appAttachmentFlowLogin(t, application.Handler(), "operator")
+	viewerToken := appAttachmentFlowLogin(t, application.Handler(), "viewer")
+	pdfs := [][]byte{appAttachmentFlowPDF("PLN-0007 bound"), appAttachmentFlowPDF("PLN-0007 unbound")}
+	fileNames := []string{"pln-0007-bound.pdf", "pln-0007-unbound.pdf"}
+	uploaded := make([]appAttachmentFlowDTO, 0, len(pdfs))
+	for index, content := range pdfs {
+		result := appAttachmentFlowUpload(t, application.Handler(), operatorToken, fileNames[index], content)
+		if result.ID != attachmentIDs[index] || result.FileName != fileNames[index] || result.ContentType != "application/pdf" || result.SizeBytes != int64(len(content)) || result.CreatedAt != order.FormatTime(attachmentNow) || result.ExpiresAt != order.FormatTime(attachmentNow.Add(order.AttachmentUploadLifetime)) {
+			t.Fatalf("upload %d result = %+v", index+1, result)
+		}
+		stored, err := os.ReadFile(filepath.Join(base.DataDir, "attachments", "content", result.ID))
+		if err != nil || !bytes.Equal(stored, content) {
+			t.Fatalf("stored upload %d: error=%v content=%q", index+1, err, stored)
+		}
+		uploaded = append(uploaded, result)
+	}
+
+	createBody := []byte(`{"customerName":"PLN-0007 Required Flow","currency":"CNY","items":[{"sku":"PLN-0007-A","name":"Required item","quantity":2,"unitPrice":1250}],"attachmentIds":["` + attachmentIDs[0] + `"]}`)
+	createdResponse := appAttachmentFlowRequest(application.Handler(), operatorToken, http.MethodPost, "/api/v1/orders", "application/json", "pln-0007-create", createBody)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create order = %d %s", createdResponse.Code, createdResponse.Body.String())
+	}
+	createdJSON := bytes.Clone(createdResponse.Body.Bytes())
+	var created appAttachmentFlowOrderDTO
+	if err := json.Unmarshal(createdJSON, &created); err != nil || created.ID == "" {
+		t.Fatalf("decode created order: %+v %v", created, err)
+	}
+	replay := appAttachmentFlowRequest(application.Handler(), operatorToken, http.MethodPost, "/api/v1/orders", "application/json", "pln-0007-create", createBody)
+	if replay.Code != http.StatusCreated || !bytes.Equal(replay.Body.Bytes(), createdJSON) {
+		t.Fatalf("create replay = %d %s", replay.Code, replay.Body.String())
+	}
+
+	listResponse := appAttachmentFlowRequest(application.Handler(), viewerToken, http.MethodGet, "/api/v1/orders?q=PLN-0007", "", "", nil)
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("order list = %d %s", listResponse.Code, listResponse.Body.String())
+	}
+	var list struct {
+		Items []appAttachmentFlowOrderDTO `json:"items"`
+		Total int64                       `json:"total"`
+	}
+	if err := json.NewDecoder(listResponse.Body).Decode(&list); err != nil || list.Total != 1 || len(list.Items) != 1 || list.Items[0].ID != created.ID || list.Items[0].AttachmentCount != 1 {
+		t.Fatalf("order list = %+v error=%v", list, err)
+	}
+
+	detailResponse := appAttachmentFlowRequest(application.Handler(), viewerToken, http.MethodGet, "/api/v1/orders/"+created.ID, "", "", nil)
+	if detailResponse.Code != http.StatusOK {
+		t.Fatalf("order detail = %d %s", detailResponse.Code, detailResponse.Body.String())
+	}
+	var detail appAttachmentFlowOrderDTO
+	if err := json.NewDecoder(detailResponse.Body).Decode(&detail); err != nil {
+		t.Fatal(err)
+	}
+	wantItem := appAttachmentFlowItemDTO{SKU: "PLN-0007-A", Name: "Required item", Quantity: 2, UnitPrice: 1250}
+	if detail.ID != created.ID || detail.CustomerName != "PLN-0007 Required Flow" || detail.Status != "DRAFT" || detail.Currency != "CNY" || detail.TotalAmount != 2500 || detail.AttachmentCount != 1 || len(detail.Items) != 1 || detail.Items[0] != wantItem || len(detail.Attachments) != 1 {
+		t.Fatalf("order detail = %+v", detail)
+	}
+	boundSummary := detail.Attachments[0]
+	if boundSummary.ID != uploaded[0].ID || boundSummary.FileName != uploaded[0].FileName || boundSummary.ContentType != uploaded[0].ContentType || boundSummary.SizeBytes != uploaded[0].SizeBytes || boundSummary.SHA256 != uploaded[0].SHA256 || boundSummary.CreatedAt != uploaded[0].CreatedAt {
+		t.Fatalf("bound attachment summary = %+v upload=%+v", boundSummary, uploaded[0])
+	}
+
+	appAttachmentFlowAssertDownload(t, application.Handler(), viewerToken, attachmentIDs[0], fileNames[0], pdfs[0])
+	deleted := appAttachmentFlowRequest(application.Handler(), operatorToken, http.MethodDelete, "/api/v1/attachments/"+attachmentIDs[1], "", "", nil)
+	if deleted.Code != http.StatusNoContent || deleted.Body.Len() != 0 {
+		t.Fatalf("delete unbound attachment = %d %s", deleted.Code, deleted.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(base.DataDir, "attachments", "content", attachmentIDs[1])); !os.IsNotExist(err) {
+		t.Fatalf("deleted local attachment still exists: %v", err)
+	}
+
+	application.Close()
+	application = nil
+	reopened, err := app.NewAuthenticatedAPIWithDependencies(configuration, dependencies, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	application = reopened
+	appAttachmentFlowAssertDownload(t, application.Handler(), viewerToken, attachmentIDs[0], fileNames[0], pdfs[0])
+
+	application.Close()
+	application = nil
+	disabledDependencies := dependencies
+	disabledDependencies.DisableAttachmentRoutes = true
+	disabled, err := app.NewAuthenticatedAPIWithDependencies(configuration, disabledDependencies, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	application = disabled
+	if response := appAttachmentFlowRequest(application.Handler(), viewerToken, http.MethodGet, "/api/v1/orders/"+created.ID, "", "", nil); response.Code != http.StatusOK {
+		t.Fatalf("orders with attachment routes disabled = %d %s", response.Code, response.Body.String())
+	}
+	if response := appAttachmentFlowRequest(application.Handler(), viewerToken, http.MethodGet, "/api/v1/attachments/"+attachmentIDs[0], "", "", nil); response.Code != http.StatusNotFound {
+		t.Fatalf("disabled attachment route = %d %s", response.Code, response.Body.String())
+	}
+}
+
+type appAttachmentFlowDTO struct {
+	ID          string `json:"id"`
+	FileName    string `json:"fileName"`
+	ContentType string `json:"contentType"`
+	SizeBytes   int64  `json:"sizeBytes"`
+	SHA256      string `json:"sha256"`
+	CreatedAt   string `json:"createdAt"`
+	ExpiresAt   string `json:"expiresAt"`
+}
+
+type appAttachmentFlowItemDTO struct {
+	SKU       string `json:"sku"`
+	Name      string `json:"name"`
+	Quantity  int64  `json:"quantity"`
+	UnitPrice int64  `json:"unitPrice"`
+}
+
+type appAttachmentFlowOrderDTO struct {
+	ID              string                     `json:"id"`
+	CustomerName    string                     `json:"customerName"`
+	Status          string                     `json:"status"`
+	Currency        string                     `json:"currency"`
+	TotalAmount     int64                      `json:"totalAmount"`
+	AttachmentCount int64                      `json:"attachmentCount"`
+	Items           []appAttachmentFlowItemDTO `json:"items"`
+	Attachments     []appAttachmentFlowDTO     `json:"attachments"`
+}
+
+func appAttachmentFlowLogin(t *testing.T, handler http.Handler, username string) string {
+	t.Helper()
+	response := loginResponse(handler, username, "123456789012", "attachment-flow-login-"+username)
+	if response.Code != http.StatusOK {
+		t.Fatalf("%s login = %d %s", username, response.Code, response.Body.String())
+	}
+	var result struct {
+		AccessToken string `json:"accessToken"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil || result.AccessToken == "" {
+		t.Fatalf("decode %s login: %v", username, err)
+	}
+	return result.AccessToken
+}
+
+func appAttachmentFlowRequest(handler http.Handler, token, method, path, contentType, idempotencyKey string, body []byte) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(method, path, bytes.NewReader(body))
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	if contentType != "" {
+		request.Header.Set("Content-Type", contentType)
+	}
+	if idempotencyKey != "" {
+		request.Header.Set("Idempotency-Key", idempotencyKey)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
+
+func appAttachmentFlowUpload(t *testing.T, handler http.Handler, token, fileName string, content []byte) appAttachmentFlowDTO {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", fileName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	response := appAttachmentFlowRequest(handler, token, http.MethodPost, "/api/v1/attachments", writer.FormDataContentType(), "", body.Bytes())
+	if response.Code != http.StatusCreated {
+		t.Fatalf("upload %q = %d %s", fileName, response.Code, response.Body.String())
+	}
+	var result appAttachmentFlowDTO
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func appAttachmentFlowAssertDownload(t *testing.T, handler http.Handler, token, attachmentID, fileName string, content []byte) {
+	t.Helper()
+	response := appAttachmentFlowRequest(handler, token, http.MethodGet, "/api/v1/attachments/"+attachmentID, "", "", nil)
+	disposition, parameters, dispositionErr := mime.ParseMediaType(response.Header().Get("Content-Disposition"))
+	if response.Code != http.StatusOK || !bytes.Equal(response.Body.Bytes(), content) || response.Header().Get("Content-Type") != "application/pdf" || response.Header().Get("Content-Length") != strconv.Itoa(len(content)) || response.Header().Get("X-Content-Type-Options") != "nosniff" || response.Header().Get("Cache-Control") != "private, no-store" || dispositionErr != nil || disposition != "attachment" || parameters["filename"] != fileName {
+		t.Fatalf("download = %d headers=%v body=%q dispositionError=%v", response.Code, response.Header(), response.Body.Bytes(), dispositionErr)
+	}
+}
+
+func appAttachmentFlowPDF(label string) []byte {
+	var content bytes.Buffer
+	content.WriteString("%PDF-1.4\n")
+	offsets := make([]int, 5)
+	writeObject := func(number int, value string) {
+		offsets[number] = content.Len()
+		fmt.Fprintf(&content, "%d 0 obj\n%s\nendobj\n", number, value)
+	}
+	writeObject(1, "<< /Type /Catalog /Pages 2 0 R >>")
+	writeObject(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+	writeObject(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>")
+	stream := "% " + label + "\n"
+	writeObject(4, fmt.Sprintf("<< /Length %d >>\nstream\n%sendstream", len(stream), stream))
+	xref := content.Len()
+	content.WriteString("xref\n0 5\n0000000000 65535 f \n")
+	for number := 1; number <= 4; number++ {
+		fmt.Fprintf(&content, "%010d 00000 n \n", offsets[number])
+	}
+	fmt.Fprintf(&content, "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", xref)
+	return content.Bytes()
+}
+
+func TestAuthenticatedAPIAttachmentLocalStoreFailureReleasesResources(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 7, 17, 10, 0, 0, 0, time.UTC)
+	base, err := config.LoadBase(mapLookup(map[string]string{"DATA_DIR": t.TempDir()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.Open(ctx, base.DatabasePath, store.OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Migrate(ctx); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	attachmentPath := filepath.Join(base.DataDir, "attachments")
+	if err := os.WriteFile(attachmentPath, []byte("blocked"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configuration := config.APIConfig{Config: base, JWTSigningKey: []byte("12345678901234567890123456789012")}
+	dependencies := app.AuthDependencies{Clock: func() time.Time { return now }}
+	if application, err := app.NewAuthenticatedAPIWithDependencies(configuration, dependencies, slog.New(slog.NewJSONHandler(io.Discard, nil))); err == nil {
+		application.Close()
+		t.Fatal("attachment local store initialization error = nil")
+	}
+	if err := os.Remove(attachmentPath); err != nil {
+		t.Fatal(err)
+	}
+
+	application, err := app.NewAuthenticatedAPIWithDependencies(configuration, dependencies, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("retry after attachment initialization failure: %v", err)
+	}
+	defer application.Close()
+	for _, directory := range []string{"temp", "content"} {
+		info, err := os.Stat(filepath.Join(attachmentPath, directory))
+		if err != nil || !info.IsDir() {
+			t.Fatalf("local attachment directory %q: info=%v error=%v", directory, info, err)
+		}
+	}
+}
+
+type appAttachmentFiles struct {
+	storageKey string
+	fileName   string
+	content    []byte
+}
+
+func (files *appAttachmentFiles) Write(storageKey, fileName string, content []byte) (order.StoredAttachmentFile, error) {
+	files.storageKey = storageKey
+	files.fileName = fileName
+	files.content = bytes.Clone(content)
+	return order.StoredAttachmentFile{FileName: fileName, ContentType: "application/pdf", SizeBytes: int64(len(content)), SHA256: sha256.Sum256(content)}, nil
+}
+
+func (*appAttachmentFiles) Read(string) ([]byte, error) { return nil, errors.New("unexpected read") }
+func (*appAttachmentFiles) Delete(string) error         { return nil }
+func (*appAttachmentFiles) DeleteResidual(string) error { return nil }
+func (*appAttachmentFiles) ListResiduals(time.Time) ([]string, error) {
+	return nil, nil
 }
 
 func TestAPINotReadyDatabaseStatesKeepHealthLive(t *testing.T) {

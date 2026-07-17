@@ -6,6 +6,8 @@
 
 ### Added
 
+- 实现阶段五附件 MVP：schema v7、本地受控文件、PDF/PNG/JPEG 探测与 SHA-256、上传/鉴权下载/未绑定删除、24 小时 cleanup、订单创建事务绑定、snapshot v2 与 v1 重放兼容、development seed/reset 和真实 app 重启闭环。
+
 - 实现阶段四退款闭环：additive schema v6、独立退款幂等 snapshot、可退额度、申请/审批/拒绝、writer fence/双 CAS、跨连接竞争、严格 UTF-8/JSON/JWT/CORS 路由和真实 app 重启集成。
 - 实现阶段四经营看板：summary、订单状态分布、UTC 7/30 日趋势、固定 seed 快照、负 trend bucket、单 SQLite snapshot、退款后金额变化和独立路由禁用装配。
 - 增加 schema-only v6 产物证据与旧 v5 binary 整库恢复验证，明确回退必须停写并恢复 migration 前主库/WAL/SHM 集合，恢复点之后写入全部丢失。

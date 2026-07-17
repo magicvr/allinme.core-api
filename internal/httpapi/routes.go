@@ -28,6 +28,9 @@ func activeRouteMetadata(dependencies Dependencies) []routeMetadata {
 			}
 		}
 	}
+	if dependencies.Auth != nil && dependencies.Attachments != nil && !dependencies.DisableAttachmentRoutes {
+		routes = append(routes, attachmentCollectionMetadata(), attachmentDetailMetadata())
+	}
 	if dependencies.Auth != nil && dependencies.Refunds != nil && !dependencies.DisableRefundRoutes {
 		routes = append(routes, refundCollectionMetadata(), refundCreateMetadata(), refundDecisionMetadata("approve"), refundDecisionMetadata("reject"))
 	}
@@ -51,6 +54,14 @@ func orderDetailMetadata() routeMetadata {
 
 func orderActionMetadata(action string) routeMetadata {
 	return newRouteMetadata("/api/v1/orders/{orderId}/"+action, "POST")
+}
+
+func attachmentCollectionMetadata() routeMetadata {
+	return newRouteMetadata("/api/v1/attachments", "POST")
+}
+
+func attachmentDetailMetadata() routeMetadata {
+	return newRouteMetadata("/api/v1/attachments/{attachmentId}", "GET", "DELETE")
 }
 
 func refundCollectionMetadata() routeMetadata {

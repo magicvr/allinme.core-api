@@ -71,6 +71,12 @@ func (database *DB) ListOrders(ctx context.Context, query order.ListQuery) (page
 	if len(page.Items) > 0 {
 		database.observeQuery()
 	}
+	if err := applyOrderAttachmentCountsTx(ctx, transaction, page.Items); err != nil {
+		return order.Page{}, err
+	}
+	if len(page.Items) > 0 {
+		database.observeQuery()
+	}
 	if err := applyOrderRefundCapabilitiesTx(ctx, transaction, page.Items); err != nil {
 		return order.Page{}, err
 	}
@@ -163,6 +169,38 @@ func (database *DB) GetOrder(ctx context.Context, id string) (result order.Order
 	return result, true, nil
 }
 
+func (database *DB) PrepareAttachmentsForOrder(ctx context.Context, owner string, ids []string, now time.Time) (result []order.Attachment, resultErr error) {
+	defer func() { resultErr = classifyOrderError(resultErr) }()
+	if err := order.ValidateAttachmentIDs(ids); err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []order.Attachment{}, nil
+	}
+	transaction, err := database.sql.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("begin attachment preparation transaction: %w", err)
+	}
+	defer transaction.Rollback()
+	result, err = loadAttachmentsByIDTx(ctx, transaction, ids)
+	if err != nil {
+		return nil, err
+	}
+	mapped, err := mappedOrderAttachmentPositionsTx(ctx, transaction, ids)
+	if err != nil {
+		return nil, err
+	}
+	for index, attachment := range result {
+		if mapped[index] || attachment.CreatedBy != owner || attachment.Status != order.AttachmentStatusUploaded || attachment.ExpiresAt == nil || now.Before(attachment.CreatedAt) || !now.Before(*attachment.ExpiresAt) {
+			return nil, unavailableOrderAttachment(index)
+		}
+	}
+	if err := transaction.Commit(); err != nil {
+		return nil, fmt.Errorf("commit attachment preparation transaction: %w", err)
+	}
+	return result, nil
+}
+
 func (database *DB) CreateOrderIdempotent(ctx context.Context, persistence order.IdempotentCreatePersistence) (result order.IdempotencyRecord, created bool, resultErr error) {
 	defer func() { resultErr = classifyOrderError(resultErr) }()
 	transaction, err := database.sql.BeginTx(ctx, nil)
@@ -197,6 +235,9 @@ func (database *DB) CreateOrderIdempotent(ctx context.Context, persistence order
 		return order.IdempotencyRecord{}, false, fmt.Errorf("insert order: %w", err)
 	}
 	if err := insertOrderItems(ctx, transaction, create.ID, create.Items); err != nil {
+		return order.IdempotencyRecord{}, false, err
+	}
+	if err := bindOrderAttachments(ctx, transaction, persistence.Record.Scope.PrincipalUserID, create.ID, create.AttachmentIDs, create.CreatedAt); err != nil {
 		return order.IdempotencyRecord{}, false, err
 	}
 	if err := transaction.Commit(); err != nil {
@@ -496,7 +537,242 @@ func getOrderTx(ctx context.Context, transaction *sql.Tx, id string) (order.Orde
 	if err := validator.finish(); err != nil {
 		return order.Order{}, false, err
 	}
+	if err := loadOrderAttachmentsTx(ctx, transaction, &result); err != nil {
+		return order.Order{}, false, err
+	}
 	return result, true, nil
+}
+
+func applyOrderAttachmentCountsTx(ctx context.Context, transaction *sql.Tx, orders []order.Order) error {
+	if len(orders) == 0 {
+		return nil
+	}
+	byID := make(map[string]*order.Order, len(orders))
+	arguments := make([]any, 0, len(orders))
+	placeholders := make([]string, 0, len(orders))
+	for index := range orders {
+		orders[index].AttachmentCount = 0
+		byID[orders[index].ID] = &orders[index]
+		arguments = append(arguments, orders[index].ID)
+		placeholders = append(placeholders, "?")
+	}
+	rows, err := transaction.QueryContext(ctx, `SELECT order_id, COUNT(*) FROM order_attachments WHERE order_id IN (`+strings.Join(placeholders, ",")+`) GROUP BY order_id`, arguments...)
+	if err != nil {
+		return fmt.Errorf("query listed order attachment counts: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var orderID string
+		var count int64
+		if err := rows.Scan(&orderID, &count); err != nil {
+			return fmt.Errorf("scan listed order attachment count: %w", err)
+		}
+		value := byID[orderID]
+		if value == nil || count < 1 || count > order.MaxOrderAttachments {
+			return errors.New("invalid listed order attachment count")
+		}
+		value.AttachmentCount = count
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate listed order attachment counts: %w", err)
+	}
+	return nil
+}
+
+func loadOrderAttachmentsTx(ctx context.Context, transaction *sql.Tx, value *order.Order) error {
+	rows, err := transaction.QueryContext(ctx, `SELECT a.id, oa.position, a.file_name, a.storage_key, a.content_type, a.size_bytes, a.sha256, a.status, a.created_by, a.expires_at, a.created_at, a.updated_at FROM order_attachments oa JOIN attachments a ON a.id = oa.attachment_id WHERE oa.order_id = ? ORDER BY oa.position`, value.ID)
+	if err != nil {
+		return fmt.Errorf("query order attachments: %w", err)
+	}
+	defer rows.Close()
+	value.Attachments = []order.Attachment{}
+	var position int64
+	for rows.Next() {
+		attachment, storedPosition, err := scanOrderAttachment(rows)
+		if err != nil {
+			return err
+		}
+		if storedPosition != position || attachment.Status != order.AttachmentStatusBound || attachment.ExpiresAt != nil {
+			return errors.New("invalid bound order attachment")
+		}
+		value.Attachments = append(value.Attachments, attachment)
+		position++
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate order attachments: %w", err)
+	}
+	if len(value.Attachments) > order.MaxOrderAttachments {
+		return errors.New("too many order attachments")
+	}
+	value.AttachmentCount = int64(len(value.Attachments))
+	return nil
+}
+
+func loadAttachmentsByIDTx(ctx context.Context, transaction *sql.Tx, ids []string) ([]order.Attachment, error) {
+	arguments := make([]any, 0, len(ids))
+	placeholders := make([]string, 0, len(ids))
+	positions := make(map[string]int, len(ids))
+	for index, id := range ids {
+		arguments = append(arguments, id)
+		placeholders = append(placeholders, "?")
+		positions[id] = index
+	}
+	rows, err := transaction.QueryContext(ctx, `SELECT id, file_name, storage_key, content_type, size_bytes, sha256, status, created_by, expires_at, created_at, updated_at FROM attachments WHERE id IN (`+strings.Join(placeholders, ",")+`)`, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("query attachments for order: %w", err)
+	}
+	defer rows.Close()
+	result := make([]order.Attachment, len(ids))
+	found := make([]bool, len(ids))
+	for rows.Next() {
+		attachment, err := scanAttachment(rows)
+		if err != nil {
+			return nil, err
+		}
+		position, ok := positions[attachment.ID]
+		if !ok || found[position] {
+			return nil, errors.New("unexpected prepared attachment")
+		}
+		result[position], found[position] = attachment, true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate attachments for order: %w", err)
+	}
+	for index, ok := range found {
+		if !ok {
+			return nil, unavailableOrderAttachment(index)
+		}
+	}
+	return result, nil
+}
+
+func mappedOrderAttachmentPositionsTx(ctx context.Context, transaction *sql.Tx, ids []string) ([]bool, error) {
+	arguments := make([]any, 0, len(ids))
+	placeholders := make([]string, 0, len(ids))
+	positions := make(map[string]int, len(ids))
+	for index, id := range ids {
+		arguments = append(arguments, id)
+		placeholders = append(placeholders, "?")
+		positions[id] = index
+	}
+	rows, err := transaction.QueryContext(ctx, `SELECT attachment_id FROM order_attachments WHERE attachment_id IN (`+strings.Join(placeholders, ",")+`)`, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("query existing order attachment mappings: %w", err)
+	}
+	defer rows.Close()
+	result := make([]bool, len(ids))
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan existing order attachment mapping: %w", err)
+		}
+		position, ok := positions[id]
+		if !ok || result[position] {
+			return nil, errors.New("unexpected order attachment mapping")
+		}
+		result[position] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate existing order attachment mappings: %w", err)
+	}
+	return result, nil
+}
+
+func scanOrderAttachment(row rowScanner) (order.Attachment, int64, error) {
+	var attachment order.Attachment
+	var position int64
+	var status, expiresAt, createdAt, updatedAt sql.NullString
+	var digest []byte
+	if err := row.Scan(&attachment.ID, &position, &attachment.FileName, &attachment.StorageKey, &attachment.ContentType, &attachment.SizeBytes, &digest, &status, &attachment.CreatedBy, &expiresAt, &createdAt, &updatedAt); err != nil {
+		return order.Attachment{}, 0, fmt.Errorf("scan order attachment: %w", err)
+	}
+	if err := populateStoredAttachment(&attachment, digest, status, expiresAt, createdAt, updatedAt); err != nil {
+		return order.Attachment{}, 0, err
+	}
+	return attachment, position, nil
+}
+
+func scanAttachment(row rowScanner) (order.Attachment, error) {
+	var attachment order.Attachment
+	var status, expiresAt, createdAt, updatedAt sql.NullString
+	var digest []byte
+	if err := row.Scan(&attachment.ID, &attachment.FileName, &attachment.StorageKey, &attachment.ContentType, &attachment.SizeBytes, &digest, &status, &attachment.CreatedBy, &expiresAt, &createdAt, &updatedAt); err != nil {
+		return order.Attachment{}, fmt.Errorf("scan attachment: %w", err)
+	}
+	if err := populateStoredAttachment(&attachment, digest, status, expiresAt, createdAt, updatedAt); err != nil {
+		return order.Attachment{}, err
+	}
+	return attachment, nil
+}
+
+func populateStoredAttachment(attachment *order.Attachment, digest []byte, status, expiresAt, createdAt, updatedAt sql.NullString) error {
+	if !status.Valid || !createdAt.Valid || !updatedAt.Valid || len(digest) != len(attachment.SHA256) {
+		return errors.New("invalid stored attachment data")
+	}
+	attachment.Status = order.AttachmentStatus(status.String)
+	var err error
+	attachment.CreatedAt, err = time.Parse(time.RFC3339, createdAt.String)
+	if err != nil || order.FormatTime(attachment.CreatedAt) != createdAt.String {
+		return errors.New("invalid stored attachment created time")
+	}
+	attachment.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt.String)
+	if err != nil || order.FormatTime(attachment.UpdatedAt) != updatedAt.String {
+		return errors.New("invalid stored attachment updated time")
+	}
+	if expiresAt.Valid {
+		value, parseErr := time.Parse(time.RFC3339, expiresAt.String)
+		if parseErr != nil || order.FormatTime(value) != expiresAt.String {
+			return errors.New("invalid stored attachment expiry")
+		}
+		attachment.ExpiresAt = &value
+	}
+	copy(attachment.SHA256[:], digest)
+	return order.ValidateAttachment(*attachment)
+}
+
+func bindOrderAttachments(ctx context.Context, transaction *sql.Tx, owner, orderID string, ids []string, createdAt string) error {
+	if err := order.ValidateAttachmentIDs(ids); err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	now, err := time.Parse(time.RFC3339, createdAt)
+	if err != nil || order.FormatTime(now) != createdAt {
+		return errors.New("invalid order attachment bind time")
+	}
+	attachments, err := loadAttachmentsByIDTx(ctx, transaction, ids)
+	if err != nil {
+		return err
+	}
+	mapped, err := mappedOrderAttachmentPositionsTx(ctx, transaction, ids)
+	if err != nil {
+		return err
+	}
+	for index, attachment := range attachments {
+		if mapped[index] || attachment.CreatedBy != owner || attachment.Status != order.AttachmentStatusUploaded || attachment.ExpiresAt == nil || now.Before(attachment.CreatedAt) || !now.Before(*attachment.ExpiresAt) {
+			return unavailableOrderAttachment(index)
+		}
+		if _, err := transaction.ExecContext(ctx, `INSERT INTO order_attachments(attachment_id, order_id, position, bound_at) VALUES (?, ?, ?, ?)`, attachment.ID, orderID, index, createdAt); err != nil {
+			return fmt.Errorf("insert order attachment: %w", err)
+		}
+		updated, err := transaction.ExecContext(ctx, `UPDATE attachments SET status = 'BOUND', expires_at = NULL, updated_at = ? WHERE id = ? AND created_by = ? AND status = 'UPLOADED' AND expires_at > ?`, createdAt, attachment.ID, owner, createdAt)
+		if err != nil {
+			return fmt.Errorf("bind order attachment: %w", err)
+		}
+		affected, err := updated.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("read bound attachment rows: %w", err)
+		}
+		if affected != 1 {
+			return unavailableOrderAttachment(index)
+		}
+	}
+	return nil
+}
+
+func unavailableOrderAttachment(index int) error {
+	return &order.ValidationError{Details: []order.FieldError{{Field: fmt.Sprintf("attachmentIds[%d]", index), Message: "attachment is unavailable"}}}
 }
 
 func validatePageOrderAggregates(ctx context.Context, transaction *sql.Tx, orders []order.Order) error {

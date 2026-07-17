@@ -1,7 +1,7 @@
 ---
 status: target
 owner: 后端团队
-last_updated: 2026-07-16
+last_updated: 2026-07-17
 applies_to: order operations demo
 ---
 
@@ -22,7 +22,8 @@ applies_to: order operations demo
 | Order | `id`、`customer_name`、`status`、`payment_status`、`currency`、`total_amount`、`version`、时间戳 | 金额使用整数最小货币单位；更新使用乐观锁 |
 | OrderItem | `id`、`order_id`、`sku`、`name`、`quantity`、`unit_price` | 数量为正；订单总额由明细计算 |
 | Refund | `id`、`order_id`、`amount`、`status`、`reason`、`version`、`requested_by`、`decided_by`、时间戳 | `PENDING + COMPLETED` 共同占用额度且不得超过订单总额；申请人与审批人必须隔离 |
-| Attachment | `id`、`order_id`、`original_name`、`stored_name`、`media_type`、`size`、`sha256` | 文件名由服务端生成；下载必须重新鉴权 |
+| Attachment | `id`、`created_by`、`status`、`file_name`、`storage_key`、`content_type`、`size_bytes`、`sha256`、`expires_at`、时间戳 | `UPLOADED/BOUND/DELETING`；storage key 只由服务端生成；未绑定 24 小时过期；下载必须重新鉴权 |
+| OrderAttachment | `attachment_id`、`order_id`、`position`、`bound_at` | 单附件至多绑定一个订单；单订单最多 10 个且 position 唯一有序 |
 
 数据库时间统一保存 UTC，HTTP 使用 RFC 3339。ID 使用服务端生成、URL 安全且不暴露顺序规模的字符串。SQLite migrations、seed 和 reset 必须可重复执行；reset 仅在显式开发模式开放。
 
@@ -105,6 +106,6 @@ DRAFT -> CONFIRMED -> FULFILLING -> SHIPPED -> COMPLETED
 
 ## 8. Seed 验收数据
 
-development reset/seed 使用 `DEMO_ACCOUNT_PASSWORD` 创建 `viewer`、`operator`、`approver`、`admin` 四个同名角色账号；文档只提示环境变量配置方式，运行时不输出密码。production 不启用演示账号或 reset，通过仅限空 users 表的一次性 `bootstrap-admin` 创建首个 admin。订单、支付和退款状态 seed 仍属于阶段三及后续阶段。
+development reset/seed 使用 `DEMO_ACCOUNT_PASSWORD` 创建 `viewer`、`operator`、`approver`、`admin` 四个同名角色账号；文档只提示环境变量配置方式，运行时不输出密码。确定基线还包含全部订单/退款状态，以及由 `operator` 拥有并绑定到固定 demo 订单的可下载 PDF 附件；重复 seed 校验数据库元数据和文件 bytes，不自动修复漂移。production 不创建演示账号、订单、退款或附件，也不启用 reset，通过仅限空 users 表的一次性 `bootstrap-admin` 创建首个 admin。
 
 目标 HTTP 映射见 [03-http-api-target.md](./03-http-api-target.md)，实施顺序见 [06-implementation-roadmap.md](./06-implementation-roadmap.md)。

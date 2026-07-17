@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/magicvr/allinme.core-api/internal/auth"
 	"github.com/magicvr/allinme.core-api/internal/order"
@@ -46,6 +47,9 @@ func (repository *serviceRepository) GetOrder(context.Context, string) (order.Or
 }
 func (repository *serviceRepository) GetIdempotency(context.Context, order.IdempotencyScope) (order.IdempotencyRecord, bool, error) {
 	return order.IdempotencyRecord{}, false, repository.err
+}
+func (repository *serviceRepository) PrepareAttachmentsForOrder(context.Context, string, []string, time.Time) ([]order.Attachment, error) {
+	return []order.Attachment{}, repository.err
 }
 func (repository *serviceRepository) CreateOrderIdempotent(_ context.Context, persistence order.IdempotentCreatePersistence) (order.IdempotencyRecord, bool, error) {
 	return persistence.Record, true, repository.err

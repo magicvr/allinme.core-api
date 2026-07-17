@@ -174,7 +174,7 @@ func TestVersionFourIdempotencyRowsUpgradeAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FromVersion != 4 || result.ToVersion != 6 {
+	if result.FromVersion != 4 || result.ToVersion != 7 {
 		t.Fatalf("migration = %+v", result)
 	}
 	var snapshotDigest []byte
@@ -301,7 +301,7 @@ func TestVersionFiveDatabaseUpgradesWithoutLosingOrdersOrIdempotency(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FromVersion != 5 || result.ToVersion != 6 {
+	if result.FromVersion != 5 || result.ToVersion != 7 {
 		t.Fatalf("migration = %+v", result)
 	}
 	for table, want := range map[string]int{"orders": 1, "order_items": 1, "idempotency_keys": 1, "refunds": 0, "refund_idempotency_keys": 0} {
@@ -318,6 +318,225 @@ func TestVersionFiveDatabaseUpgradesWithoutLosingOrdersOrIdempotency(t *testing.
 	}
 	if status := probe.Check(ctx); status != Ready {
 		t.Fatalf("v6 readiness = %q, want %q", status, Ready)
+	}
+}
+
+func TestAttachmentMigrationCreatesFreshSchemaAndReplays(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "allinme.db"), OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	first, err := database.Migrate(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.FromVersion != 0 || first.ToVersion != 7 {
+		t.Fatalf("first migration = %+v", first)
+	}
+	second, err := database.Migrate(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.FromVersion != 7 || second.ToVersion != 7 {
+		t.Fatalf("second migration = %+v", second)
+	}
+
+	for _, table := range []string{"attachments", "order_attachments"} {
+		var count int
+		if err := database.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Errorf("%s table count = %d, want 1", table, count)
+		}
+	}
+	for _, index := range []string{"attachments_created_by_status_idx", "attachments_status_expires_at_idx", "order_attachments_order_position_idx"} {
+		var count int
+		if err := database.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, index).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Errorf("%s index count = %d, want 1", index, count)
+		}
+	}
+}
+
+func TestVersionSixDatabaseUpgradesToAttachmentsWithoutLosingData(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "allinme.db"), OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, migration := range migrations[:6] {
+		if err := database.WithTx(ctx, func(transaction *sql.Tx) error {
+			if _, err := transaction.ExecContext(ctx, migration.sql); err != nil {
+				return err
+			}
+			if migration.version == 5 {
+				if err := backfillSnapshotDigests(ctx, transaction); err != nil {
+					return err
+				}
+			}
+			_, err := transaction.ExecContext(ctx, "PRAGMA user_version = "+strconv.Itoa(migration.version))
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := database.SQL().ExecContext(ctx, `
+		INSERT INTO users(id, username, password_hash, role, created_at, updated_at)
+		VALUES ('user-preserved', 'preserved-v6', 'hash', 'operator', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+		INSERT INTO orders(id, customer_name, status, payment_status, currency, total_amount, version, created_at, updated_at)
+		VALUES ('ord_00000000000000000000000000000001', 'Preserved v6 order', 'DRAFT', 'UNPAID', 'CNY', 100, 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+		INSERT INTO order_items(id, order_id, position, sku, name, quantity, unit_price)
+		VALUES ('itm_00000000000000000000000000000001', 'ord_00000000000000000000000000000001', 0, 'SKU', 'Preserved item', 1, 100);
+		INSERT INTO refunds(id, order_id, amount, reason, status, version, requested_by, created_at, updated_at)
+		VALUES ('rfd_00000000000000000000000000000001', 'ord_00000000000000000000000000000001', 50, 'Preserved refund', 'PENDING', 1, 'user-preserved', '2026-01-01T00:00:01Z', '2026-01-01T00:00:01Z');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := database.Migrate(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FromVersion != 6 || result.ToVersion != 7 {
+		t.Fatalf("migration = %+v", result)
+	}
+	for table, want := range map[string]int{"users": 1, "orders": 1, "order_items": 1, "refunds": 1, "attachments": 0, "order_attachments": 0} {
+		var count int
+		if err := database.SQL().QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != want {
+			t.Errorf("%s count = %d, want %d", table, count, want)
+		}
+	}
+}
+
+func TestAttachmentMigrationFailureKeepsVersionSixAndRollsBackPartialSchema(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "allinme.db"), OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, migration := range migrations[:6] {
+		if err := database.WithTx(ctx, func(transaction *sql.Tx) error {
+			if _, err := transaction.ExecContext(ctx, migration.sql); err != nil {
+				return err
+			}
+			if migration.version == 5 {
+				if err := backfillSnapshotDigests(ctx, transaction); err != nil {
+					return err
+				}
+			}
+			_, err := transaction.ExecContext(ctx, "PRAGMA user_version = "+strconv.Itoa(migration.version))
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := database.SQL().ExecContext(ctx, `
+		CREATE TABLE migration_collision (created_by TEXT, status TEXT);
+		CREATE INDEX attachments_created_by_status_idx ON migration_collision(created_by, status);
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Migrate(ctx); err == nil {
+		t.Fatal("v7 migration error = nil")
+	}
+	version, err := database.SchemaVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != 6 {
+		t.Fatalf("schema version = %d, want 6", version)
+	}
+	for _, table := range []string{"attachments", "order_attachments"} {
+		var count int
+		if err := database.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Errorf("partial %s table count = %d, want 0", table, count)
+		}
+	}
+}
+
+func TestAttachmentMigrationConstraints(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "allinme.db"), OpenCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if _, err := database.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SQL().ExecContext(ctx, `
+		INSERT INTO users(id, username, password_hash, role, created_at, updated_at)
+		VALUES ('user-owner', 'attachment-owner', 'hash', 'operator', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+		INSERT INTO orders(id, customer_name, status, payment_status, currency, total_amount, version, created_at, updated_at)
+		VALUES ('ord_00000000000000000000000000000001', 'Attachment order', 'DRAFT', 'UNPAID', 'CNY', 100, 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	insertAttachment := `
+		INSERT INTO attachments(
+			id, created_by, status, file_name, storage_key, content_type, size_bytes,
+			sha256, expires_at, created_at, updated_at
+		) VALUES (?, 'user-owner', ?, 'invoice.pdf', ?, 'application/pdf', ?, zeroblob(32),
+			'2026-01-02T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`
+	tests := []struct {
+		name   string
+		id     string
+		status string
+		size   int
+	}{
+		{name: "invalid status", id: "att_00000000000000000000000000000001", status: "STAGING", size: 1},
+		{name: "zero size", id: "att_00000000000000000000000000000002", status: "UPLOADED", size: 0},
+		{name: "oversize", id: "att_00000000000000000000000000000003", status: "UPLOADED", size: 10485761},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := database.SQL().ExecContext(ctx, insertAttachment, test.id, test.status, test.id, test.size); err == nil {
+				t.Fatal("insert error = nil")
+			}
+		})
+	}
+
+	for _, id := range []string{"att_00000000000000000000000000000004", "att_00000000000000000000000000000005"} {
+		if _, err := database.SQL().ExecContext(ctx, insertAttachment, id, "UPLOADED", id, 10485760); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := database.SQL().ExecContext(ctx, `
+		INSERT INTO order_attachments(attachment_id, order_id, position, bound_at)
+		VALUES ('att_00000000000000000000000000000004', 'ord_00000000000000000000000000000001', 0, '2026-01-01T00:00:01Z')
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SQL().ExecContext(ctx, `
+		INSERT INTO order_attachments(attachment_id, order_id, position, bound_at)
+		VALUES ('att_00000000000000000000000000000005', 'ord_00000000000000000000000000000001', 0, '2026-01-01T00:00:02Z')
+	`); err == nil {
+		t.Fatal("duplicate order attachment position error = nil")
 	}
 }
 

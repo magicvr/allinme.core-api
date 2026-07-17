@@ -1,7 +1,7 @@
 ---
 status: planned
 owner: 后端团队
-last_updated: 2026-07-13
+last_updated: 2026-07-17
 applies_to: order operations demo
 ---
 
@@ -13,7 +13,7 @@ applies_to: order operations demo
 
 本文件描述业务验收，不复制协议仓中的页面 YAML。页面结构与执行语义以 [`schema-ui-docs` 场景](../../../schema-ui-docs/docs/05-scenarios/README.md) 为准。
 
-截至阶段四，真实登录、订单、退款和看板 API 已实现并有 SQLite/JWT 集成证据；本场景中的页面加载、附件上传/绑定/下载和前端 Action reload 仍是阶段五/六目标，不表示当前 endpoint 已存在。
+截至阶段五，真实登录、订单、退款、看板及附件上传/创建绑定/重查/鉴权下载/未绑定删除 API 已实现并有 SQLite/JWT/本地文件集成证据；页面加载、页面 YAML、UploadAction 映射和前端 Action reload 仍是阶段六目标。
 
 ## 2. 参与者
 
@@ -67,7 +67,7 @@ reset 命令只在开发模式工作，执行时清理 SQLite 数据、附件目
 
 ## 6. 验收证据
 
-- API 集成测试覆盖主流程与全部失败路径；
+- API 集成测试已覆盖登录、上传两个附件、创建绑定一个、相同 key 重放、list/detail 重查、viewer 下载校验、删除未绑定附件及重启后再次下载；
 - repository 测试验证事务、外键、乐观锁和幂等记录；
 - 页面 YAML 通过固定 Schema-UI 版本的 L0-L4 校验；
 - 前端加载后端页面 JSON 后完成搜索、提交、Action reload、上传和看板渲染；

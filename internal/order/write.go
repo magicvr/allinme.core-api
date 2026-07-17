@@ -20,6 +20,7 @@ const (
 	MaxSKUBytes          = 64
 	MaxItemNameBytes     = 160
 	MaxItems             = 100
+	MaxOrderAttachments  = 10
 	MaxQuantity          = int64(10000)
 	MaxAmount            = int64(9999999999)
 )
@@ -32,9 +33,10 @@ type ItemCommand struct {
 }
 
 type CreateCommand struct {
-	CustomerName string
-	Currency     string
-	Items        []ItemCommand
+	CustomerName  string
+	Currency      string
+	Items         []ItemCommand
+	AttachmentIDs []string
 }
 
 type EditCommand struct {
@@ -67,12 +69,13 @@ type PersistenceItem struct {
 }
 
 type CreatePersistence struct {
-	ID           string
-	CustomerName string
-	Currency     string
-	TotalAmount  int64
-	CreatedAt    string
-	Items        []PersistenceItem
+	ID            string
+	CustomerName  string
+	Currency      string
+	TotalAmount   int64
+	CreatedAt     string
+	Items         []PersistenceItem
+	AttachmentIDs []string
 }
 
 type UpdateDraftPersistence struct {
@@ -151,7 +154,7 @@ func (service *Service) persistenceItems(commands []ItemCommand) ([]PersistenceI
 }
 
 func validateFacts(customerName, currency string, items []ItemCommand) (CreateCommand, int64, error) {
-	normalized := CreateCommand{CustomerName: strings.TrimSpace(customerName), Currency: currency, Items: make([]ItemCommand, len(items))}
+	normalized := CreateCommand{CustomerName: strings.TrimSpace(customerName), Currency: currency, Items: make([]ItemCommand, len(items)), AttachmentIDs: []string{}}
 	details := make([]FieldError, 0)
 	validateString(&details, "customerName", normalized.CustomerName, MaxCustomerNameBytes)
 	if currency != "CNY" {

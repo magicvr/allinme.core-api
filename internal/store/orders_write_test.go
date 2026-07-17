@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"path/filepath"
@@ -47,6 +48,132 @@ func TestCreateOrderAndUpdateDraftTransactions(t *testing.T) {
 	}
 	if _, err := database.UpdateDraft(ctx, order.UpdateDraftPersistence{ID: createdOrder.ID, CustomerName: "Conflict", Currency: "CNY", TotalAmount: 1, Version: 1, UpdatedAt: "2026-07-12T02:00:00Z", Items: []order.PersistenceItem{{ID: "itm_0000000000000000000000000000000c", SKU: "X", Name: "X", Quantity: 1, UnitPrice: 1}}}); !errors.Is(err, order.ErrVersionConflict) {
 		t.Fatalf("stale UpdateDraft() error = %v", err)
+	}
+}
+
+func TestCreateOrderBindsPreparedAttachmentsInOrder(t *testing.T) {
+	database := openSeededOrderDatabaseForWrite(t)
+	ctx := context.Background()
+	insertAttachmentOwner(t, database, "user-1")
+	ids := []string{"att_00000000000000000000000000000002", "att_00000000000000000000000000000001"}
+	for _, id := range ids {
+		insertUploadedAttachment(t, database, id, "user-1", "2026-07-12T00:00:00Z")
+	}
+	prepared, err := database.PrepareAttachmentsForOrder(ctx, "user-1", ids, time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC))
+	if err != nil || len(prepared) != 2 || prepared[0].ID != ids[0] || prepared[1].ID != ids[1] {
+		t.Fatalf("prepared = %+v error=%v", prepared, err)
+	}
+	persistence := idempotentPersistence("key-attachments")
+	persistence.Create.AttachmentIDs = ids
+	if _, created, err := database.CreateOrderIdempotent(ctx, persistence); err != nil || !created {
+		t.Fatalf("create = %v %v", created, err)
+	}
+	result, found, err := database.GetOrder(ctx, persistence.Create.ID)
+	if err != nil || !found || result.AttachmentCount != 2 || len(result.Attachments) != 2 || result.Attachments[0].ID != ids[0] || result.Attachments[1].ID != ids[1] {
+		t.Fatalf("order = %+v found=%v error=%v", result, found, err)
+	}
+	for _, id := range ids {
+		var status string
+		var expiresAt sql.NullString
+		if err := database.SQL().QueryRowContext(ctx, `SELECT status, expires_at FROM attachments WHERE id = ?`, id).Scan(&status, &expiresAt); err != nil {
+			t.Fatal(err)
+		}
+		if status != "BOUND" || expiresAt.Valid {
+			t.Fatalf("attachment %s = %s/%+v", id, status, expiresAt)
+		}
+	}
+	updated, err := database.UpdateDraft(ctx, order.UpdateDraftPersistence{ID: result.ID, CustomerName: "Updated with attachments", Currency: "CNY", TotalAmount: 500, Version: 1, UpdatedAt: "2026-07-12T13:00:00Z", Items: []order.PersistenceItem{{ID: "itm_0000000000000000000000000000000b", Position: 0, SKU: "SKU", Name: "Item", Quantity: 2, UnitPrice: 250}}})
+	if err != nil || updated.AttachmentCount != 2 || len(updated.Attachments) != 2 || updated.Attachments[0].ID != ids[0] {
+		t.Fatalf("updated order = %+v error=%v", updated, err)
+	}
+	transitioned, err := database.TransitionOrder(ctx, order.TransitionPersistence{ID: result.ID, Version: 2, AllowedSources: []order.Status{order.StatusDraft}, Target: order.StatusConfirmed, UpdatedAt: "2026-07-12T14:00:00Z"})
+	if err != nil || transitioned.AttachmentCount != 2 || len(transitioned.Attachments) != 2 || transitioned.Attachments[1].ID != ids[1] {
+		t.Fatalf("transitioned order = %+v error=%v", transitioned, err)
+	}
+	page, err := database.ListOrders(ctx, order.ListQuery{Page: 1, PageSize: 20, Sort: "createdAt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed *order.Order
+	for index := range page.Items {
+		if page.Items[index].ID == persistence.Create.ID {
+			listed = &page.Items[index]
+		}
+	}
+	if listed == nil || listed.AttachmentCount != 2 || listed.Attachments != nil {
+		t.Fatalf("listed order = %+v", listed)
+	}
+}
+
+func TestCreateOrderAttachmentFailureRollsBackAndLoserDoesNotBind(t *testing.T) {
+	database := openSeededOrderDatabaseForWrite(t)
+	ctx := context.Background()
+	insertAttachmentOwner(t, database, "user-1")
+	insertAttachmentOwner(t, database, "user-2")
+	firstID := "att_00000000000000000000000000000001"
+	otherID := "att_00000000000000000000000000000002"
+	insertUploadedAttachment(t, database, firstID, "user-1", "2026-07-12T00:00:00Z")
+	insertUploadedAttachment(t, database, otherID, "user-2", "2026-07-12T00:00:00Z")
+	failed := idempotentPersistence("key-attachment-failure")
+	failed.Create.AttachmentIDs = []string{firstID, otherID}
+	if _, _, err := database.CreateOrderIdempotent(ctx, failed); err == nil {
+		t.Fatal("attachment create error = nil")
+	} else if details, ok := order.ValidationDetails(err); !ok || len(details) != 1 || details[0].Field != "attachmentIds[1]" {
+		t.Fatalf("attachment create error = %v details=%+v", err, details)
+	}
+	var orders, mappings int
+	if err := database.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM orders WHERE id = ?`, failed.Create.ID).Scan(&orders); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.SQL().QueryRowContext(ctx, `SELECT COUNT(*) FROM order_attachments`).Scan(&mappings); err != nil {
+		t.Fatal(err)
+	}
+	var firstStatus string
+	if err := database.SQL().QueryRowContext(ctx, `SELECT status FROM attachments WHERE id = ?`, firstID).Scan(&firstStatus); err != nil {
+		t.Fatal(err)
+	}
+	if orders != 0 || mappings != 0 || firstStatus != "UPLOADED" {
+		t.Fatalf("rollback orders=%d mappings=%d first=%s", orders, mappings, firstStatus)
+	}
+
+	winner := idempotentPersistence("key-attachment-winner")
+	winner.Create.ID, winner.Record.OrderID = "ord_0000000000000000000000000000000b", "ord_0000000000000000000000000000000b"
+	if _, created, err := database.CreateOrderIdempotent(ctx, winner); err != nil || !created {
+		t.Fatalf("winner = %v %v", created, err)
+	}
+	candidateID := "att_00000000000000000000000000000003"
+	insertUploadedAttachment(t, database, candidateID, "user-1", "2026-07-12T00:00:00Z")
+	loser := idempotentPersistence("key-attachment-winner")
+	loser.Create.ID, loser.Record.OrderID = "ord_0000000000000000000000000000000c", "ord_0000000000000000000000000000000c"
+	loser.Create.AttachmentIDs = []string{candidateID}
+	if _, created, err := database.CreateOrderIdempotent(ctx, loser); err != nil || created {
+		t.Fatalf("loser = %v %v", created, err)
+	}
+	var candidateStatus string
+	if err := database.SQL().QueryRowContext(ctx, `SELECT status FROM attachments WHERE id = ?`, candidateID).Scan(&candidateStatus); err != nil {
+		t.Fatal(err)
+	}
+	if candidateStatus != "UPLOADED" {
+		t.Fatalf("loser candidate status = %s", candidateStatus)
+	}
+}
+
+func insertAttachmentOwner(t *testing.T, database *store.DB, id string) {
+	t.Helper()
+	if _, err := database.SQL().Exec(`INSERT INTO users(id, username, password_hash, role, created_at, updated_at) VALUES (?, ?, 'hash', 'operator', '2026-07-12T00:00:00Z', '2026-07-12T00:00:00Z')`, id, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func insertUploadedAttachment(t *testing.T, database *store.DB, id, owner, createdAt string) {
+	t.Helper()
+	created, err := time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(id))
+	if _, err := database.SQL().Exec(`INSERT INTO attachments(id, created_by, status, file_name, storage_key, content_type, size_bytes, sha256, expires_at, created_at, updated_at) VALUES (?, ?, 'UPLOADED', ?, ?, 'application/pdf', 100, ?, ?, ?, ?)`, id, owner, id+".pdf", id, digest[:], created.Add(24*time.Hour).Format(time.RFC3339), createdAt, createdAt); err != nil {
+		t.Fatal(err)
 	}
 }
 

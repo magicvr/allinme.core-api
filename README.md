@@ -6,7 +6,7 @@ Go API service for Allinme.
 
 本仓库是 Schema-UI 的后端消费者和业务 API 宿主。涉及页面结构、数据源、Action、Reaction、版本协商或前后端交互时，必须以 [`schema-ui-docs`](../schema-ui-docs/README.md) 的当前稳定文档与机器契约为核心契约；本仓文档只说明 API 实现、接入方式和验证证据，不重新定义协议。
 
-当前已实现阶段一运行基础、阶段二认证授权、阶段三订单查询与履约，以及阶段四退款和经营看板：SQLite migration/seed/reset、`GET /healthz`、`GET /readyz`、login/me/logout JWT Bearer API、订单列表/详情、幂等订单创建、草稿编辑、履约 Action、可信 origin CORS、幂等退款申请、审批/拒绝、可退金额，以及 summary、订单状态分布和 UTC 7/30 日趋势。附件和 Schema-UI 页面仍按 [`docs/06-implementation-roadmap.md`](./docs/06-implementation-roadmap.md) 分阶段实施。
+当前已实现阶段一运行基础、阶段二认证授权、阶段三订单查询与履约、阶段四退款和经营看板，以及阶段五附件 MVP：SQLite migration/seed/reset、`GET /healthz`、`GET /readyz`、login/me/logout JWT Bearer API、订单列表/详情、幂等订单创建、草稿编辑、履约 Action、可信 origin CORS、退款申请与审批、经营看板，以及附件上传、订单创建绑定、鉴权下载、未绑定删除和一次性 cleanup。Schema-UI 页面仍按 [`docs/06-implementation-roadmap.md`](./docs/06-implementation-roadmap.md) 在阶段六实施。
 
 项目首先交付可运行的订单运营 Demo API，其次支撑通用 Admin 前台的真实联调场景，最后从已验证实现中提炼后续 API 项目可复用的结构。目标优先级、非目标、资产分层和防漂移规则见[项目宪章](./docs/00-overview.md#2-项目宪章与防漂移规则)。
 
@@ -28,6 +28,7 @@ go run ./cmd/admin -- migrate
 export DEMO_ACCOUNT_PASSWORD="<12-to-72-byte-password>"
 go run ./cmd/admin -- seed
 go run ./cmd/admin -- reset
+go run ./cmd/admin -- cleanup-attachments
 ```
 
 Development seed creates `viewer`, `operator`, `approver`, and `admin`; each username matches its role and uses `DEMO_ACCOUNT_PASSWORD`. `reset` is development-only and requires the API process to be stopped. Production does not create demo users: after migrate, set `BOOTSTRAP_ADMIN_USERNAME` and `BOOTSTRAP_ADMIN_PASSWORD`, then run `go run ./cmd/admin -- bootstrap-admin` once against an empty users table.

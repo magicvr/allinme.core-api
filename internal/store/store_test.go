@@ -163,6 +163,8 @@ func TestVersionThreeDatabaseUpgradesWithoutLosingOrders(t *testing.T) {
 		DROP INDEX idempotency_keys_created_at_idx;
 		DROP INDEX idempotency_keys_order_id_idx;
 		DROP TABLE idempotency_keys;
+		DROP TABLE order_attachments;
+		DROP TABLE attachments;
 		INSERT INTO orders(id, customer_name, status, payment_status, currency, total_amount, version, created_at, updated_at)
 		VALUES ('ord_00000000000000000000000000000001', 'Preserved', 'DRAFT', 'UNPAID', 'CNY', 100, 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
 		INSERT INTO order_items(id, order_id, position, sku, name, quantity, unit_price)

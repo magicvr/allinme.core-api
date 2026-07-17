@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,12 @@ func TestOrderRoutesQueryDetailAndErrors(t *testing.T) {
 	if _, ok := item["items"]; ok {
 		t.Fatal("list item exposes items")
 	}
+	if _, ok := item["attachments"]; ok {
+		t.Fatal("list item exposes attachments")
+	}
+	if item["attachmentCount"] != float64(2) {
+		t.Fatalf("list attachment count = %+v", item)
+	}
 	if item["canEdit"] != false || item["canRequestRefund"] != false || item["availableRefundAmount"] != float64(0) {
 		t.Fatalf("viewer capabilities = %+v", item)
 	}
@@ -50,8 +57,23 @@ func TestOrderRoutesQueryDetailAndErrors(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer access-token")
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !contains(response.Body.String(), `"availableRefundAmount":100`) || !contains(response.Body.String(), `"canEdit":true`) || !contains(response.Body.String(), `"canRequestRefund":true`) || !contains(response.Body.String(), `"canApproveRefund":false`) || !contains(response.Body.String(), `"items":[`) {
+	if response.Code != http.StatusOK || !contains(response.Body.String(), `"availableRefundAmount":100`) || !contains(response.Body.String(), `"canEdit":true`) || !contains(response.Body.String(), `"canRequestRefund":true`) || !contains(response.Body.String(), `"canApproveRefund":false`) || !contains(response.Body.String(), `"items":[`) || !contains(response.Body.String(), `"attachmentCount":2`) || !contains(response.Body.String(), `"attachments":[{"id":"att_00000000000000000000000000000001"`) {
 		t.Fatalf("detail = %d %s", response.Code, response.Body.String())
+	}
+	for _, internal := range []string{"storage-secret", "user-secret", "UPLOADED", "expiresAt"} {
+		if strings.Contains(response.Body.String(), internal) {
+			t.Fatalf("detail exposes %q: %s", internal, response.Body.String())
+		}
+	}
+
+	service.result.Attachments = nil
+	service.result.AttachmentCount = 0
+	request = httptest.NewRequest(http.MethodGet, "/api/v1/orders/ord_00000000000000000000000000000001", nil)
+	request.Header.Set("Authorization", "Bearer access-token")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !contains(response.Body.String(), `"attachmentCount":0`) || !contains(response.Body.String(), `"attachments":[]`) {
+		t.Fatalf("empty attachments = %d %s", response.Code, response.Body.String())
 	}
 
 	for _, path := range []string{"/api/v1/orders?page=1&page=2", "/api/v1/orders?sort=invalid", "/api/v1/orders?createdFrom=2026-01-02T00:00:00Z&createdTo=2026-01-01T00:00:00Z", "/api/v1/orders?q=%zz", "/api/v1/orders?q=valid;ignored=true"} {
@@ -115,10 +137,20 @@ func TestOrderWriteRoutesStrictInputAndErrorMapping(t *testing.T) {
 		handler.ServeHTTP(response, req)
 		return response
 	}
-	valid := `{"customerName":" Alice ","currency":"CNY","items":[{"sku":" SKU ","name":" Item ","quantity":2,"unitPrice":100}]}`
+	valid := `{"customerName":" Alice ","currency":"CNY","items":[{"sku":" SKU ","name":" Item ","quantity":2,"unitPrice":100}],"attachmentIds":["att_00000000000000000000000000000002","att_00000000000000000000000000000001"]}`
 	response := request(http.MethodPost, "/api/v1/orders", valid, "create-1")
-	if response.Code != http.StatusCreated || service.createKey != "create-1" || service.createCommand.Items[0].Quantity != 2 || !contains(response.Body.String(), `"availableRefundAmount":100`) || !contains(response.Body.String(), `"canRequestRefund":true`) || !contains(response.Body.String(), `"canApproveRefund":false`) {
+	if response.Code != http.StatusCreated || service.createKey != "create-1" || service.createCommand.Items[0].Quantity != 2 || len(service.createCommand.AttachmentIDs) != 2 || service.createCommand.AttachmentIDs[0] != "att_00000000000000000000000000000002" || !contains(response.Body.String(), `"availableRefundAmount":100`) || !contains(response.Body.String(), `"canRequestRefund":true`) || !contains(response.Body.String(), `"canApproveRefund":false`) || !contains(response.Body.String(), `"attachments":[`) {
 		t.Fatalf("create = %d %s key=%q command=%+v", response.Code, response.Body.String(), service.createKey, service.createCommand)
+	}
+	for index, attachmentJSON := range []string{"", `,"attachmentIds":null`, `,"attachmentIds":[]`} {
+		body := `{"customerName":"Alice","currency":"CNY","items":[{"sku":"SKU","name":"Item","quantity":1,"unitPrice":100}]` + attachmentJSON + `}`
+		response := request(http.MethodPost, "/api/v1/orders", body, "empty-attachments-"+strconv.Itoa(index))
+		if response.Code != http.StatusCreated || service.createCommand.AttachmentIDs == nil || len(service.createCommand.AttachmentIDs) != 0 {
+			t.Fatalf("normalized attachments %d = %d %#v %s", index, response.Code, service.createCommand.AttachmentIDs, response.Body.String())
+		}
+	}
+	if response := request(http.MethodPatch, "/api/v1/orders/ord_00000000000000000000000000000001", `{"customerName":"Alice","currency":"CNY","items":[{"sku":"SKU","name":"Item","quantity":1,"unitPrice":100}],"version":1,"attachmentIds":[]}`, ""); response.Code != http.StatusBadRequest {
+		t.Fatalf("PATCH attachmentIds = %d %s", response.Code, response.Body.String())
 	}
 	if response := request(http.MethodPost, "/api/v1/orders", valid, ""); response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"field":"Idempotency-Key"`) {
 		t.Fatalf("missing key = %d %s", response.Code, response.Body.String())
@@ -310,7 +342,14 @@ func (service *fakeOrderService) Transition(_ context.Context, _ auth.Principal,
 
 func testOrder() order.Order {
 	timestamp := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	return order.Order{ID: "ord_00000000000000000000000000000001", CustomerName: "Demo", Status: order.StatusDraft, PaymentStatus: order.PaymentStatusUnpaid, Currency: "CNY", TotalAmount: 100, Version: 1, CreatedAt: timestamp, UpdatedAt: timestamp, Items: []order.Item{{ID: "itm_00000000000000000000000000000001", SKU: "SKU", Name: "Item", Quantity: 1, UnitPrice: 100}}}
+	expiresAt := timestamp.Add(24 * time.Hour)
+	attachments := []order.Attachment{
+		{ID: "att_00000000000000000000000000000001", StorageKey: "storage-secret", FileName: "invoice.pdf", ContentType: "application/pdf", SizeBytes: 8, Status: order.AttachmentStatusBound, CreatedBy: "user-secret", CreatedAt: timestamp, UpdatedAt: timestamp},
+		{ID: "att_00000000000000000000000000000002", StorageKey: "storage-secret-2", FileName: "photo.png", ContentType: "image/png", SizeBytes: 9, Status: order.AttachmentStatusBound, CreatedBy: "user-secret", ExpiresAt: &expiresAt, CreatedAt: timestamp.Add(time.Second), UpdatedAt: timestamp.Add(time.Second)},
+	}
+	attachments[0].SHA256[0] = 1
+	attachments[1].SHA256[0] = 2
+	return order.Order{ID: "ord_00000000000000000000000000000001", CustomerName: "Demo", Status: order.StatusDraft, PaymentStatus: order.PaymentStatusUnpaid, Currency: "CNY", TotalAmount: 100, Version: 1, CreatedAt: timestamp, UpdatedAt: timestamp, AttachmentCount: 2, Items: []order.Item{{ID: "itm_00000000000000000000000000000001", SKU: "SKU", Name: "Item", Quantity: 1, UnitPrice: 100}}, Attachments: attachments}
 }
 func contains(value, fragment string) bool {
 	for index := 0; index+len(fragment) <= len(value); index++ {

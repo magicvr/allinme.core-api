@@ -3,7 +3,7 @@ status: target
 principles_stage: baseline
 endpoints_stage: draft
 owner: 后端团队
-last_updated: 2026-07-16
+last_updated: 2026-07-17
 applies_to: order operations demo HTTP API target
 ---
 
@@ -42,23 +42,17 @@ applies_to: order operations demo HTTP API target
 
 已实现的订单查询、创建、编辑和履约 Action 契约见[当前 HTTP API](./03-http-api.md)。状态转换、角色权限、金额计算和业务不变量只在[领域模型](./05-domain-model.md)维护。列表可返回按当前主体与资源计算的 `canXxx` 展示字段，但 Action 会重新鉴权和校验。
 
-附件摘要随阶段五附件 MVP 一起新增并冻结；阶段三订单 DTO 不预留 `attachments` 字段。阶段五只在订单创建时接受 `attachmentIds`，订单 PATCH 的附件增删与重排留给后续计划。
+附件摘要、订单 create 的 `attachmentIds`、列表 `attachmentCount` 和详情/write 的 `attachments` 已随阶段五迁入[当前 HTTP API](./03-http-api.md)。订单 PATCH 仍不接受附件字段；附件增删与重排留给后续计划。
 
 ## 5. 退款（已迁入当前 API）
 
 退款 endpoint、角色、幂等、请求字段、响应 envelope、错误码和短路顺序已全部迁入 [当前 HTTP API](./03-http-api.md)，本目标文档不再重复维护。退款状态和审批规则仍以 [领域模型](./05-domain-model.md) 为唯一事实源。
 
-## 6. 附件（draft target）
+## 6. 附件（已迁入当前 API）
 
-| Method | Path | 最低权限 | 行为 |
-|---|---|---|---|
-| `POST` | `/api/v1/attachments` | operator | 单文件 multipart 上传，返回未绑定附件 ID |
-| `GET` | `/api/v1/attachments/{attachmentId}` | viewer | 鉴权下载已绑定附件 |
-| `DELETE` | `/api/v1/attachments/{attachmentId}` | operator | 删除本人创建且未绑定的附件 |
+上传、鉴权下载、本人未绑定附件删除、订单创建绑定、24 小时 cleanup 和本地文件约束已经迁入[当前 HTTP API](./03-http-api.md)，本目标文档不再重复维护 endpoint 字段和错误契约。
 
-首版目标允许 PDF、PNG 和 JPEG，单文件目标上限 10 MiB；服务端检测内容、生成存储键并计算摘要，不返回本地路径或公开静态 URL。上传产生 24 小时有效的未绑定附件，订单创建时校验所有者、有效期和绑定状态。
-
-阶段五 MVP 不新增订单删除 endpoint，也不交付内部 `ORDER_DELETE`、订单编辑附件重排或生产级恢复编排；这些能力只有出现真实产品需求后才通过新计划扩展。
+仍未实现：订单 PATCH 附件增删或重排、订单删除/内部 `ORDER_DELETE`、对象存储、常驻调度、跨进程恢复 journal、页面 UploadAction 映射与生产级恢复编排；这些能力只有出现真实产品需求后才通过新计划扩展。
 
 ## 7. 看板（已迁入当前 API）
 

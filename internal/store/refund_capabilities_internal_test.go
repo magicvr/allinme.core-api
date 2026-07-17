@@ -19,7 +19,7 @@ func TestOrderRefundCapabilitiesBatchLoadAndCorruptionClassification(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if queries != 4 || len(page.Items) != 10 {
+	if queries != 5 || len(page.Items) != 10 {
 		t.Fatalf("batch query count/items = %d/%d", queries, len(page.Items))
 	}
 	wantAvailable := map[string]int64{

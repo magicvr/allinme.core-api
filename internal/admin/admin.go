@@ -13,6 +13,8 @@ import (
 	"github.com/magicvr/allinme.core-api/internal/applock"
 	"github.com/magicvr/allinme.core-api/internal/auth"
 	"github.com/magicvr/allinme.core-api/internal/config"
+	"github.com/magicvr/allinme.core-api/internal/files"
+	"github.com/magicvr/allinme.core-api/internal/order"
 	"github.com/magicvr/allinme.core-api/internal/store"
 )
 
@@ -23,7 +25,7 @@ func Execute(ctx context.Context, lookup Lookup, arguments []string, output io.W
 		arguments = arguments[1:]
 	}
 	if len(arguments) != 1 {
-		return fmt.Errorf("usage: admin <migrate|seed|reset|bootstrap-admin>")
+		return fmt.Errorf("usage: admin <migrate|seed|reset|bootstrap-admin|cleanup-attachments>")
 	}
 	switch arguments[0] {
 	case "migrate":
@@ -64,6 +66,12 @@ func Execute(ctx context.Context, lookup Lookup, arguments []string, output io.W
 			return err
 		}
 		return bootstrapAdmin(ctx, configuration, output)
+	case "cleanup-attachments":
+		configuration, err := config.LoadBase(lookup)
+		if err != nil {
+			return err
+		}
+		return cleanupAttachments(ctx, configuration, output)
 	default:
 		return fmt.Errorf("unknown subcommand %q", arguments[0])
 	}
@@ -74,7 +82,7 @@ func Run(ctx context.Context, configuration config.Config, arguments []string, o
 		arguments = arguments[1:]
 	}
 	if len(arguments) != 1 {
-		return fmt.Errorf("usage: admin <migrate|seed|reset>")
+		return fmt.Errorf("usage: admin <migrate|seed|reset|cleanup-attachments>")
 	}
 	switch arguments[0] {
 	case "migrate":
@@ -83,6 +91,8 @@ func Run(ctx context.Context, configuration config.Config, arguments []string, o
 		return seed(ctx, configuration, output)
 	case "reset":
 		return reset(ctx, configuration, output, logger)
+	case "cleanup-attachments":
+		return cleanupAttachments(ctx, configuration, output)
 	default:
 		return fmt.Errorf("unknown subcommand %q", arguments[0])
 	}
@@ -140,12 +150,21 @@ func seedDemo(ctx context.Context, configuration config.DemoSeedConfig, output i
 	if err != nil {
 		return fmt.Errorf("refund demo seed failed after runtime, auth demo, and order demo seeds committed: %w", err)
 	}
+	fileStore, err := files.NewLocal(configuration.DataDir)
+	if err != nil {
+		return fmt.Errorf("attachment demo seed failed after runtime, auth demo, order demo, and refund demo seeds committed: %w", err)
+	}
+	attachmentResult, err := database.SeedAttachmentDemo(ctx, fileStore, time.Now())
+	if err != nil {
+		return fmt.Errorf("attachment demo seed failed after runtime, auth demo, order demo, and refund demo seeds committed: %w", err)
+	}
 	return writeSummary(output, "seed", struct {
-		Runtime store.SeedResult       `json:"runtime"`
-		Auth    store.AuthSeedResult   `json:"auth"`
-		Order   store.OrderSeedResult  `json:"order"`
-		Refund  store.RefundSeedResult `json:"refund"`
-	}{Runtime: runtimeResult, Auth: authResult, Order: orderResult, Refund: refundResult})
+		Runtime    store.SeedResult           `json:"runtime"`
+		Auth       store.AuthSeedResult       `json:"auth"`
+		Order      store.OrderSeedResult      `json:"order"`
+		Refund     store.RefundSeedResult     `json:"refund"`
+		Attachment store.AttachmentSeedResult `json:"attachment"`
+	}{Runtime: runtimeResult, Auth: authResult, Order: orderResult, Refund: refundResult, Attachment: attachmentResult})
 }
 
 func reset(ctx context.Context, configuration config.Config, output io.Writer, logger *slog.Logger) error {
@@ -160,10 +179,8 @@ func reset(ctx context.Context, configuration config.Config, output io.Writer, l
 	if err := validateResetTargets(configuration); err != nil {
 		return err
 	}
-	for _, target := range []string{configuration.DatabasePath, configuration.WALPath, configuration.SHMPath} {
-		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove %s: %w", filepath.Base(target), err)
-		}
+	if err := removeResetTargets(configuration); err != nil {
+		return err
 	}
 	if logger != nil {
 		logger.Info("database files removed for reset")
@@ -199,10 +216,8 @@ func resetDemo(ctx context.Context, configuration config.DemoSeedConfig, output 
 	if err := validateResetTargets(configuration.Config); err != nil {
 		return err
 	}
-	for _, target := range []string{configuration.DatabasePath, configuration.WALPath, configuration.SHMPath} {
-		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove %s: %w", filepath.Base(target), err)
-		}
+	if err := removeResetTargets(configuration.Config); err != nil {
+		return err
 	}
 	if logger != nil {
 		logger.Info("database files removed for reset")
@@ -236,13 +251,48 @@ func resetDemo(ctx context.Context, configuration config.DemoSeedConfig, output 
 	if err != nil {
 		return fmt.Errorf("refund demo seed failed after runtime, auth demo, and order demo seeds committed: %w", err)
 	}
+	fileStore, err := files.NewLocal(configuration.DataDir)
+	if err != nil {
+		return fmt.Errorf("attachment demo seed failed after runtime, auth demo, order demo, and refund demo seeds committed: %w", err)
+	}
+	attachmentResult, err := database.SeedAttachmentDemo(ctx, fileStore, time.Now())
+	if err != nil {
+		return fmt.Errorf("attachment demo seed failed after runtime, auth demo, order demo, and refund demo seeds committed: %w", err)
+	}
 	return writeSummary(output, "reset", struct {
-		Migration store.MigrationResult  `json:"migration"`
-		Runtime   store.SeedResult       `json:"runtime"`
-		Auth      store.AuthSeedResult   `json:"auth"`
-		Order     store.OrderSeedResult  `json:"order"`
-		Refund    store.RefundSeedResult `json:"refund"`
-	}{Migration: migration, Runtime: runtimeResult, Auth: authResult, Order: orderResult, Refund: refundResult})
+		Migration  store.MigrationResult      `json:"migration"`
+		Runtime    store.SeedResult           `json:"runtime"`
+		Auth       store.AuthSeedResult       `json:"auth"`
+		Order      store.OrderSeedResult      `json:"order"`
+		Refund     store.RefundSeedResult     `json:"refund"`
+		Attachment store.AttachmentSeedResult `json:"attachment"`
+	}{Migration: migration, Runtime: runtimeResult, Auth: authResult, Order: orderResult, Refund: refundResult, Attachment: attachmentResult})
+}
+
+func cleanupAttachments(ctx context.Context, configuration config.Config, output io.Writer) error {
+	lock, err := applock.Acquire(configuration.DatabasePath + ".api.lock")
+	if err != nil {
+		return fmt.Errorf("cleanup-attachments requires the API process to be stopped: %w", err)
+	}
+	defer lock.Close()
+	database, err := store.Open(ctx, configuration.DatabasePath, store.OpenExisting)
+	if err != nil {
+		return err
+	}
+	defer database.Close()
+	fileStore, err := files.NewLocal(configuration.DataDir)
+	if err != nil {
+		return err
+	}
+	service, err := order.NewAttachmentService(database, fileStore)
+	if err != nil {
+		return err
+	}
+	result, err := service.CleanupAttachments(ctx, order.CleanupAttachmentsCommand{})
+	if err != nil {
+		return err
+	}
+	return writeSummary(output, "cleanup-attachments", result)
 }
 
 func bootstrapAdmin(ctx context.Context, configuration config.BootstrapAdminConfig, output io.Writer) error {
@@ -281,6 +331,7 @@ func bootstrapAdmin(ctx context.Context, configuration config.BootstrapAdminConf
 
 func validateResetTargets(configuration config.Config) error {
 	dataDir := filepath.Clean(configuration.DataDir)
+	attachmentRoot := filepath.Join(dataDir, "attachments")
 	allowed := map[string]bool{
 		"allinme.db":     true,
 		"allinme.db-wal": true,
@@ -291,10 +342,26 @@ func validateResetTargets(configuration config.Config) error {
 			return fmt.Errorf("reset target is outside the configured data directory")
 		}
 	}
-	for _, target := range []string{dataDir, configuration.DatabasePath, configuration.WALPath, configuration.SHMPath} {
+	if filepath.Clean(attachmentRoot) != filepath.Join(dataDir, "attachments") || filepath.Clean(filepath.Dir(attachmentRoot)) != dataDir {
+		return fmt.Errorf("reset attachment target is outside the configured data directory")
+	}
+	for _, target := range []string{dataDir, configuration.DatabasePath, configuration.WALPath, configuration.SHMPath, attachmentRoot} {
 		if err := rejectReparsePoint(target); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func removeResetTargets(configuration config.Config) error {
+	for _, target := range []string{configuration.DatabasePath, configuration.WALPath, configuration.SHMPath} {
+		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove %s: %w", filepath.Base(target), err)
+		}
+	}
+	attachmentRoot := filepath.Join(filepath.Clean(configuration.DataDir), "attachments")
+	if err := os.RemoveAll(attachmentRoot); err != nil {
+		return fmt.Errorf("remove attachments: %w", err)
 	}
 	return nil
 }

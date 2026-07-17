@@ -12,6 +12,7 @@ import (
 	"github.com/magicvr/allinme.core-api/internal/applock"
 	"github.com/magicvr/allinme.core-api/internal/auth"
 	"github.com/magicvr/allinme.core-api/internal/config"
+	"github.com/magicvr/allinme.core-api/internal/files"
 	"github.com/magicvr/allinme.core-api/internal/httpapi"
 	"github.com/magicvr/allinme.core-api/internal/order"
 	"github.com/magicvr/allinme.core-api/internal/store"
@@ -40,15 +41,19 @@ func NewAuthenticatedAPI(configuration config.APIConfig, logger *slog.Logger) (*
 }
 
 type AuthDependencies struct {
-	Clock                  auth.Clock
-	NewID                  auth.IDGenerator
-	LimiterClock           httpapi.LimiterClock
-	DisableOrderActions    bool
-	RefundClock            order.Clock
-	NewRefundID            func() (string, error)
-	DashboardClock         order.Clock
-	DisableRefundRoutes    bool
-	DisableDashboardRoutes bool
+	Clock                   auth.Clock
+	NewID                   auth.IDGenerator
+	LimiterClock            httpapi.LimiterClock
+	DisableOrderActions     bool
+	RefundClock             order.Clock
+	NewRefundID             func() (string, error)
+	DashboardClock          order.Clock
+	AttachmentClock         order.Clock
+	NewAttachmentID         func() (string, error)
+	AttachmentFileStore     order.AttachmentFileStore
+	DisableRefundRoutes     bool
+	DisableDashboardRoutes  bool
+	DisableAttachmentRoutes bool
 }
 
 func NewAuthenticatedAPIWithDependencies(configuration config.APIConfig, dependencies AuthDependencies, logger *slog.Logger) (*API, error) {
@@ -117,6 +122,23 @@ func newAPI(configuration config.Config, signingKey []byte, corsAllowedOrigin st
 		dependencies.Refunds = refundService
 		dependencies.DisableRefundRoutes = authDependencies.DisableRefundRoutes
 		dependencies.DisableDashboardRoutes = authDependencies.DisableDashboardRoutes
+		attachmentFileStore := authDependencies.AttachmentFileStore
+		if attachmentFileStore == nil {
+			attachmentFileStore, err = files.NewLocal(configuration.DataDir)
+			if err != nil {
+				database.Close()
+				lock.Close()
+				return nil, err
+			}
+		}
+		attachmentService, attachmentServiceErr := order.NewAttachmentServiceWithDependencies(database, attachmentFileStore, authDependencies.AttachmentClock, authDependencies.NewAttachmentID)
+		if attachmentServiceErr != nil {
+			database.Close()
+			lock.Close()
+			return nil, attachmentServiceErr
+		}
+		dependencies.Attachments = attachmentService
+		dependencies.DisableAttachmentRoutes = authDependencies.DisableAttachmentRoutes
 		dashboardService, dashboardServiceErr := order.NewDashboardService(database, authDependencies.DashboardClock)
 		if dashboardServiceErr != nil {
 			database.Close()

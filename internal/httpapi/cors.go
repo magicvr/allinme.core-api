@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	corsAllowMethods = "GET, POST, PATCH, OPTIONS"
-	corsAllowHeaders = "Authorization, Content-Type, Idempotency-Key, X-Request-ID"
+	corsAllowMethods  = "GET, POST, PATCH, DELETE, OPTIONS"
+	corsAllowHeaders  = "Authorization, Content-Type, Idempotency-Key, X-Request-ID"
+	corsExposeHeaders = "X-Request-ID, Content-Disposition"
 )
 
 var allowedCORSRequestHeaders = map[string]bool{
@@ -43,7 +44,7 @@ func corsMiddleware(allowedOrigin string, routes []routeMetadata, next http.Hand
 			return
 		}
 		response.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-		response.Header().Set("Access-Control-Expose-Headers", requestIDHeader)
+		response.Header().Set("Access-Control-Expose-Headers", corsExposeHeaders)
 		next.ServeHTTP(response, request)
 	})
 }
@@ -72,7 +73,7 @@ func handleCORSPreflight(response http.ResponseWriter, request *http.Request, al
 	response.Header().Set("Access-Control-Allow-Methods", corsAllowMethods)
 	response.Header().Set("Access-Control-Allow-Headers", corsAllowHeaders)
 	response.Header().Set("Access-Control-Max-Age", "600")
-	response.Header().Set("Access-Control-Expose-Headers", requestIDHeader)
+	response.Header().Set("Access-Control-Expose-Headers", corsExposeHeaders)
 	response.WriteHeader(http.StatusNoContent)
 }
 

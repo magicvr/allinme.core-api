@@ -166,6 +166,10 @@ func (repositoryStub) GetIdempotency(context.Context, order.IdempotencyScope) (o
 	return order.IdempotencyRecord{}, false, nil
 }
 
+func (repositoryStub) PrepareAttachmentsForOrder(context.Context, string, []string, time.Time) ([]order.Attachment, error) {
+	return []order.Attachment{}, nil
+}
+
 func (repositoryStub) CreateOrderIdempotent(_ context.Context, persistence order.IdempotentCreatePersistence) (order.IdempotencyRecord, bool, error) {
 	return persistence.Record, true, nil
 }

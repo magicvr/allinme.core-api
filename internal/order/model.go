@@ -66,7 +66,9 @@ type Order struct {
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 	AvailableRefundAmount int64
+	AttachmentCount       int64
 	Items                 []Item
+	Attachments           []Attachment
 }
 
 type Capabilities struct {
@@ -138,6 +140,7 @@ type Repository interface {
 	ListOrders(context.Context, ListQuery) (Page, error)
 	GetOrder(context.Context, string) (Order, bool, error)
 	GetIdempotency(context.Context, IdempotencyScope) (IdempotencyRecord, bool, error)
+	PrepareAttachmentsForOrder(context.Context, string, []string, time.Time) ([]Attachment, error)
 	CreateOrderIdempotent(context.Context, IdempotentCreatePersistence) (IdempotencyRecord, bool, error)
 	UpdateDraft(context.Context, UpdateDraftPersistence) (Order, error)
 	TransitionOrder(context.Context, TransitionPersistence) (Order, error)

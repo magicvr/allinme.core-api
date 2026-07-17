@@ -65,7 +65,7 @@ applies_to: order operations demo target
 
 实施证据见已归档的 [阶段四计划](./plans/archived/PLN-0004-phase-04-refunds-dashboard.md) 与 [checklist](./plans/archived/PLN-0004-phase-04-refunds-dashboard-checklist.md)：已实现 additive schema v6、退款独立幂等 snapshot、writer fence/CAS 并发不变量、严格 HTTP/JWT/CORS 闭环、固定 seed 看板、UTC 7/30 日趋势、旧 v5 整库恢复边界及全仓 test/vet/race 门禁。
 
-## 6. 阶段五：附件
+## 6. 阶段五：附件（已实现）
 
 当前实现入口为[阶段五附件 MVP 计划](./plans/PLN-0007-phase-05-attachment-mvp.md)与[checklist](./plans/PLN-0007-phase-05-attachment-mvp-checklist.md)。原 `PLN-0005` 因在产品代码开工前引入生产级发布、恢复和 Evidence 供应链前置而原地归档，仅保留历史审计语境。
 
@@ -76,7 +76,7 @@ applies_to: order operations demo target
 - 实现鉴权下载、本人未绑定附件删除和过期未绑定文件的可重复清理；阶段五 MVP 不交付订单删除或内部 ORDER_DELETE；
 - 测试超限、伪造类型、路径穿越、部分失败和磁盘错误。
 
-完成证据：上传 endpoint 返回可供阶段六 UploadAction 消费的稳定附件 ID，订单提交后可通过受保护 API 下载；本阶段不验收页面 YAML、UploadAction 映射或页面回归。
+完成证据：schema v7、本地 `attachments/temp|content`、严格 multipart、鉴权 download/delete、订单创建事务绑定、snapshot v2/v1 兼容、一次性 cleanup、development seed/reset 和真实 app 重启闭环由 `internal/files|order|store|httpapi|app|admin` 测试覆盖。页面 YAML、UploadAction 映射、订单附件编辑、ORDER_DELETE、crash harness、调度、build tag/capability 与 Evidence 供应链仍不属于本阶段。
 
 ## 7. 阶段六：页面配置
 

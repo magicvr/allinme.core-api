@@ -63,6 +63,40 @@ func TestCreateAndEditValidationAndAuthorization(t *testing.T) {
 	}
 }
 
+func TestCreateAttachmentIDValidationAndEmptyNormalization(t *testing.T) {
+	valid := order.CreateCommand{CustomerName: "Customer", Currency: "CNY", Items: []order.ItemCommand{{SKU: "SKU", Name: "Item", Quantity: 1, UnitPrice: 1}}}
+	repository := &writeRepository{}
+	service, err := order.NewServiceWithDependencies(repository, nil, func() (string, error) { return "ord_00000000000000000000000000000001", nil }, func() (string, error) { return "itm_00000000000000000000000000000001", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Create(context.Background(), auth.Principal{UserID: "user-1", Role: auth.RoleOperator}, "empty", valid); err != nil {
+		t.Fatal(err)
+	}
+	if repository.created.Create.AttachmentIDs == nil || len(repository.created.Create.AttachmentIDs) != 0 {
+		t.Fatalf("normalized attachment IDs = %#v", repository.created.Create.AttachmentIDs)
+	}
+	for _, test := range []struct {
+		name  string
+		ids   []string
+		field string
+	}{
+		{name: "invalid", ids: []string{"bad"}, field: "attachmentIds[0]"},
+		{name: "duplicate", ids: []string{"att_00000000000000000000000000000001", "att_00000000000000000000000000000001"}, field: "attachmentIds[1]"},
+		{name: "too many", ids: []string{"att_00000000000000000000000000000001", "att_00000000000000000000000000000002", "att_00000000000000000000000000000003", "att_00000000000000000000000000000004", "att_00000000000000000000000000000005", "att_00000000000000000000000000000006", "att_00000000000000000000000000000007", "att_00000000000000000000000000000008", "att_00000000000000000000000000000009", "att_0000000000000000000000000000000a", "att_0000000000000000000000000000000b"}, field: "attachmentIds"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			command := valid
+			command.AttachmentIDs = test.ids
+			_, err := service.Create(context.Background(), auth.Principal{UserID: "user-1", Role: auth.RoleOperator}, test.name, command)
+			details, ok := order.ValidationDetails(err)
+			if !ok || len(details) != 1 || details[0].Field != test.field {
+				t.Fatalf("error = %v details=%+v", err, details)
+			}
+		})
+	}
+}
+
 func TestParseIntegerLexemeRejectsNonIntegerJSONForms(t *testing.T) {
 	for _, valid := range []string{"0", "-0", "1", "-1", "9223372036854775807", "-9223372036854775808"} {
 		if _, err := order.ParseIntegerLexeme(valid); err != nil {
@@ -120,11 +154,16 @@ func TestEditClassifiesResourceBeforeGeneratingItemIDs(t *testing.T) {
 }
 
 type writeRepository struct {
-	created      order.IdempotentCreatePersistence
-	updated      order.UpdateDraftPersistence
-	transitioned order.TransitionPersistence
-	existing     *order.IdempotencyRecord
-	current      *order.Order
+	created          order.IdempotentCreatePersistence
+	updated          order.UpdateDraftPersistence
+	transitioned     order.TransitionPersistence
+	existing         *order.IdempotencyRecord
+	lateExisting     *order.IdempotencyRecord
+	current          *order.Order
+	prepared         []order.Attachment
+	prepareErr       error
+	prepareCalls     int
+	idempotencyCalls int
 }
 
 func (repository *writeRepository) ListOrders(context.Context, order.ListQuery) (order.Page, error) {
@@ -137,10 +176,21 @@ func (repository *writeRepository) GetOrder(context.Context, string) (order.Orde
 	return *repository.current, true, nil
 }
 func (repository *writeRepository) GetIdempotency(context.Context, order.IdempotencyScope) (order.IdempotencyRecord, bool, error) {
+	repository.idempotencyCalls++
+	if repository.existing == nil && repository.idempotencyCalls > 1 && repository.lateExisting != nil {
+		return *repository.lateExisting, true, nil
+	}
 	if repository.existing == nil {
 		return order.IdempotencyRecord{}, false, nil
 	}
 	return *repository.existing, true, nil
+}
+func (repository *writeRepository) PrepareAttachmentsForOrder(context.Context, string, []string, time.Time) ([]order.Attachment, error) {
+	repository.prepareCalls++
+	if repository.prepared == nil {
+		return []order.Attachment{}, repository.prepareErr
+	}
+	return repository.prepared, repository.prepareErr
 }
 func (repository *writeRepository) CreateOrderIdempotent(_ context.Context, persistence order.IdempotentCreatePersistence) (order.IdempotencyRecord, bool, error) {
 	repository.created = persistence

@@ -3,6 +3,7 @@ package admin_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/magicvr/allinme.core-api/internal/admin"
 	"github.com/magicvr/allinme.core-api/internal/config"
+	"github.com/magicvr/allinme.core-api/internal/files"
+	"github.com/magicvr/allinme.core-api/internal/order"
 	"github.com/magicvr/allinme.core-api/internal/store"
 )
 
@@ -51,20 +54,181 @@ func TestMigrateSeedAndReset(t *testing.T) {
 	}
 	database.Close()
 	values := map[string]string{"DATA_DIR": configuration.DataDir, "DEMO_ACCOUNT_PASSWORD": "123456789012"}
+	output.Reset()
 	if err := admin.Execute(context.Background(), mapLookup(values), []string{"reset"}, &output, logger); err != nil {
 		t.Fatalf("demo reset error = %v", err)
+	}
+	if !bytes.Contains(output.Bytes(), []byte(`"attachment":{"Name":"attachment_demo","FromVersion":0,"ToVersion":1}`)) {
+		t.Fatalf("demo reset summary = %s", output.String())
 	}
 	database, err = store.Open(context.Background(), configuration.DatabasePath, store.OpenExisting)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	var orders, refunds int
+	var orders, refunds, attachments, mappings int
 	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM orders`).Scan(&orders); err != nil || orders != 10 {
 		t.Fatalf("reset demo orders = %d, error = %v", orders, err)
 	}
 	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM refunds`).Scan(&refunds); err != nil || refunds != 5 {
 		t.Fatalf("reset demo refunds = %d, error = %v", refunds, err)
+	}
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM attachments WHERE id = 'att_00000000000000000000000000000001' AND status = 'BOUND' AND expires_at IS NULL`).Scan(&attachments); err != nil || attachments != 1 {
+		t.Fatalf("reset demo attachments = %d, error = %v", attachments, err)
+	}
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM order_attachments WHERE attachment_id = 'att_00000000000000000000000000000001' AND order_id = 'ord_00000000000000000000000000000001' AND position = 0`).Scan(&mappings); err != nil || mappings != 1 {
+		t.Fatalf("reset demo mappings = %d, error = %v", mappings, err)
+	}
+	if _, err := os.Stat(filepath.Join(configuration.DataDir, "attachments", "content", "att_00000000000000000000000000000001")); err != nil {
+		t.Fatalf("reset demo attachment file missing: %v", err)
+	}
+}
+
+func TestResetRemovesOnlyAttachmentRoot(t *testing.T) {
+	configuration := developmentConfig(t)
+	if err := admin.Run(context.Background(), configuration, []string{"migrate"}, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	attachmentFile := filepath.Join(configuration.DataDir, "attachments", "content", "stale")
+	if err := os.MkdirAll(filepath.Dir(attachmentFile), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(attachmentFile, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unrelatedDir := filepath.Join(configuration.DataDir, "exports")
+	if err := os.MkdirAll(unrelatedDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	unrelated := filepath.Join(unrelatedDir, "keep.txt")
+	if err := os.WriteFile(unrelated, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := admin.Run(context.Background(), configuration, []string{"reset"}, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(configuration.DataDir, "attachments")); !os.IsNotExist(err) {
+		t.Fatalf("attachment root remained after reset: %v", err)
+	}
+	contents, err := os.ReadFile(unrelated)
+	if err != nil || string(contents) != "keep" {
+		t.Fatalf("unrelated data changed: %q, %v", contents, err)
+	}
+}
+
+func TestCleanupAttachmentsCommandUsesExistingDatabaseAndLocalStore(t *testing.T) {
+	configuration := developmentConfig(t)
+	if err := admin.Run(context.Background(), configuration, []string{"migrate"}, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.Open(context.Background(), configuration.DatabasePath, store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.SQL().Exec(`
+		INSERT INTO users(id, username, password_hash, role, created_at, updated_at)
+		VALUES ('user-operator', 'operator', 'hash', 'operator', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+	`); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	fileStore, err := files.NewLocal(configuration.DataDir)
+	if err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	expiredContent := []byte("%PDF-1.4\nexpired\n%%EOF\n")
+	boundContent := []byte("%PDF-1.4\nbound\n%%EOF\n")
+	expiredStored, err := fileStore.Write("att_00000000000000000000000000000010", "expired.pdf", expiredContent)
+	if err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	boundStored, err := fileStore.Write("att_00000000000000000000000000000011", "bound.pdf", boundContent)
+	if err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	createdAt := now.Add(-48 * time.Hour)
+	expiresAt := createdAt.Add(order.AttachmentUploadLifetime)
+	for _, attachment := range []order.Attachment{
+		{ID: "att_00000000000000000000000000000010", StorageKey: "att_00000000000000000000000000000010", FileName: expiredStored.FileName, ContentType: expiredStored.ContentType, SizeBytes: expiredStored.SizeBytes, SHA256: expiredStored.SHA256, Status: order.AttachmentStatusUploaded, CreatedBy: "user-operator", ExpiresAt: &expiresAt, CreatedAt: createdAt, UpdatedAt: createdAt},
+		{ID: "att_00000000000000000000000000000011", StorageKey: "att_00000000000000000000000000000011", FileName: boundStored.FileName, ContentType: boundStored.ContentType, SizeBytes: boundStored.SizeBytes, SHA256: boundStored.SHA256, Status: order.AttachmentStatusBound, CreatedBy: "user-operator", CreatedAt: createdAt, UpdatedAt: createdAt},
+	} {
+		if err := database.CreateAttachment(context.Background(), attachment); err != nil {
+			database.Close()
+			t.Fatal(err)
+		}
+	}
+	residualID := "att_00000000000000000000000000000012"
+	residualPath := filepath.Join(configuration.DataDir, "attachments", "temp", residualID)
+	if err := os.WriteFile(residualPath, []byte("residual"), 0o600); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	old := now.Add(-48 * time.Hour)
+	if err := os.Chtimes(residualPath, old, old); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	if err := admin.Run(context.Background(), configuration, []string{"cleanup-attachments"}, &output, nil); err != nil {
+		t.Fatal(err)
+	}
+	var summary struct {
+		Operation string `json:"operation"`
+		Result    struct {
+			Deleted          int `json:"Deleted"`
+			ResidualsDeleted int `json:"ResidualsDeleted"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.Operation != "cleanup-attachments" || summary.Result.Deleted != 1 || summary.Result.ResidualsDeleted != 1 {
+		t.Fatalf("cleanup summary = %s", output.String())
+	}
+	for _, removed := range []string{
+		filepath.Join(configuration.DataDir, "attachments", "content", "att_00000000000000000000000000000010"),
+		residualPath,
+	} {
+		if _, err := os.Stat(removed); !os.IsNotExist(err) {
+			t.Fatalf("cleanup target remains %s: %v", removed, err)
+		}
+	}
+	if contents, err := fileStore.Read("att_00000000000000000000000000000011"); err != nil || string(contents) != string(boundContent) {
+		t.Fatalf("bound attachment changed: %q, %v", contents, err)
+	}
+	database, err = store.Open(context.Background(), configuration.DatabasePath, store.OpenExisting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	var expiredRows, boundRows int
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM attachments WHERE id = 'att_00000000000000000000000000000010'`).Scan(&expiredRows); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM attachments WHERE id = 'att_00000000000000000000000000000011' AND status = 'BOUND'`).Scan(&boundRows); err != nil {
+		t.Fatal(err)
+	}
+	if expiredRows != 0 || boundRows != 1 {
+		t.Fatalf("cleanup rows expired=%d bound=%d", expiredRows, boundRows)
+	}
+}
+
+func TestCleanupAttachmentsRequiresExistingDatabase(t *testing.T) {
+	configuration := developmentConfig(t)
+	if err := admin.Run(context.Background(), configuration, []string{"cleanup-attachments"}, io.Discard, nil); err == nil {
+		t.Fatal("cleanup without database error = nil")
+	}
+	if _, err := os.Stat(configuration.DatabasePath); !os.IsNotExist(err) {
+		t.Fatalf("cleanup created database: %v", err)
 	}
 }
 
@@ -143,6 +307,9 @@ func TestExecuteDevelopmentSeedAndResetRequirePasswordBeforeDatabaseAccess(t *te
 	}
 	if err := admin.Execute(context.Background(), mapLookup(values), []string{"seed"}, &output, nil); err != nil {
 		t.Fatal(err)
+	}
+	if !bytes.Contains(output.Bytes(), []byte(`"attachment":{"Name":"attachment_demo"`)) {
+		t.Fatalf("development seed summary = %s", output.String())
 	}
 	database, err := store.Open(context.Background(), filepath.Join(dataDir, "allinme.db"), store.OpenExisting)
 	if err != nil {
@@ -239,6 +406,13 @@ func TestExecuteProductionBootstrapAdmin(t *testing.T) {
 	var refunds int
 	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM refunds`).Scan(&refunds); err != nil || refunds != 0 {
 		t.Fatalf("production seed refunds = %d, error = %v", refunds, err)
+	}
+	var attachments int
+	if err := database.SQL().QueryRow(`SELECT COUNT(*) FROM attachments`).Scan(&attachments); err != nil || attachments != 0 {
+		t.Fatalf("production seed attachments = %d, error = %v", attachments, err)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "attachments")); !os.IsNotExist(err) {
+		t.Fatalf("production seed created attachment storage: %v", err)
 	}
 }
 
