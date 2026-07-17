@@ -10,7 +10,9 @@ Go 实现的 Demo API 核心服务：可运行演示、为 Admin 后台提供真
 
 ## 快速开始
 
-要求：Go 1.22+（当前环境为 1.26）
+要求：Go 1.22+（当前环境为 1.26）。容器方式需 Docker / Docker Compose。
+
+### 本地 Go
 
 ```bash
 # 可选：复制环境变量示例
@@ -20,6 +22,18 @@ cp .env.example .env
 make run
 # 或
 go run ./cmd/server
+```
+
+### Docker
+
+```bash
+# 构建并前台运行（Ctrl+C 退出并删除容器）
+make docker-run
+
+# 或用 Compose 后台运行
+make docker-up
+make docker-logs
+make docker-down
 ```
 
 默认监听 `:8080`。
@@ -38,10 +52,16 @@ curl http://localhost:8080/v1/ping
 ├── internal/
 │   ├── config/          # 环境变量配置
 │   ├── handler/         # HTTP 路由与处理器
+│   ├── middleware/      # 中间件占位
+│   ├── repository/      # 数据访问占位
 │   ├── response/        # 统一 JSON 响应
-│   └── server/          # http.Server 组装
+│   ├── server/          # http.Server 组装
+│   └── service/         # 业务逻辑占位
 ├── pkg/
 │   └── version/         # 版本信息（可 -ldflags 注入）
+├── Dockerfile           # 多阶段构建
+├── docker-compose.yml   # 本地/演示编排
+├── .dockerignore
 ├── .env.example
 ├── .gitignore
 ├── go.mod
@@ -55,30 +75,53 @@ curl http://localhost:8080/v1/ping
 - `internal/` — 本服务私有逻辑，不对外 import
 - `pkg/` — 可被其他模块/项目安全复用的小包
 
-后续可按需增加 `internal/service`、`internal/repository`、`internal/middleware`、`api/openapi` 等，优先服务 Demo 闭环与 Admin 对接，避免空转的治理层。
+后续可按需充实 `service` / `repository` / `middleware`、`api/openapi` 等，优先服务 Demo 闭环与 Admin 对接，避免空转的治理层。
 
 ## 配置
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
 | `APP_NAME` | `allinme.core-api` | 应用名 |
-| `APP_ENV` | `development` | 环境 |
+| `APP_ENV` | `development` | 环境（镜像默认 `production`） |
 | `APP_VERSION` | `0.1.0` | 版本 |
 | `HTTP_ADDR` | `:8080` | 监听地址 |
 | `HTTP_READ_TIMEOUT` | `5s` | 读超时 |
 | `HTTP_WRITE_TIMEOUT` | `10s` | 写超时 |
 | `HTTP_IDLE_TIMEOUT` | `60s` | 空闲超时 |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+| `HTTP_PORT` | `8080` | Compose 宿主机映射端口 |
+
+Compose 可通过环境变量或取消注释 `env_file: .env` 覆盖配置。
+
+## Docker 说明
+
+- **多阶段构建**：`golang:1.26-alpine` 编译 → `alpine:3.21` 运行，静态链接、非 root 用户
+- **健康检查**：容器内 `wget` 访问 `/healthz`（Dockerfile 与 Compose 均配置）
+- **构建参数**：`VERSION` / `COMMIT` / `BUILT_AT` 注入 `pkg/version`
+- **上下文裁剪**：见 `.dockerignore`（排除 `.git`、二进制、本地密钥等）
+
+```bash
+# 仅构建镜像
+make docker-build
+
+# 无缓存重建并启动
+make docker-rebuild
+```
 
 ## 常用命令
 
 ```bash
-make run    # 本地启动
-make build  # 输出 bin/allinme.core-api
-make test   # 跑测试
-make tidy   # go mod tidy
-make fmt    # go fmt
-make vet    # go vet
+make run            # 本地启动
+make build          # 输出 bin/allinme.core-api
+make test           # 跑测试
+make tidy           # go mod tidy
+make fmt            # go fmt
+make vet            # go vet
+make docker-build   # 构建镜像
+make docker-run     # 构建并前台运行
+make docker-up      # Compose 后台启动
+make docker-down    # 停止 Compose
+make docker-logs    # 跟踪 api 日志
 ```
 
 ## 接口约定（初稿）
