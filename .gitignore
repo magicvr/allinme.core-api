@@ -1,0 +1,85 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+/build/
+/out/
+
+# Test binary, coverage
+*.test
+*.out
+coverage.html
+coverage.txt
+*.coverprofile
+profile.cov
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency / module cache (local vendor is optional; keep if committed intentionally)
+# vendor/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.crt
+secrets/
+credentials/
+
+# Config with local overrides
+configs/config.local.yaml
+configs/config.local.yml
+configs/config.local.json
+configs/*.local.*
+
+# Logs & temp
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# Debug
+debug
+__debug_bin*
+*.prof
+
+# Air / live reload
+tmp/
+
+# Docker local volumes
+.docker-data/
+
+# Misc
+*.bak
+*.tmp
+.claude/settings.local.json
