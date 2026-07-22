@@ -1,0 +1,88 @@
+{
+  "contractSchemaId": "https://github.com/magicvr/goal-governance/schema/skills-consumer-contract/v1",
+  "contractFormat": "goal-governance.skills-consumer-contract",
+  "contractFormatVersion": "0.2.0",
+  "canonical": {
+    "owner": "docs/contracts",
+    "manifestPath": "docs/contracts/skills-consumer-contract.json",
+    "schemaPath": "docs/contracts/skills-consumer-contract.schema.json"
+  },
+  "protocol": {
+    "version": "0.1.0",
+    "versionPolicy": "semver-2.0.0",
+    "publicContract": {
+      "goalTemplateFiles": [
+        "00-meta.md",
+        "01-decision.md",
+        "02-execution.md",
+        "03-audit.md"
+      ],
+      "requiredFrontmatter": [
+        "status",
+        "created",
+        "updated",
+        "parent",
+        "version"
+      ],
+      "hostEntrypoints": [
+        "govern",
+        "audit"
+      ]
+    }
+  },
+  "supportBaseline": {
+    "firstSupportedProtocol": "0.1.0",
+    "previousSupportedProtocol": "0.0.0"
+  },
+  "templateSet": {
+    "version": "0.1.0",
+    "implementsProtocol": {
+      "minInclusive": "0.1.0",
+      "maxExclusive": "0.2.0"
+    },
+    "canonicalPath": "docs/templates/goal-folder",
+    "mirrorPath": "skills/templates/goal-folder"
+  },
+  "adapterCompatibilityStatus": "declared",
+  "adapters": [
+    {
+      "id": "claude-code-cli",
+      "supportsProtocol": {
+        "minInclusive": "0.1.0",
+        "maxExclusive": "0.2.0"
+      },
+      "entrypoints": [
+        "govern",
+        "audit"
+      ],
+      "supportCommitment": "committed",
+      "verificationStatus": "verified"
+    },
+    {
+      "id": "grok-build-cli",
+      "supportsProtocol": {
+        "minInclusive": "0.1.0",
+        "maxExclusive": "0.2.0"
+      },
+      "entrypoints": [
+        "govern",
+        "audit"
+      ],
+      "supportCommitment": "committed",
+      "verificationStatus": "verified"
+    },
+    {
+      "id": "github-copilot-cli",
+      "supportsProtocol": {
+        "minInclusive": "0.1.0",
+        "maxExclusive": "0.2.0"
+      },
+      "entrypoints": [
+        "govern",
+        "audit"
+      ],
+      "supportCommitment": "committed",
+      "verificationStatus": "verified"
+    }
+  ]
+}

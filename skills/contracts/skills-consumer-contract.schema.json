@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/magicvr/goal-governance/schema/skills-consumer-contract/v1",
+  "title": "Goal Governance Skills Consumer Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractSchemaId",
+    "contractFormat",
+    "contractFormatVersion",
+    "canonical",
+    "protocol",
+    "supportBaseline",
+    "templateSet",
+    "adapterCompatibilityStatus",
+    "adapters"
+  ],
+  "properties": {
+    "contractSchemaId": {
+      "const": "https://github.com/magicvr/goal-governance/schema/skills-consumer-contract/v1"
+    },
+    "contractFormat": {
+      "const": "goal-governance.skills-consumer-contract"
+    },
+    "contractFormatVersion": {
+      "$ref": "#/$defs/semver"
+    },
+    "canonical": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "manifestPath", "schemaPath"],
+      "properties": {
+        "owner": {
+          "const": "docs/contracts"
+        },
+        "manifestPath": {
+          "const": "docs/contracts/skills-consumer-contract.json"
+        },
+        "schemaPath": {
+          "const": "docs/contracts/skills-consumer-contract.schema.json"
+        }
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "versionPolicy", "publicContract"],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "versionPolicy": {
+          "const": "semver-2.0.0"
+        },
+        "publicContract": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "goalTemplateFiles",
+            "requiredFrontmatter",
+            "hostEntrypoints"
+          ],
+          "properties": {
+            "goalTemplateFiles": {
+              "type": "array",
+              "uniqueItems": true,
+              "minItems": 4,
+              "items": {
+                "type": "string"
+              }
+            },
+            "requiredFrontmatter": {
+              "type": "array",
+              "uniqueItems": true,
+              "minItems": 5,
+              "items": {
+                "type": "string"
+              }
+            },
+            "hostEntrypoints": {
+              "type": "array",
+              "uniqueItems": true,
+              "minItems": 2,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "supportBaseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["firstSupportedProtocol", "previousSupportedProtocol"],
+      "properties": {
+        "firstSupportedProtocol": {
+          "$ref": "#/$defs/semver"
+        },
+        "previousSupportedProtocol": {
+          "anyOf": [
+            { "$ref": "#/$defs/semver" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "templateSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "implementsProtocol", "canonicalPath", "mirrorPath"],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "implementsProtocol": {
+          "$ref": "#/$defs/semverRange"
+        },
+        "canonicalPath": {
+          "const": "docs/templates/goal-folder"
+        },
+        "mirrorPath": {
+          "const": "skills/templates/goal-folder"
+        }
+      }
+    },
+    "adapterCompatibilityStatus": {
+      "enum": ["I-002-pending", "declared", "verified"]
+    },
+    "adapters": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/adapter"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "adapterCompatibilityStatus": {
+            "const": "I-002-pending"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "adapters": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "adapterCompatibilityStatus": {
+            "enum": ["declared", "verified"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "adapters": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "adapterCompatibilityStatus": {
+            "const": "verified"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "adapters": {
+            "items": {
+              "allOf": [
+                { "$ref": "#/$defs/adapter" },
+                {
+                  "properties": {
+                    "verificationStatus": {
+                      "const": "verified"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "semverRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minInclusive", "maxExclusive"],
+      "properties": {
+        "minInclusive": {
+          "$ref": "#/$defs/semver"
+        },
+        "maxExclusive": {
+          "$ref": "#/$defs/semver"
+        }
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "supportsProtocol",
+        "entrypoints",
+        "supportCommitment",
+        "verificationStatus"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "supportsProtocol": {
+          "$ref": "#/$defs/semverRange"
+        },
+        "entrypoints": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "supportCommitment": {
+          "enum": ["declared", "committed"]
+        },
+        "verificationStatus": {
+          "enum": ["unverified", "verified"]
+        }
+      }
+    }
+  }
+}

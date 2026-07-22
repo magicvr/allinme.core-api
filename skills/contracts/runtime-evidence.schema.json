@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/magicvr/goal-governance/schema/runtime-evidence/v1",
+  "title": "Goal Governance Host Runtime Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaId",
+    "format",
+    "formatVersion",
+    "capturedAt",
+    "unit",
+    "environment",
+    "behaviorSources",
+    "invocation",
+    "result",
+    "artifacts"
+  ],
+  "properties": {
+    "schemaId": {
+      "const": "https://github.com/magicvr/goal-governance/schema/runtime-evidence/v1"
+    },
+    "format": { "const": "goal-governance.host-runtime-evidence" },
+    "formatVersion": { "const": "1.0.0" },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consumer", "entrypoint", "protocolVersion"],
+      "properties": {
+        "consumer": { "type": "string", "minLength": 1 },
+        "entrypoint": { "enum": ["govern", "audit"] },
+        "protocolVersion": { "$ref": "#/$defs/semver" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product", "version", "platform", "provider", "model"],
+      "properties": {
+        "product": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "platform": { "type": "string", "minLength": 1 },
+        "provider": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "model": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] }
+      }
+    },
+    "behaviorSources": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/digest" }
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "cwd", "inputSha256", "inputSummary"],
+      "properties": {
+        "command": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "cwd": { "type": "string", "minLength": 1 },
+        "timeoutSeconds": { "type": "number", "exclusiveMinimum": 0 },
+        "inputSha256": { "$ref": "#/$defs/sha256" },
+        "inputSummary": { "type": "string", "minLength": 1 }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exitCode",
+        "verdict",
+        "marker",
+        "markerObserved",
+        "stdoutPath",
+        "stdoutSha256",
+        "stderrPath",
+        "stderrSha256",
+        "warnings",
+        "reason"
+      ],
+      "properties": {
+        "exitCode": { "type": "integer" },
+        "verdict": { "enum": ["pass", "fail", "blocked"] },
+        "marker": { "type": "string", "minLength": 1 },
+        "markerObserved": { "type": "boolean" },
+        "stdoutPath": { "type": "string", "minLength": 1 },
+        "stdoutSha256": { "$ref": "#/$defs/sha256" },
+        "stdoutMode": { "enum": ["raw", "claude-stream-json-sanitized"] },
+        "stderrPath": { "type": "string", "minLength": 1 },
+        "stderrSha256": { "$ref": "#/$defs/sha256" },
+        "stderrMode": { "enum": ["raw", "request-url-redacted"] },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "verdict": { "const": "pass" } } },
+          "then": {
+            "properties": {
+              "exitCode": { "const": 0 },
+              "markerObserved": { "const": true }
+            }
+          }
+        }
+      ]
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["screenshots"],
+      "properties": {
+        "screenshots": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

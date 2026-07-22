@@ -82,4 +82,89 @@ tmp/
 # Misc
 *.bak
 *.tmp
+
+# ---------------------------------------------------------------------------
+# AI coding tools
+# Keep shared team artifacts, e.g.:
+#   .claude/skills/  .grok/skills/  AGENTS.md  .github/copilot-instructions.md
+#   (optional) .codex/config.toml, .codex/skills/, .codex/rules/, .codex/agents/
+# Ignore personal overrides, secrets, sessions, caches, and local runtime state.
+# ---------------------------------------------------------------------------
+
+# Claude Code (Anthropic) — project skills/settings.json may be committed
 .claude/settings.local.json
+.claude/**/*.local.*
+.claude/cache/
+.claude/debug/
+.claude/todos/
+.claude/statsig/
+.claude/file-history/
+.claude/history.jsonl
+.claude/projects/
+.claude/sessions/
+.claude/shell-snapshots/
+.claude/session-env/
+.claude/paste-cache/
+.claude/ide/
+.claude/jobs/
+.claude/daemon/
+.claude/backups/
+.claude/plans/
+.claude/tasks/
+.claude/.last-*
+
+# OpenAI Codex — ignore secrets/runtime; shared config/skills/rules stay trackable
+.codex/auth.json
+.codex/**/auth.json
+.codex/**/*.local.*
+.codex/sessions/
+.codex/archived_sessions/
+.codex/tmp/
+.codex/.tmp/
+.codex/.sandbox/
+.codex/.sandbox-*/
+.codex/worktrees/
+.codex/sqlite/
+.codex/**/*.sqlite
+.codex/**/*.sqlite-*
+.codex/logs/
+.codex/**/*.log
+.codex/.codex-global-state.json*
+.codex/session_index.jsonl
+.codex/installation_id
+.codex/cap_sid
+.codex/attachments/
+.codex/backups/
+.codex/memories/
+.codex/browser/
+.codex/computer-use/
+.codex/node_repl/
+.codex/process_manager/
+.codex/visualizations/
+.codex/pets/
+.codex/ambient-suggestions/
+.codex/vendor_imports/
+
+# Grok Build (xAI) — project skills may be committed
+.grok/settings.local.json
+.grok/**/*.local.*
+.grok/auth.json
+.grok/auth.json.lock
+.grok/**/auth.json
+.grok/**/auth.json.lock
+.grok/sessions/
+.grok/active_sessions.json
+.grok/active_sessions.lock
+.grok/logs/
+.grok/cache/
+.grok/marketplace-cache/
+.grok/downloads/
+.grok/memtrace/
+.grok/tmp/
+.grok/.tmp/
+.grok/models_cache.json
+.grok/agent_id
+.grok/**/*.sqlite
+.grok/**/*.sqlite-*
+.grok/**/*.log
+.grok/*.lock

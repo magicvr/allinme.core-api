@@ -1,0 +1,159 @@
+{
+  "schemaId": "https://github.com/magicvr/goal-governance/schema/skills-consumer-compatibility-matrix/v1",
+  "format": "goal-governance.skills-consumer-compatibility-matrix",
+  "formatVersion": "1.0.0",
+  "candidateRevision": "v0.8.0",
+  "canonicalContractPath": "docs/contracts/skills-consumer-contract.json",
+  "protocol": {
+    "current": "0.1.0",
+    "previous": null,
+    "previousStatus": "not-applicable-first-supported-protocol"
+  },
+  "requiredEntrypoints": [
+    "govern",
+    "audit"
+  ],
+  "negativeFixtures": [
+    {
+      "id": "unsupported-protocol-0.2.0",
+      "kind": "unsupported-protocol",
+      "path": "docs/contracts/fixtures/invalid/unsupported-protocol-0.2.0.json",
+      "assertion": "Protocol 0.2.0 is outside every declared 0.1.x adapter range."
+    },
+    {
+      "id": "no-fabricated-predecessor",
+      "kind": "fabricated-predecessor",
+      "path": "docs/contracts/fixtures/invalid/fabricated-predecessor-0.0.0.json",
+      "assertion": "previousSupportedProtocol is null; no 0.0.x or other predecessor fixture may be claimed."
+    }
+  ],
+  "consumers": [
+    {
+      "id": "claude-code-cli",
+      "kind": "host-adapter",
+      "host": {
+        "product": "Claude Code CLI",
+        "version": "2.1.215",
+        "platform": "Windows 11",
+        "installationSurface": ".claude/skills/govern and .claude/skills/audit"
+      },
+      "supportsProtocol": {
+        "minInclusive": "0.1.0",
+        "maxExclusive": "0.2.0"
+      },
+      "supportCommitment": "committed",
+      "contractVerificationStatus": "verified",
+      "entrypoints": [
+        {
+          "name": "govern",
+          "status": "runtime-verified",
+          "evidence": [
+            "docs/workspace-001-goal-governance/GOAL-008-skills-consumer-adapter-release-consistency/attachments/runtime/claude-code-cli-govern-2026-07-22.json"
+          ]
+        },
+        {
+          "name": "audit",
+          "status": "runtime-verified",
+          "evidence": [
+            "docs/workspace-001-goal-governance/GOAL-008-skills-consumer-adapter-release-consistency/attachments/runtime/claude-code-cli-audit-2026-07-22.json"
+          ]
+        }
+      ],
+      "evidenceScope": "v0.8.0 candidate: machine-readable Claude Code CLI /govern and /audit dispatch evidence re-captured 2026-07-22 against current behavior sources (workspace-protocol skills + pack/release path). v0.7.0 artifacts remain archived historical baseline."
+    },
+    {
+      "id": "grok-build-cli",
+      "kind": "host-adapter",
+      "host": {
+        "product": "Grok Build CLI",
+        "version": "0.2.106",
+        "build": "bde89716f6",
+        "platform": "Windows 11",
+        "installationSurface": ".grok/skills/govern and .grok/skills/audit"
+      },
+      "supportsProtocol": {
+        "minInclusive": "0.1.0",
+        "maxExclusive": "0.2.0"
+      },
+      "supportCommitment": "committed",
+      "contractVerificationStatus": "verified",
+      "entrypoints": [
+        {
+          "name": "govern",
+          "status": "runtime-verified",
+          "evidence": [
+            "docs/workspace-001-goal-governance/GOAL-008-skills-consumer-adapter-release-consistency/attachments/runtime/grok-build-cli-govern-2026-07-22.json"
+          ]
+        },
+        {
+          "name": "audit",
+          "status": "runtime-verified",
+          "evidence": [
+            "docs/workspace-001-goal-governance/GOAL-008-skills-consumer-adapter-release-consistency/attachments/runtime/grok-build-cli-audit-2026-07-22.json"
+          ]
+        }
+      ],
+      "evidenceScope": "v0.8.0 candidate: Grok Build CLI 0.2.106 (bde89716f6) /govern and /audit re-captured 2026-07-22. v0.7.0 Grok 0.2.103 artifacts remain archived historical baseline."
+    },
+    {
+      "id": "github-copilot-cli",
+      "kind": "host-adapter",
+      "host": {
+        "product": "GitHub Copilot CLI",
+        "version": "1.0.71",
+        "platform": "Windows 11",
+        "installationSurface": "%APPDATA%/npm/@github/copilot"
+      },
+      "supportsProtocol": {
+        "minInclusive": "0.1.0",
+        "maxExclusive": "0.2.0"
+      },
+      "supportCommitment": "committed",
+      "contractVerificationStatus": "verified",
+      "entrypoints": [
+        {
+          "name": "govern",
+          "status": "runtime-verified",
+          "evidence": [
+            "docs/workspace-001-goal-governance/GOAL-008-skills-consumer-adapter-release-consistency/attachments/runtime/copilot-cli-govern-2026-07-22.json"
+          ]
+        },
+        {
+          "name": "audit",
+          "status": "runtime-verified",
+          "evidence": [
+            "docs/workspace-001-goal-governance/GOAL-008-skills-consumer-adapter-release-consistency/attachments/runtime/copilot-cli-audit-2026-07-22.json"
+          ]
+        }
+      ],
+      "evidenceScope": "v0.8.0 candidate: GitHub Copilot CLI 1.0.71 /govern and /audit re-captured 2026-07-22 (CLI-only; workspace path prompts). v0.7.0 replays remain archived historical baseline."
+    },
+    {
+      "id": "web-readonly-parser",
+      "kind": "goal-document-parser",
+      "host": {
+        "product": "Goal document parser",
+        "version": "repository-worktree",
+        "platform": "Python web test environment",
+        "installationSurface": "web/tests"
+      },
+      "supportsProtocol": {
+        "minInclusive": "0.1.0",
+        "maxExclusive": "0.2.0"
+      },
+      "supportCommitment": "not-applicable",
+      "contractVerificationStatus": "not-applicable",
+      "entrypoints": [
+        {
+          "name": "goal-document-parser",
+          "status": "automated-verified",
+          "evidence": [
+            "web/tests",
+            "docs/workspace-001-goal-governance/GOAL-008-skills-consumer-adapter-release-consistency/attachments/runtime/web-parser-ci-replay-2026-07-20.json"
+          ]
+        }
+      ],
+      "evidenceScope": "Web parses goal documents only; it is not a manifest adapter. automated-verified remains bound to web/tests plus CI provenance record. Skills consumer zip release does not require Web product feature completion."
+    }
+  ]
+}
