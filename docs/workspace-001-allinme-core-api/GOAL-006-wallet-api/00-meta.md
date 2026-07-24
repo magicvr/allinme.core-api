@@ -5,8 +5,8 @@ status: active
 parent: GOAL-002-mvp-demo-admin
 created: 2026-07-25
 updated: 2026-07-25
-version: 0.3.0
-progress: 20%
+version: 0.4.0
+progress: 50%
 ---
 
 # GOAL-006 · 钱包 API 与种子数据
@@ -18,7 +18,7 @@ progress: 20%
 ## 成功标准
 
 - [x] 钱包领域模型包含账户、余额、币种、active/frozen 状态与 version
-- [ ] Repository port、service 用例和 SQLite 实现遵守既有 IoC 边界
+- [x] Repository port、service 用例和 SQLite 实现遵守既有 IoC 边界
 - [ ] list/detail/create/update/freeze/unfreeze/batch-freeze API 完成
 - [ ] `PUT` 仅更新允许的元数据，不可修改 `balanceCents`
 - [ ] viewer 只读，admin/operator 可写；全部钱包路由需要 Bearer
@@ -38,8 +38,8 @@ progress: 20%
 |------|------|------|
 | W0 实施契约审视 | **完成** | D-003 固定跨层契约；A-001 design-plan 自审 pass |
 | W1 领域/port/service | **完成** | domain、WalletRepository port、全部 service 用例与 fake 接口测试 |
-| W2 SQLite/seed | **下一步** | schema、CAS、事务、幂等种子 |
-| W3 HTTP/RBAC | 未开始 | handler、路由与集成测试 |
+| W2 SQLite/seed | **完成** | wallets schema、CAS/错误分类、事务 batch-freeze、事务 seed 与 repository 测试 |
+| W3 HTTP/RBAC | **下一步** | composition root seed 接线、handler、路由与集成测试 |
 | W4 验证与自审 | 未开始 | 命令验证并对照成功标准 |
 
 ## 信息就绪与未知项（P-005）
@@ -60,7 +60,8 @@ progress: 20%
 
 ## 备注
 
-- W0 契约与 W1 领域/port/service 已完成；当前产品进度 20%。
-- I-001 已由 D-003 + A-001 verified；W2/W3 门禁保持解除，下一步进入 W2 SQLite/seed。
-- 尚未实现 SQLite wallet adapter、seed 或 HTTP/RBAC，不将其写为完成。
+- W0～W2 已完成；当前产品进度 50%。
+- WalletRepository SQLite adapter、wallets schema、事务 batch-freeze、SeedWallets 与 repository 测试已落地。
+- I-001 verified；下一步 W3 接入 composition root、启动 seed、HTTP/RBAC 与集成测试。
+- 尚未实现钱包 HTTP 路由，因此 API/RBAC/错误 envelope 和“启动时 seed”成功标准仍未勾选。
 - I-002 仍为 non-blocking/open，由父目标 M4 处理。

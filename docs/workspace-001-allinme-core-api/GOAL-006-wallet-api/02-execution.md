@@ -5,7 +5,7 @@ status: active
 parent: GOAL-002-mvp-demo-admin
 created: 2026-07-25
 updated: 2026-07-25
-version: 0.3.0
+version: 0.4.0
 ---
 
 # 执行记录 · GOAL-006
@@ -53,12 +53,35 @@ version: 0.3.0
 
 **边界**：W2 SQLite schema/repository/seed、W3 HTTP/RBAC 尚未实施。progress 调整为 **20%**，仅计入已完成的 W1 产品切片。
 
+### 2026-07-25 · W2 SQLite Repository 与事务种子完成
+
+**实现事实**：
+
+| 路径 | 说明 |
+|------|------|
+| `internal/repository/sqlite/db.go` | 新增 `wallets` schema；accountNo unique，balance/version/status 具备数据库约束。 |
+| `internal/repository/sqlite/wallet.go` | WalletRepository SQLite adapter：Create/Get/List、owner-only CAS、状态 CAS、事务 batch-freeze、Count、固定宽度 UTC 纳秒时间戳。 |
+| `internal/repository/sqlite/seed.go` | 新增 `SeedWallets`；空表检查与 active/frozen 两条种子在单一 transaction 中完成，失败全回滚、非空不重复。 |
+| `internal/repository/sqlite/wallet_test.go` | repository 与 seed 测试覆盖回滚重试、幂等、状态/q/分页、LIKE `%`/`_` 字面转义、时间排序、accountNo unique、owner CAS、状态 CAS/错误分类、batch 原子回滚。 |
+
+**D-003 对齐与复核**：
+
+- list 使用 `created_at DESC, id DESC`，offset 计算前拒绝 int 溢出。
+- q 参数对 `\\`、`%`、`_` 做 SQLite LIKE escape；测试证明 `%`/`_` 作为字面字符，不会退化为全量通配。
+- owner update 只更新 `owner_name`、version、updated_at，active/frozen 均可执行；余额、accountNo、currency、status、createdAt 保持不变。
+- CAS 0 行会进一步区分 `wallet_not_found`、`version_conflict` 与 `invalid_state`，避免统一折叠。
+- batch-freeze 在同一 transaction 中先核对全部目标存在且 active，再统一更新；任一 missing/frozen 均无部分变更。
+- 时间戳固定为 UTC 九位纳秒文本，测试覆盖同秒 0ns/100ms 排序与存储格式。
+
+**验证事实**：`go test -count=1 ./internal/repository/sqlite` **pass**；`go test -count=1 ./...` **pass**；`go vet ./...` **pass**；`git diff --check` 与 `git diff --cached --check` **pass**。
+
+**边界**：`SeedWallets` 尚未接入 composition root；钱包 HTTP/RBAC、请求边界与跨层集成测试仍属于 W3。progress 调整为 **50%**。
+
 ## 待办
 
-1. **W2**：实现 SQLite schema/repository/事务 seed 与测试
-2. **W3**：接线 HTTP/RBAC 与集成测试
-3. **W4**：运行最终验证命令并执行阶段/关门审计
+1. **W3**：接入 WalletRepository/SeedWallets/service，实现 HTTP/RBAC 与完整集成测试
+2. **W4**：运行最终验证命令并执行阶段/关门审计
 
 ## 进度评估
 
-**20% 产品实施进度**：W1 的领域模型、Repository port、全部 service 用例与接口级测试已完成；W2 SQLite/seed、W3 HTTP/RBAC、W4 最终验证与关门仍未完成。
+**50% 产品实施进度**：W1 domain/port/service 与 W2 SQLite/repository/seed 均完成；W3 HTTP/RBAC/composition root 和 W4 最终验证与关门尚未完成。

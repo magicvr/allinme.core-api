@@ -66,6 +66,44 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	return nil
 }
 
+// SeedWallets inserts deterministic demo wallets when the wallets table is empty.
+// The emptiness check and all inserts use one transaction so a failed seed leaves no partial data.
+func SeedWallets(ctx context.Context, wallets *WalletRepository) error {
+	tx, err := wallets.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("seed wallets begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM wallets`).Scan(&count); err != nil {
+		return fmt.Errorf("seed wallets count: %w", err)
+	}
+	if count > 0 {
+		return tx.Commit()
+	}
+	for _, wallet := range walletSeeds() {
+		if _, err := tx.ExecContext(ctx, `
+	INSERT INTO wallets (id, account_no, owner_name, balance_cents, currency, status, version, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, wallet.ID, wallet.AccountNo, wallet.OwnerName, wallet.BalanceCents, wallet.Currency, wallet.Status, wallet.Version, walletTimestamp(wallet.CreatedAt), walletTimestamp(wallet.UpdatedAt)); err != nil {
+			return fmt.Errorf("seed wallet %s: %w", wallet.AccountNo, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("seed wallets commit: %w", err)
+	}
+	return nil
+}
+
+func walletSeeds() []domain.Wallet {
+	seededAt := time.Date(2026, time.July, 25, 4, 0, 0, 0, time.UTC)
+	return []domain.Wallet{
+		{ID: "wal_seed_active", AccountNo: "WAL-1001", OwnerName: "Active Owner", BalanceCents: 125000, Currency: "CNY", Status: domain.WalletStatusActive, Version: 1, CreatedAt: seededAt, UpdatedAt: seededAt},
+		{ID: "wal_seed_frozen", AccountNo: "WAL-1002", OwnerName: "Frozen Owner", BalanceCents: 8800, Currency: "USD", Status: domain.WalletStatusFrozen, Version: 1, CreatedAt: seededAt.Add(time.Minute), UpdatedAt: seededAt.Add(time.Minute)},
+	}
+}
+
 func orderSeeds() []domain.Order {
 	seededAt := time.Date(2026, time.July, 25, 0, 0, 0, 0, time.UTC)
 	return []domain.Order{

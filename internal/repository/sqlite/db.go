@@ -66,6 +66,18 @@ CREATE TABLE IF NOT EXISTS orders (
 	created_at    TEXT NOT NULL,
 	updated_at    TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS wallets (
+	id            TEXT PRIMARY KEY NOT NULL,
+	account_no    TEXT NOT NULL UNIQUE,
+	owner_name    TEXT NOT NULL,
+	balance_cents INTEGER NOT NULL CHECK (balance_cents >= 0),
+	currency      TEXT NOT NULL,
+	status        TEXT NOT NULL CHECK (status IN ('active', 'frozen')),
+	version       INTEGER NOT NULL CHECK (version >= 1),
+	created_at    TEXT NOT NULL,
+	updated_at    TEXT NOT NULL
+);
 `
 	if _, err := db.ExecContext(ctx, ddl); err != nil {
 		return fmt.Errorf("sqlite: migrate: %w", err)
