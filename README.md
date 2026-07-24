@@ -41,7 +41,16 @@ make docker-down
 ```bash
 curl http://localhost:8080/healthz
 curl http://localhost:8080/readyz
-curl http://localhost:8080/v1/ping
+
+# 登录（种子用户 admin / operator / viewer，密码 Demo@1234）
+curl -s -X POST http://localhost:8080/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"Demo@1234"}'
+
+# 将返回的 accessToken 代入：
+# curl -H "Authorization: Bearer <token>" http://localhost:8080/v1/auth/me
+# curl -H "Authorization: Bearer <token>" http://localhost:8080/v1/admin/menu
+# curl -H "Authorization: Bearer <token>" http://localhost:8080/v1/ping
 ```
 
 ## 项目结构
@@ -91,7 +100,11 @@ curl http://localhost:8080/v1/ping
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `DB_DRIVER` | `sqlite` | 预留多驱动；MVP 仅实现 sqlite |
 | `SQLITE_PATH` | `data/demo.db` | SQLite 文件路径 |
+| `JWT_SECRET` | `dev-only-…` | HS256 密钥（非本地务必覆盖） |
+| `JWT_TTL` | `1h` | Access token 有效期 |
 | `HTTP_PORT` | `8080` | Compose 宿主机映射端口 |
+
+**Demo 种子用户**（空库启动时写入）：`admin` / `operator` / `viewer`，密码均为 `Demo@1234`。
 
 Compose 可通过环境变量或取消注释 `env_file: .env` 覆盖配置。
 

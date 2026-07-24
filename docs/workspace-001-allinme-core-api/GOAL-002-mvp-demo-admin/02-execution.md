@@ -5,53 +5,58 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-24
-version: 0.6.0
+version: 0.7.0
 ---
 
 # 执行记录 · GOAL-002
 
 ## 时间线
 
-### 2026-07-23 · 目标立项
+### 2026-07-23 · 目标立项 / 策略 A 阻塞
 
-- 创建五件套；登记 I-001～I-007；对照 2.0 缺口写 D-002。
+- 立项；批量走协议演进；blocked 至新协议。
 
-### 2026-07-23 · 策略 A 并阻塞
+### 2026-07-24 · 协议钉死、方案冻结、审计响应、I-009 关闭
 
-- 批量走协议演进；I-008 collecting；status blocked。
+- 2.4.1 钉死；I-002～I-007 decided；A-001 响应；GOAL-003 done；I-009 verified。
 
-### 2026-07-24 · I-008 关闭；解除 blocked
+### 2026-07-24 · M2 鉴权 JWT + RBAC + 菜单
 
-- 钉死 2.4.1；status active。
+**代码（composition root 接线，service 只依赖 port）**：
 
-### 2026-07-24 · 方案冻结（I-002～I-007）
+| 路径 | 说明 |
+|------|------|
+| `internal/domain/user.go` | User / PublicUser / 角色判断 |
+| `internal/port/user.go`、`security.go` | UserRepository、PasswordHasher、TokenService |
+| `internal/security/bcrypt.go`、`jwt.go` | bcrypt + HS256 JWT（TTL 可配，默认 1h） |
+| `internal/repository/sqlite/user.go`、`seed.go` | users 表 + 空库 seed |
+| `internal/service/auth` | Login / Me / ParseToken |
+| `internal/service/menu` | 静态菜单目录按角色过滤 |
+| `internal/middleware/auth.go` | Bearer 校验注入 context |
+| `internal/handler/auth.go`、`menu.go` | `POST /v1/auth/login`、`GET /v1/auth/me`、`GET /v1/admin/menu` |
+| `internal/app/app.go` | 组装 users/hasher/tokens/auth/menu + seed |
+| `internal/config` | `JWT_SECRET`、`JWT_TTL` |
 
-- 方案包 A；D-007～D-013；附件领域与协议映射；progress 20%。
+**API**：
 
-### 2026-07-24 · 响应 A-001 交叉审计
+- 公开：`POST /v1/auth/login`
+- 需 Bearer：`GET /v1/auth/me`、`GET /v1/admin/menu`、`GET /v1/ping`（及后续业务）
+- 仍公开：`/healthz`、`/readyz`
 
-- independent A-001：conditional；required F-001/F-002。
-- **F-001**：D-014 + 共享交接清单 H1～H7（GOAL-003 attachments）。
-- **F-002**：登记 **I-010** + D-016（M4 前关闭；候选 A 缓存下载 / B vendor）。
-- **F-003**：M1 改为门禁叙述（非工作包）。
-- **F-004**：D-015 钉死 list envelope 与钱包无调账。
-- **F-005**：D-017 保持全量验收 + 切片实施顺序。
-- progress → **22%**；**未**开始业务代码；I-009/I-010 仍 open。
+**种子用户**（密码均为 `Demo@1234`）：`admin` / `operator` / `viewer`。
 
-### 2026-07-24 · I-009 关闭（GOAL-003 关门）
+**菜单 RBAC**：admin 含「用户」入口；operator/viewer 见仪表盘与三域列表入口，无 users。
 
-- GOAL-003 independent **A-003** pass；self **A-004** 关门 pass；编排 **A-005** 响应。
-- GOAL-003 `status: done`；handover H1～H7 已勾。
-- 本目标 **I-009 → verified**；M1 完成；progress → **25%**。
-- **仍未**开始 M2 业务代码（下一步可开始）。
+**验证**：`go test ./...` pass（含 auth 集成：login→me→menu、无 token 401）。
+
+progress → **40%**；M2 **完成**；**未**开始三域业务 API（M3）。
 
 ## 待办
 
-1. **M2** 鉴权 + RBAC + 菜单
-2. M3 三域 API（订单优先）
-3. M4 page schema + **关闭 I-010** 校验路径
-4. M5 验收
+1. **M3** 订单 / 钱包 / 通知 API + 种子业务数据
+2. M4 page schema embed + **I-010** 校验路径
+3. M5 验收
 
 ## 进度评估
 
-**约 25%**：方案冻结完成；I-009 已关；I-010 仍开；M2 业务代码未开始。
+**约 40%**：鉴权与菜单闭环可用；三域与 page schema 未做。

@@ -6,7 +6,7 @@ parent: null
 created: 2026-07-23
 updated: 2026-07-24
 version: 0.5.0
-progress: 20%
+progress: 25%
 ---
 
 # GOAL-001 · 可复用的 Schema-UI 核心 API 基座
@@ -35,7 +35,7 @@ progress: 20%
 | **R0** | 治理与边界冻结 | **完成（阶段）** | Root/MVP 立项；策略 A；协议钉死 2.4.1（D-006） |
 | **R0.5** | 协议演进（外仓） | **完成** | `schema-ui-docs` 已发布 2.4.1；I-006 verified |
 | **R0.8** | 模块化 IoC 骨架 | **完成** | [GOAL-003](../GOAL-003-modular-ioc-foundation/00-meta.md) `done`；I-009 已放行 |
-| **R1** | MVP Demo Admin | **进行中** | [GOAL-002](../GOAL-002-mvp-demo-admin/00-meta.md)；方案已冻结；**M2 可开始** |
+| **R1** | MVP Demo Admin | **进行中** | [GOAL-002](../GOAL-002-mvp-demo-admin/00-meta.md)；M2 鉴权完成；M3 三域下一步 |
 | **R2** | 协议对齐与复用沉淀 | 未开始 | 关闭协议缺口（若有）、强化 conformance/校验、抽取 `pkg/`、文档化接入约定 |
 | **R3** | 多项目消费就绪 | 未开始 | 第二个消费项目可按文档接入；稳定版本与变更门禁 |
 

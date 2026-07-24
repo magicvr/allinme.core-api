@@ -45,9 +45,17 @@ CREATE TABLE IF NOT EXISTS meta (
 	key   TEXT PRIMARY KEY NOT NULL,
 	value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS users (
+	id            TEXT PRIMARY KEY NOT NULL,
+	username      TEXT NOT NULL UNIQUE,
+	name          TEXT NOT NULL,
+	password_hash TEXT NOT NULL,
+	roles_json    TEXT NOT NULL DEFAULT '[]'
+);
 `
 	if _, err := db.ExecContext(ctx, ddl); err != nil {
-		return fmt.Errorf("sqlite: migrate meta: %w", err)
+		return fmt.Errorf("sqlite: migrate: %w", err)
 	}
 	return nil
 }

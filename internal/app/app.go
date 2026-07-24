@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,9 @@ import (
 	"github.com/magicvr/allinme.core-api/internal/handler"
 	"github.com/magicvr/allinme.core-api/internal/port"
 	"github.com/magicvr/allinme.core-api/internal/repository/sqlite"
+	"github.com/magicvr/allinme.core-api/internal/security"
+	"github.com/magicvr/allinme.core-api/internal/service/auth"
+	"github.com/magicvr/allinme.core-api/internal/service/menu"
 	"github.com/magicvr/allinme.core-api/internal/service/meta"
 )
 
@@ -16,8 +20,9 @@ import (
 type App struct {
 	Handler http.Handler
 	Logger  *slog.Logger
-	// Meta is exported for tests and future modules; handlers use it via deps.
-	Meta *meta.Service
+	Meta    *meta.Service
+	Auth    *auth.Service
+	Menu    *menu.Service
 
 	cleanup func() error
 }
@@ -45,19 +50,33 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("app: open sqlite: %w", err)
 	}
 
-	var store port.MetaStore = sqlite.NewMetaStore(db)
-	metaSvc := meta.New(store)
+	var metaStore port.MetaStore = sqlite.NewMetaStore(db)
+	metaSvc := meta.New(metaStore)
+
+	hasher := security.NewBcryptHasher(0)
+	tokens := security.NewJWTService(cfg.Auth.JWTSecret, cfg.Auth.JWTTTL)
+	var users port.UserRepository = sqlite.NewUserRepository(db)
+	if err := sqlite.SeedUsers(context.Background(), users, hasher); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("app: seed users: %w", err)
+	}
+	authSvc := auth.New(users, hasher, tokens)
+	menuSvc := menu.New()
 
 	mux := http.NewServeMux()
 	handler.Register(mux, handler.Deps{
 		Logger: logger,
 		Meta:   metaSvc,
+		Auth:   authSvc,
+		Menu:   menuSvc,
 	})
 
 	return &App{
 		Handler: mux,
 		Logger:  logger,
 		Meta:    metaSvc,
+		Auth:    authSvc,
+		Menu:    menuSvc,
 		cleanup: func() error {
 			return db.Close()
 		},

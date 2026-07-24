@@ -5,8 +5,8 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-24
-version: 0.6.0
-progress: 25%
+version: 0.7.0
+progress: 40%
 ---
 
 # GOAL-002 · MVP · Demo 完整 Admin（协议驱动）
@@ -18,28 +18,28 @@ progress: 25%
 本仓只提供后端（page schema 生产 + 业务 API + 鉴权）。MVP **验收口径**：本服务返回的 page schema **覆盖 Admin 全部入口**。
 
 **实施协议**：`schema-ui-protocol` **2.4.1**（Root D-006）。  
-**架构**：遵守 Root D-008（IoC/接口模块化）；**编码实施优先依赖** [GOAL-003](../GOAL-003-modular-ioc-foundation/00-meta.md) 骨架可验收（交接清单见 [handover-to-goal-002.md](../GOAL-003-modular-ioc-foundation/attachments/handover-to-goal-002.md)）。
+**架构**：遵守 Root D-008；依赖 [GOAL-003](../GOAL-003-modular-ioc-foundation/00-meta.md)（已 done）。
 
 ## 成功标准
 
-- [ ] 真实登录与会话可用（JWT Bearer）；未认证访问受保护 API 被拒绝
-- [ ] 用户 / 角色 / 权限模型真实落地；page 与操作可按权限显隐；后端独立鉴权
-- [ ] 菜单与路由由后端下发定义驱动，覆盖 Admin 全部入口页面
+- [x] 真实登录与会话可用（JWT Bearer）；未认证访问受保护 API 被拒绝
+- [x] 用户 / 角色 / 权限模型真实落地；菜单按角色过滤；后端独立鉴权（page 写路径 permissions 待 M4）
+- [ ] 菜单与路由由后端下发定义驱动，覆盖 Admin 全部入口页面（菜单 API 已有；page schema 待 M4）
 - [ ] **订单、钱包、通知** 三域均具备列表+筛选+完整写路径 API 与对应 page schema
 - [ ] 至少一页仪表盘（grid）由 schema 定义并可取数
 - [ ] 行内动作与批量动作按 2.4.1 核心 capability 实现
-- [ ] 不实现上传
+- [x] 不实现上传
 - [ ] `meta.protocolVersion: "2.4"`；结构校验对照钉死 2.4.1 制品（消费路径见 **I-010**）
-- [ ] 默认 **SQLite** 持久化；repository 可替换驱动
+- [x] 默认 **SQLite** 持久化；repository 可替换驱动
 - [ ] 本地可启动演示闭环；文档可指出各入口 schema 获取方式
-- [ ] 业务代码依赖接口组装，不绕过 GOAL-003 / D-008 边界
+- [x] 业务代码依赖接口组装，不绕过 GOAL-003 / D-008 边界
 
 ## 模块范围（已确认）
 
 | 能力 | MVP |
 |------|-----|
 | 登录 / 会话 | JWT Bearer，真实校验 |
-| 菜单 / 路由 schema 驱动 | 需要 |
+| 菜单 / 路由 schema 驱动 | 菜单 API 已落地；page 待 M4 |
 | 业务域 | 订单、钱包、通知 |
 | 行内 / 批量 | 需要（2.4.1） |
 | 上传 | **不做** |
@@ -51,10 +51,10 @@ progress: 25%
 
 | 阶段 | 名称 | 状态 | 说明 |
 |------|------|------|------|
-| **M0** | 方案冻结 | **完成** | I-002～I-007 decided；I-010 已登记 |
-| **M1** | 门禁：I-009 | **完成** | GOAL-003 done；H1～H7 勾选；I-009 **verified**（2026-07-24） |
-| **M2** | 鉴权 + RBAC + 菜单 | **可开始** | 建议交付切片优先：auth → 再扩三域 |
-| **M3** | 三域 API + 种子数据 | 未开始 | 建议顺序：订单 → 钱包 → 通知（仍一次验收全量成功标准） |
+| **M0** | 方案冻结 | **完成** | I-002～I-007 decided |
+| **M1** | 门禁：I-009 | **完成** | GOAL-003 done |
+| **M2** | 鉴权 + RBAC + 菜单 | **完成** | JWT / seed / menu API（2026-07-24） |
+| **M3** | 三域 API + 种子数据 | **下一步** | 订单 → 钱包 → 通知 |
 | **M4** | page schema 生产与校验 | 未开始 | 依赖 **I-010** verified |
 | **M5** | 验收对照成功标准 | 未开始 | — |
 
@@ -64,14 +64,14 @@ progress: 25%
 |----|------|-----------------|----------|--------------|-----------------|------|-------------|-------------|
 | I-001 | required | 批量策略 | 策略 | 策略前 | 用户裁决 | **decided** | — | A；2.4.1 支持批量 |
 | I-008 | required | 新协议制品 | 解除 blocked | 恢复前 | 发布核对 | **verified** | — | 2.4.1 |
-| I-002 | required | 鉴权选型与种子用户 | 实施登录 | 实施前 | D-007 | **decided** | — | JWT Bearer；见 D-007 |
-| I-003 | required | 三域模型与 API | 方案冻结/实施 | 方案冻结前 | D-008 + 附件 | **decided** | — | [mvp-domain-and-api.md](attachments/mvp-domain-and-api.md)；D-015 钉死 envelope/余额 |
-| I-004 | required | RBAC 粒度与角色 | 方案冻结（权限） | 方案冻结前 | D-009 | **decided** | — | admin/operator/viewer |
-| I-005 | required | 2.4.1 CRUD 生命周期映射 | 方案冻结（写路径 UI） | 方案冻结前 | D-010 + 附件 | **decided** | — | [protocol-capability-mapping.md](attachments/protocol-capability-mapping.md) |
-| I-006 | required | 持久化选型与可换库 | 实施数据层 | 实施前 | D-011 | **decided** | — | 默认 SQLite |
-| I-007 | required | page schema 存储与下发 | 实施 page 生产 | 实施前 | D-012 | **decided** | — | embed YAML/JSON |
-| I-009 | required | GOAL-003 骨架可验收（交接清单 H1～H7 或书面有界放行） | **M2 起业务编码** | M1→M2 | 勾选 handover + GOAL-003 done | **verified** | — | **2026-07-24**：H1～H7 已勾；GOAL-003 `done`；A-003 pass + A-004 self 关门；见 GOAL-003 A-005 / 本目标 02-execution |
-| I-010 | required | 2.4.1 协议制品本地落仓与结构校验方式（路径、命令、失败门禁） | **M4 schema 校验 / 宣称校验通过** | **M4 前** | 决策 D-016 + 实施证据 | **open** | 收集中；M4 前关闭 | 见 D-016 候选方案；关闭前不得宣称校验门禁已满足 |
+| I-002 | required | 鉴权选型与种子用户 | 实施登录 | 实施前 | D-007 | **decided** | — | JWT Bearer；已实施 |
+| I-003 | required | 三域模型与 API | 方案冻结/实施 | 方案冻结前 | D-008 + 附件 | **decided** | — | 附件；M3 实施中 |
+| I-004 | required | RBAC 粒度与角色 | 方案冻结（权限） | 方案冻结前 | D-009 | **decided** | — | admin/operator/viewer；菜单已过滤 |
+| I-005 | required | 2.4.1 CRUD 生命周期映射 | 方案冻结（写路径 UI） | 方案冻结前 | D-010 + 附件 | **decided** | — | 映射附件 |
+| I-006 | required | 持久化选型与可换库 | 实施数据层 | 实施前 | D-011 | **decided** | — | SQLite |
+| I-007 | required | page schema 存储与下发 | 实施 page 生产 | 实施前 | D-012 | **decided** | — | embed |
+| I-009 | required | GOAL-003 骨架可验收 | M2 业务编码 | M1→M2 | handover + done | **verified** | — | 2026-07-24 |
+| I-010 | required | 2.4.1 制品本地落仓与校验 | M4 校验宣称 | **M4 前** | D-016 + 实施 | **open** | M4 前关闭 | 候选 A/B |
 
 ## 父目标
 
@@ -79,9 +79,8 @@ progress: 25%
 
 ## 依赖
 
-- [GOAL-003-modular-ioc-foundation](../GOAL-003-modular-ioc-foundation/00-meta.md) — I-009 交接（非 parent）
+- [GOAL-003-modular-ioc-foundation](../GOAL-003-modular-ioc-foundation/00-meta.md) — **done**
 
 ## 备注
 
-- 2026-07-24：方案包 A 冻结；A-001 审计响应。
-- 2026-07-24：GOAL-003 关门；**I-009 verified**；可推进 M2。
+- 2026-07-24：M2 落地 JWT + RBAC 菜单；下一步 M3 三域 API。

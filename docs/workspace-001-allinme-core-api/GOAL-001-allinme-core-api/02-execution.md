@@ -48,13 +48,18 @@ version: 0.4.0
 ### 2026-07-24 · GOAL-003 关门；R0.8 完成
 
 - GOAL-003 A-003 pass + A-004 self 关门 + A-005 响应；`done`。
-- GOAL-002 I-009 verified；Root 成功标准「骨架」勾选；progress → **20%**。
+- GOAL-002 I-009 verified；Root 成功标准「骨架」勾选。
+
+### 2026-07-24 · GOAL-002 M2 鉴权落地
+
+- JWT Bearer + bcrypt + seed 用户 + `/v1/admin/menu` 角色过滤。
+- Root progress → **25%**。
 
 ## 待办
 
-1. 推进 **GOAL-002 M2** 鉴权 + RBAC + 菜单
+1. 推进 **GOAL-002 M3** 三域 API
 2. R2 再评估 `pkg/` 抽取
 
 ## 进度评估
 
-**约 20%**：协议钉死、R0.8 骨架完成、R1 方案冻结；MVP 业务实施未开始。
+**约 25%**：骨架与鉴权完成；三域业务与 page schema 未开始。

@@ -15,6 +15,7 @@ type Config struct {
 	HTTP HTTPConfig
 	Log  LogConfig
 	DB   DBConfig
+	Auth AuthConfig
 }
 
 type AppConfig struct {
@@ -41,6 +42,12 @@ type DBConfig struct {
 	SQLitePath string
 }
 
+// AuthConfig holds JWT settings (GOAL-002 D-007).
+type AuthConfig struct {
+	JWTSecret string
+	JWTTTL    time.Duration
+}
+
 // Load reads configuration from the environment.
 func Load() (*Config, error) {
 	cfg := &Config{
@@ -61,6 +68,11 @@ func Load() (*Config, error) {
 		DB: DBConfig{
 			Driver:     getenv("DB_DRIVER", "sqlite"),
 			SQLitePath: getenv("SQLITE_PATH", "data/demo.db"),
+		},
+		Auth: AuthConfig{
+			// Demo default only — override JWT_SECRET in any non-local environment.
+			JWTSecret: getenv("JWT_SECRET", "dev-only-change-me-allinme-core-api"),
+			JWTTTL:    durationEnv("JWT_TTL", time.Hour),
 		},
 	}
 	return cfg, nil
