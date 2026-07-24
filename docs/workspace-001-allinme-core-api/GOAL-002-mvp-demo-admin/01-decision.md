@@ -4,8 +4,8 @@ doc: decision
 status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
-updated: 2026-07-24
-version: 0.6.0
+updated: 2026-07-25
+version: 0.7.0
 ---
 
 # 决策记录 · GOAL-002
@@ -183,3 +183,30 @@ version: 0.6.0
 **状态**：`accepted`
 
 **决定**：**保持全量成功标准一次验收**（不缩 scope）。实施切片优先级：M2 auth+菜单 → M3 订单闭环 → 钱包 → 通知 → M4 全入口 schema。切片只影响交付顺序，不改变关门标准。
+
+## D-018 · M3 订单 API 首切片实施契约（响应 A-004 F-006）
+
+**日期**：2026-07-25
+**状态**：`accepted`
+**关联**：M3 订单首切片；A-004 F-006；D-004 / D-008 / D-009 / D-015 / D-017
+
+**决定**：
+
+1. 订单路由统一使用 **`/v1/orders`**，不提供裸 **`/orders`** 兼容路径。首切片端点为：
+   - `GET /v1/orders`
+   - `GET /v1/orders/{id}`
+   - `POST /v1/orders`
+   - `PUT /v1/orders/{id}`
+   - `POST /v1/orders/{id}/mark-paid`
+   - `POST /v1/orders/{id}/cancel`
+   - `POST /v1/orders/batch-delete`
+2. 单项 `DELETE` 与 `refund` action 延后到订单域后续补齐，不属于本首切片；**GOAL-002 总成功标准不因此缩减**。
+3. 全部订单路由必须 Bearer；`viewer` 仅可读，`admin` 与 `operator` 可写。
+4. 列表参数为 `status`、`q`、`page`、`pageSize`；默认 `page=1`、`pageSize=20`，`pageSize` 上限 100；`q` 匹配 `orderNo` 或 `customerName`。
+5. create 默认 `pending`、`currency=CNY`、`version=1`。PUT 必须携带 version，且仅 `pending` 可修改 `customerName`、`amountCents`、`currency`、`remark`；`orderNo` 与 `status` 不可改。`mark-paid`/`cancel` 必须携带 version，且只允许 `pending`；成功写入均令 version 加 1。
+6. batch-delete 保持 D-008 body **`{ "ids": [] }`**：最多 100 个，拒绝空数组与重复 ID；事务 all-or-nothing；仅允许删除 `pending`/`cancelled`；成功返回删除数量。
+7. 所有成功响应使用 HTTP 200 + 既有 envelope；list 的 `data={list,total}`，单项 `data=order`，batch 的 `data={deleted:n}`。
+8. 错误语义：400 `bad_request`；404 `order_not_found`；409 `order_no_conflict`、`version_conflict` 或 `invalid_state`；500 `internal`。不得向客户端泄露底层错误。
+9. 批量删除不支持部分成功，符合 D-004。
+
+**为什么**：把 A-004 指出的跨层契约固定为可直接测试的实现边界，同时保持 D-017 的全量目标与 D-004 的批量一致性约束。

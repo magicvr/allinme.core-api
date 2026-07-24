@@ -53,6 +53,19 @@ CREATE TABLE IF NOT EXISTS users (
 	password_hash TEXT NOT NULL,
 	roles_json    TEXT NOT NULL DEFAULT '[]'
 );
+
+CREATE TABLE IF NOT EXISTS orders (
+	id            TEXT PRIMARY KEY NOT NULL,
+	order_no      TEXT NOT NULL UNIQUE,
+	customer_name TEXT NOT NULL,
+	status        TEXT NOT NULL,
+	amount_cents  INTEGER NOT NULL,
+	currency      TEXT NOT NULL,
+	remark        TEXT NOT NULL DEFAULT '',
+	version       INTEGER NOT NULL,
+	created_at    TEXT NOT NULL,
+	updated_at    TEXT NOT NULL
+);
 `
 	if _, err := db.ExecContext(ctx, ddl); err != nil {
 		return fmt.Errorf("sqlite: migrate: %w", err)

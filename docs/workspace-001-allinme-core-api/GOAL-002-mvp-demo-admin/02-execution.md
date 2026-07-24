@@ -4,8 +4,8 @@ doc: execution
 status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
-updated: 2026-07-24
-version: 0.7.0
+updated: 2026-07-25
+version: 0.9.0
 ---
 
 # 执行记录 · GOAL-002
@@ -51,12 +51,38 @@ version: 0.7.0
 
 progress → **40%**；M2 **完成**；**未**开始三域业务 API（M3）。
 
+### 2026-07-25 · M3 订单 API 首切片
+
+**实现事实**：
+
+| 路径 | 说明 |
+|------|------|
+| `internal/domain/order.go` | Order 与 `pending`/`paid`/`cancelled`/`refunded` 领域状态定义；本 HTTP 切片仅开放 pending→paid/cancelled。 |
+| `internal/port/order.go` | OrderRepository、列表筛选与稳定 not-found/orderNo/version/state/input 错误。 |
+| `internal/service/order/service.go` | 可注入时钟/ID 的创建、列表、详情、pending-only 更新、CAS 状态动作与批量删除用例。 |
+| `internal/repository/sqlite/order.go`、`db.go`、`seed.go` | `orders` schema、SQLite 查询/CAS/事务 batch-delete；幂等种子覆盖 pending/paid/cancelled/refunded。 |
+| `internal/handler/order.go`、`handler.go` | `/v1/orders` HTTP 适配、1 MiB 限制与拒绝未知 JSON 字段、Bearer/RBAC 路由。 |
+| `internal/app/app.go` | 唯一 composition root 注入 SQLite OrderRepository 与 Order service，并启动 seed。 |
+| `internal/service/order/service_test.go`、`internal/repository/sqlite/order_test.go`、`internal/handler/order_test.go` | service、SQLite 与完整 HTTP 集成覆盖。 |
+
+**首切片 API（均为 `/v1`）**：
+
+- `GET /v1/orders`、`GET /v1/orders/{id}`：Bearer 下三角色可读；list 返回 `data.list` / `data.total`，支持 `status`、`q`、`page`、`pageSize`（默认 1/20，上限100）。
+- `POST /v1/orders`、`PUT /v1/orders/{id}`、`POST /v1/orders/{id}/mark-paid`、`POST /v1/orders/{id}/cancel`、`POST /v1/orders/batch-delete`：仅 admin/operator；写操作遵守 D-018 的 version CAS 与状态机。
+- batch-delete body 为 `{ "ids": [] }`，最多100，拒绝空/重复，SQLite transaction all-or-nothing，且仅 pending/cancelled 可删。
+
+**验证事实（2026-07-25）**：已运行 `gofmt`；`go test -count=1 ./...` **pass**；`go vet ./...` **pass**；`git diff --check` **pass**。测试覆盖服务状态/版本与批量原子性、SQLite list/filter/pagination/unique/CAS/rollback/seed 幂等，以及认证、viewer 只读、operator/admin 写、envelope、create/get/update/actions/409/batch all-or-nothing HTTP 集成。
+
+**复核修正事实（同日）**：订单 seed 改为在单一 SQLite transaction 内完成空表检查和四条种子插入，插入中途失败会回滚且可重试；列表在计算 offset 前拒绝 int 溢出，极大 page 返回 `bad_request` / HTTP 400；订单时间戳改为固定宽度 UTC 纳秒文本，保证 SQLite `TEXT` 时间排序。新增中途 seed 失败后 count=0/重试完整、极大分页 400、同秒 0ns/100ms 排序与文本格式测试。
+
+progress → **50%**；M3 仍为进行中（订单首切片完成，钱包/通知待）。
+
 ## 待办
 
-1. **M3** 订单 / 钱包 / 通知 API + 种子业务数据
+1. **M3** 钱包 / 通知 API + 种子业务数据（订单单项 DELETE/refund 后续补齐）
 2. M4 page schema embed + **I-010** 校验路径
 3. M5 验收
 
 ## 进度评估
 
-**约 40%**：鉴权与菜单闭环可用；三域与 page schema 未做。
+**约 50%**：鉴权与菜单闭环、订单首切片及其 SQLite 种子/测试均已完成；钱包、通知与 page schema 仍未做。I-010 仍 open，仅阻断 M4 校验宣称。

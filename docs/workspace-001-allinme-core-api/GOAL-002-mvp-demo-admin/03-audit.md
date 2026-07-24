@@ -4,8 +4,8 @@ doc: audit
 status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
-updated: 2026-07-24
-version: 0.7.0
+updated: 2026-07-25
+version: 0.8.0
 ---
 
 # 审计 · GOAL-002
@@ -155,6 +155,49 @@ version: 0.7.0
 
 **I-009 verified**；可 `/govern` 推进 **M2 鉴权**。
 
+## A-004 · M3 订单首切片自审（2026-07-25）
+
+- **source**：self
+- **auditor**：Claude Code
+- **类型**：design-plan
+- **scope**：M3 订单首切片；审视既有目标文档、D-008/D-015/D-017、附件与当前 auth/RBAC/SQLite 分层代码，不审本次订单代码实施事实
+- **verdict**：**conditional**
+
+### 审视结论
+
+- **A-002 是对 A-001 的 response，不是 self audit**；因此本条补足 M3 订单首切片的 self 审视记录。
+- 既有路线图将 M3 切为订单→钱包→通知，且 D-017 明确切片顺序不缩减 GOAL-002 总成功标准；现有代码已具备 JWT Bearer、角色上下文、SQLite 与 handler→service→port←repository 的可接入边界。
+- 订单 D-008/附件虽已有领域与端点轮廓，但在开始实施前仍须把请求前缀、成功/错误语义、RBAC、分页、CAS 乐观锁及本首切片边界钉死，避免在 handler/service/repository 间产生不一致。
+
+### Findings
+
+| ID | 级别 | 说明 | 处置要求 |
+|----|------|------|----------|
+| **F-006** | **required** | 订单首切片实施契约尚未完整钉死：`/v1` 路由、envelope/错误码、RBAC、`status/q/page/pageSize` 分页、version CAS、可编辑字段/状态机，以及 batch-delete 的事务限制需要明确。 | 在实施前新增决策并同步附件，作为 handler/service/repository 测试依据。 |
+
+### 边界说明
+
+本首切片不开放单项 `DELETE` 或 `refund` action；这只是订单交付顺序边界，**不等于**取消 D-008/GOAL-002 的历史总目标范围。它们保留给订单域后续补齐。
+
+---
+
+## A-005 · A-004 方案响应（2026-07-25）
+
+- **source**：self
+- **auditor**：Claude Code
+- **类型**：response
+- **scope**：关闭 A-004 F-006 的方案/实施入口契约；不审本次订单代码事实
+- **verdict**：**pass**
+
+| Finding | 处置 | 状态 | 证据 |
+|---------|------|------|------|
+| A-004 **F-006** | 固定 `/v1/orders` 路由、Bearer/RBAC、分页/搜索、状态机与 version CAS、batch-delete body/事务限制、envelope 及错误码；同步订单附件。 | **closed** | [01-decision.md D-018](01-decision.md)；[mvp-domain-and-api.md](attachments/mvp-domain-and-api.md) 订单节 |
+
+**结论**：A-004 的 required finding 已由 D-018 与附件关闭；本 verdict 仅说明方案与实施入口已就绪，**不声明订单代码或测试已完成**。单项 DELETE/refund 仍保留为订单域后续范围，GOAL-002 总成功标准未缩减。
+
+---
+
 ## 备注
 
 - 2026-07-24：A-001 independent；A-002 govern 响应；A-003 I-009 关闭。
+- 2026-07-25：A-004 self design-plan；已由 A-005 以 D-018 与附件关闭其 required finding。

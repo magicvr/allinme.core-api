@@ -2,9 +2,9 @@
 title: MVP 领域模型与 API 摘要
 status: active
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-25
 parent: GOAL-002-mvp-demo-admin
-version: 0.1.0
+version: 0.2.0
 ---
 
 # MVP 领域模型与 API（GOAL-002 D-008）
@@ -25,18 +25,21 @@ version: 0.1.0
 | version | 乐观锁 |
 | createdAt, updatedAt | RFC3339 |
 
-**HTTP（均需鉴权，前缀建议 `/v1`）**
+**HTTP（均需 Bearer，统一前缀 `/v1`；D-018 首切片）**
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/orders` | 列表；query：status、q、page、pageSize |
-| GET | `/orders/{id}` | 详情 |
-| POST | `/orders` | 创建 |
-| PUT | `/orders/{id}` | 更新（带 version） |
-| DELETE | `/orders/{id}` | 删除 |
-| POST | `/orders/batch-delete` | body：`{ "ids": [] }` |
-| POST | `/orders/{id}/mark-paid` | 行内：仅 pending |
-| POST | `/orders/{id}/cancel` | 行内：仅 pending |
+| GET | `/v1/orders` | 列表；query：`status`、`q`、`page`、`pageSize`；默认 1/20，pageSize 最大 100；q 匹配 orderNo/customerName |
+| GET | `/v1/orders/{id}` | 详情 |
+| POST | `/v1/orders` | 创建；默认 pending、CNY、version=1 |
+| PUT | `/v1/orders/{id}` | 带 version；仅 pending 可修改 customerName/amountCents/currency/remark |
+| POST | `/v1/orders/batch-delete` | body：`{ "ids": [] }`；最多100，拒绝空/重复，事务 all-or-nothing；仅 pending/cancelled 可删 |
+| POST | `/v1/orders/{id}/mark-paid` | 带 version；仅 pending |
+| POST | `/v1/orders/{id}/cancel` | 带 version；仅 pending |
+
+`viewer` 只读；`admin`/`operator` 可写。所有成功响应为 HTTP 200 + envelope：list `data={list,total}`、单项 `data=order`、批量 `data={deleted:n}`。错误码为 400 `bad_request`、404 `order_not_found`、409 `order_no_conflict`/`version_conflict`/`invalid_state`、500 `internal`，且不得泄露内部错误。
+
+**后续订单范围（不属于 D-018 首切片）**：单项 `DELETE` 与 `refund` action 延后补齐；保留 paid→refunded 领域状态定义。这不缩减 D-008 或 GOAL-002 的总成功标准。
 
 列表响应 envelope（D-015）：`{ "code": 0, "message": "ok", "data": { "list": [], "total": n } }`。  
 Schema-UI `responseMapping` 稳定路径：`list: data.list`，`total: data.total`。

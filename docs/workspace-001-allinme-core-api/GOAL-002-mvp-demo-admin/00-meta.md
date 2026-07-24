@@ -4,9 +4,9 @@ title: MVP · Demo 完整 Admin（协议驱动）
 status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
-updated: 2026-07-24
-version: 0.7.0
-progress: 40%
+updated: 2026-07-25
+version: 0.8.0
+progress: 50%
 ---
 
 # GOAL-002 · MVP · Demo 完整 Admin（协议驱动）
@@ -54,7 +54,7 @@ progress: 40%
 | **M0** | 方案冻结 | **完成** | I-002～I-007 decided |
 | **M1** | 门禁：I-009 | **完成** | GOAL-003 done |
 | **M2** | 鉴权 + RBAC + 菜单 | **完成** | JWT / seed / menu API（2026-07-24） |
-| **M3** | 三域 API + 种子数据 | **下一步** | 订单 → 钱包 → 通知 |
+| **M3** | 三域 API + 种子数据 | **进行中** | 订单首切片完成（2026-07-25）；钱包 → 通知待实施 |
 | **M4** | page schema 生产与校验 | 未开始 | 依赖 **I-010** verified |
 | **M5** | 验收对照成功标准 | 未开始 | — |
 
@@ -84,3 +84,4 @@ progress: 40%
 ## 备注
 
 - 2026-07-24：M2 落地 JWT + RBAC 菜单；下一步 M3 三域 API。
+- 2026-07-25：M3 订单首切片完成（API、SQLite seed、测试）；钱包/通知待，I-010 仍 open 且仅阻断 M4 校验宣称。

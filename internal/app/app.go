@@ -14,6 +14,7 @@ import (
 	"github.com/magicvr/allinme.core-api/internal/service/auth"
 	"github.com/magicvr/allinme.core-api/internal/service/menu"
 	"github.com/magicvr/allinme.core-api/internal/service/meta"
+	orderservice "github.com/magicvr/allinme.core-api/internal/service/order"
 )
 
 // App is the wired application graph (composition result).
@@ -23,6 +24,7 @@ type App struct {
 	Meta    *meta.Service
 	Auth    *auth.Service
 	Menu    *menu.Service
+	Order   *orderservice.Service
 
 	cleanup func() error
 }
@@ -62,6 +64,13 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	}
 	authSvc := auth.New(users, hasher, tokens)
 	menuSvc := menu.New()
+	orderRepository := sqlite.NewOrderRepository(db)
+	if err := sqlite.SeedOrders(context.Background(), orderRepository); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("app: seed orders: %w", err)
+	}
+	var orders port.OrderRepository = orderRepository
+	orderSvc := orderservice.New(orders)
 
 	mux := http.NewServeMux()
 	handler.Register(mux, handler.Deps{
@@ -69,6 +78,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		Meta:   metaSvc,
 		Auth:   authSvc,
 		Menu:   menuSvc,
+		Order:  orderSvc,
 	})
 
 	return &App{
@@ -77,6 +87,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		Meta:    metaSvc,
 		Auth:    authSvc,
 		Menu:    menuSvc,
+		Order:   orderSvc,
 		cleanup: func() error {
 			return db.Close()
 		},

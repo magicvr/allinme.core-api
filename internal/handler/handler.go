@@ -8,6 +8,7 @@ import (
 	"github.com/magicvr/allinme.core-api/internal/service/auth"
 	"github.com/magicvr/allinme.core-api/internal/service/menu"
 	"github.com/magicvr/allinme.core-api/internal/service/meta"
+	orderservice "github.com/magicvr/allinme.core-api/internal/service/order"
 )
 
 // Deps are inbound adapter dependencies injected by the composition root.
@@ -16,6 +17,7 @@ type Deps struct {
 	Meta   *meta.Service
 	Auth   *auth.Service
 	Menu   *menu.Service
+	Order  *orderservice.Service
 }
 
 // Register mounts all HTTP routes on mux.
@@ -35,4 +37,15 @@ func Register(mux *http.ServeMux, deps Deps) {
 	mux.Handle("GET /v1/ping", require(ping(deps.Logger)))
 	mux.Handle("GET /v1/auth/me", require(me(deps.Auth)))
 	mux.Handle("GET /v1/admin/menu", require(adminMenu(deps.Menu)))
+	mux.Handle("GET /v1/orders", require(listOrders(deps.Order)))
+	mux.Handle("GET /v1/orders/{id}", require(getOrder(deps.Order)))
+
+	orderWrite := func(next http.Handler) http.Handler {
+		return require(middleware.RequireRoles("admin", "operator")(next))
+	}
+	mux.Handle("POST /v1/orders", orderWrite(createOrder(deps.Order)))
+	mux.Handle("PUT /v1/orders/{id}", orderWrite(updateOrder(deps.Order)))
+	mux.Handle("POST /v1/orders/{id}/mark-paid", orderWrite(markOrderPaid(deps.Order)))
+	mux.Handle("POST /v1/orders/{id}/cancel", orderWrite(cancelOrder(deps.Order)))
+	mux.Handle("POST /v1/orders/batch-delete", orderWrite(batchDeleteOrders(deps.Order)))
 }
