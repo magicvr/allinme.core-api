@@ -1,11 +1,11 @@
 ---
 id: GOAL-003-modular-ioc-foundation
 doc: decision
-status: active
+status: done
 parent: GOAL-001-allinme-core-api
 created: 2026-07-24
 updated: 2026-07-24
-version: 0.2.0
+version: 0.4.0
 ---
 
 # 决策记录 · GOAL-003
@@ -13,6 +13,8 @@ version: 0.2.0
 ## 信息需求与阶段门禁
 
 权威表见 [00-meta.md](00-meta.md)。原则全文见 Root D-008。
+
+- I-003：**verified** — 驱动 **modernc.org/sqlite**（见 02-execution 2026-07-24）。
 
 ## D-001 · 包布局与端口约定
 

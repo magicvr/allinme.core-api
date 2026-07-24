@@ -5,7 +5,7 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-24
-version: 0.5.0
+version: 0.6.0
 ---
 
 # 决策记录 · GOAL-002
@@ -16,7 +16,7 @@ version: 0.5.0
 
 - I-001 / I-008：已关闭。
 - **I-002～I-007**：**`decided`**（D-007～D-012）；方案冻结完成。
-- **I-009**：**open** — 阻断 M2；关闭判据 = 交接清单 H1～H7（D-014）或 §3 书面放行。
+- **I-009**：**verified**（2026-07-24）— GOAL-003 done + H1～H7；M2 可开始。
 - **I-010**：**open** — 阻断 M4 校验宣称；见 D-016。
 
 ## D-001 · MVP 范围与验收口径

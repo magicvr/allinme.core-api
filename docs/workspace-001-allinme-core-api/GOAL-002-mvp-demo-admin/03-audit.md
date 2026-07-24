@@ -5,7 +5,7 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-24
-version: 0.6.0
+version: 0.7.0
 ---
 
 # 审计 · GOAL-002
@@ -16,7 +16,7 @@ version: 0.6.0
 |------|------|------|
 | I-001 / I-008 | 已关 | 策略 A；2.4.1 |
 | I-002～I-007 | decided | 方案冻结 |
-| I-009 骨架门禁 | **open** | 判据 = H1～H7（D-014）；阻断 M2 |
+| I-009 骨架门禁 | **verified** | GOAL-003 done + H1～H7；M2 可开始 |
 | I-010 制品校验路径 | **open** | D-016；阻断 M4 校验宣称 |
 
 ## 审计意见台账
@@ -115,18 +115,46 @@ version: 0.6.0
 | A-001 F-004 | D-015 envelope + 钱包无调账 | **closed** | D-015；[mvp-domain-and-api.md](attachments/mvp-domain-and-api.md) |
 | A-001 F-005 | 保持全量标准 + 切片顺序 | **closed** | D-017 |
 
-### 仍开放项
+### 仍开放项（A-002 当时）
 
 | 项 | 说明 |
 |----|------|
-| I-009 | 待 GOAL-003 H1～H7 证据；阻断 M2 |
-| I-010 | 待 M4 落仓/校验命令证据；阻断「校验已满足」宣称 |
-| design-plan self 审计 | 未做；见下 P-004 |
+| I-009 | 当时 open（**后已 verified**，见 A-003） |
+| I-010 | 待 M4 |
+| design-plan self | 未做（非本轮强制） |
 
 ### 结论
 
-规划层 A-001 **required 已响应关闭**；可继续推进 **GOAL-003 S2**，**不得**因此开启 GOAL-002 M2 业务编码。
+规划层 A-001 **required 已响应关闭**。
+
+---
+
+## A-003 · I-009 关闭记录（跟随 GOAL-003 关门）（2026-07-24）
+
+- **source**：self（编排响应 / 门禁关闭，**非** independent）
+- **auditor**：/govern · Grok
+- **类型**：response / 信息门禁关闭
+- **scope**：关闭 I-009；不审 M2 实施
+- **verdict**：**pass**
+
+### 关闭证据
+
+| 项 | 证据 |
+|----|------|
+| H1～H7 | [handover-to-goal-002.md](../GOAL-003-modular-ioc-foundation/attachments/handover-to-goal-002.md) 全勾 |
+| GOAL-003 done | GOAL-003 00-meta `status: done`；progress 100% |
+| independent 实施审 | GOAL-003 **A-003** pass，无 required |
+| self 关门 | GOAL-003 **A-004** pass |
+| 编排响应 | GOAL-003 **A-005**；用户指令确认 |
+
+### 仍开放
+
+- **I-010**（M4）；M2～M5 业务实施未开始。
+
+### 结论
+
+**I-009 verified**；可 `/govern` 推进 **M2 鉴权**。
 
 ## 备注
 
-- 2026-07-24：A-001 independent；A-002 govern 响应。
+- 2026-07-24：A-001 independent；A-002 govern 响应；A-003 I-009 关闭。

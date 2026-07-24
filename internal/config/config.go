@@ -14,6 +14,7 @@ type Config struct {
 	App  AppConfig
 	HTTP HTTPConfig
 	Log  LogConfig
+	DB   DBConfig
 }
 
 type AppConfig struct {
@@ -33,6 +34,13 @@ type LogConfig struct {
 	Level string
 }
 
+// DBConfig holds persistence settings. MVP default is SQLite; drivers stay behind ports.
+type DBConfig struct {
+	// Driver is reserved for future multi-driver selection (sqlite | postgres | ...).
+	Driver     string
+	SQLitePath string
+}
+
 // Load reads configuration from the environment.
 func Load() (*Config, error) {
 	cfg := &Config{
@@ -49,6 +57,10 @@ func Load() (*Config, error) {
 		},
 		Log: LogConfig{
 			Level: getenv("LOG_LEVEL", "info"),
+		},
+		DB: DBConfig{
+			Driver:     getenv("DB_DRIVER", "sqlite"),
+			SQLitePath: getenv("SQLITE_PATH", "data/demo.db"),
 		},
 	}
 	return cfg, nil

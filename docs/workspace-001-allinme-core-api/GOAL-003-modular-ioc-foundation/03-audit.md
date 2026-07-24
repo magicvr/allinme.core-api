@@ -1,11 +1,11 @@
 ---
 id: GOAL-003-modular-ioc-foundation
 doc: audit
-status: active
+status: done
 parent: GOAL-001-allinme-core-api
 created: 2026-07-24
 updated: 2026-07-24
-version: 0.3.0
+version: 0.5.0
 ---
 
 # 审计 · GOAL-003
@@ -16,75 +16,91 @@ version: 0.3.0
 |----|------|------|
 | I-001 包布局 | decided | D-001 |
 | I-002 wire | decided | 不引入 |
-| I-003 SQLite 驱动库 | open · non-blocking | **S3 当日**关闭 |
+| I-003 SQLite 驱动库 | **verified** | modernc.org/sqlite v1.54.0 |
 | I-004 MetaStore 切片 | decided | D-004 |
+| 关门 required 信息项 | 无开放 | — |
 
 ## 审计意见台账
 
 ## A-001 · 规划合理性交叉审计（R0.8 / vs GOAL-002 前置）（2026-07-24）
 
 - **source**：independent
+- **verdict**：**conditional**（历史；required 已由 A-002 关闭）
+
+> 全文见历史正文（未删）。F-001～F-005 关闭证据见 A-002。
+
+---
+
+## A-002 · 编排响应 A-001（2026-07-24）
+
+- **source**：self（编排响应）
+- **verdict**：**pass**
+
+> F-001～F-005 closed。全文见历史正文。
+
+---
+
+## A-003 · 实施事实与关门就绪交叉审计（2026-07-24）
+
+- **source**：independent
 - **auditor**：GitHub Copilot · Grok 4.5
-- **类型**：design-plan
-- **scope**：GOAL-003 当前规划（S1～S4、成功标准、D-001/D-002、对 GOAL-002 I-009 的供给）；不审代码实施完成度、不关门
-- **verdict**：**conditional**
+- **类型**：execution-facts（兼 close-out 就绪核对）
+- **scope**：GOAL-003 S2～S4 实施主张 vs 成功标准 / 交接 H1～H7 / I-00N 门禁；**不**改 status/progress；**不**代为 `done` 或关闭 GOAL-002 I-009
+- **verdict**：**pass**
 - **完整意见**：本节即全文（未另附 attachments）
 
 ### 范围与区间
 
-- 工作区：`workspace-001-allinme-core-api`；Root / canonical 与 GOAL-002 A-001 相同；`shared_materials_catalog=none`。
-- 只读依据：本目标五件套、[module-map-draft.md](attachments/module-map-draft.md)、Root D-008/D-009、GOAL-002 I-009/D-013、`cmd/server/main.go`（handler 直连、无 `internal/app` / port）、`internal/` 目录现状、principles P-001～P-005。
-- **未**修改 status/progress/方案/goal-tree。
+- 工作区：`workspace-001-allinme-core-api`；`root_goal=GOAL-001-allinme-core-api`；`canonical_scope=docs/workspace-001-allinme-core-api/`；`shared_materials_catalog=none`（无共享资料引用可核）。
+- 只读依据：本目标五件套 + [handover-to-goal-002.md](attachments/handover-to-goal-002.md) + [module-map-draft.md](attachments/module-map-draft.md)；[modular-ioc.md](../../../architecture/modular-ioc.md)；[goal-tree.md](../goal-tree.md)；`cmd/server`、`internal/{app,port,service/meta,repository/{sqlite,memory},handler,config}`、`go.mod`、README；A-001/A-002 台账。
+- 本轮复验：`go test ./...` pass；进程 smoke（`HTTP_ADDR=:18080`、`SQLITE_PATH=data/audit-smoke.db`）→ `/healthz=ok`、`/readyz=ready`、`/v1/ping` message=`pong`。
+- **未**修改 `00-meta` status/progress、方案正文或 goal-tree 状态列。
 
 ### 成果（有证据）
 
 | 主张 | 证据 |
 |------|------|
-| 独立 R0.8 骨架目标，不吞并三域业务 | [00-meta 概述](00-meta.md)；D-002；Root D-009 |
-| 包布局与依赖方向已决策 | D-001；module-map-draft |
-| 成功标准可验收且对齐 P-M1～P-M8 | [00-meta 成功标准](00-meta.md)；Root D-008 |
-| 不引入重型 DI；wire 明确非 MVP | I-002 decided；P-M7 |
-| progress 0% 诚实（仅立项+布局决策） | [02-execution.md](02-execution.md)；仓库尚无 port/app 代码 |
-| 作为 GOAL-002 实施前置写在树与下游 | goal-tree；00-meta 下游；GOAL-002 I-009 |
+| Composition root 唯一组装 | [cmd/server/main.go](../../../../cmd/server/main.go) 仅 `app.New`；[internal/app/app.go](../../../../internal/app/app.go) 唯一 import `repository/sqlite` 并 `New` 具体实现 |
+| 出站端口 MetaStore + SQLite + memory | [port/metastore.go](../../../../internal/port/metastore.go)；[repository/sqlite](../../../../internal/repository/sqlite)；[repository/memory](../../../../internal/repository/memory)；`var _ port.MetaStore` 编译期合规 |
+| service 仅依赖 port | [service/meta/service.go](../../../../internal/service/meta/service.go)；测试 [service_test.go](../../../../internal/service/meta/service_test.go) 用 memory、无 SQLite |
+| 配置含 SQLite 路径 | [config.go](../../../../internal/config/config.go) `DB_DRIVER`/`SQLITE_PATH`（默认 `data/demo.db`） |
+| 探针仍可用 | handler `/healthz` `/readyz`（经 `meta.Ready`→`Ping`）`/v1/ping`；本轮 smoke 复验通过 |
+| 无重型 DI | [go.mod](../../../../go.mod) 仅 `modernc.org/sqlite v1.54.0` 等；无 fx/dig/wire |
+| 模块图与扩展文档 | module-map `status: active`；[modular-ioc.md](../../../architecture/modular-ioc.md)；README 指向「如何新增 BC / 换 Repository」 |
+| 有界空 BC 占位 | `internal/service/{auth,order,wallet,notification,schemaui}/.gitkeep` |
+| I-001～I-004 门禁 | decided / verified（I-003 modernc.org/sqlite）；无到期未关闭 required 信息项 |
+| A-001 required 已关闭 | A-002 关闭表：F-001～F-005 closed（交接 D-003、MetaStore D-004 等） |
 
-### 对照成功标准 / 规划质量（本 scope）
+### 对照成功标准
 
-| 维度 | 评价 |
-|------|------|
-| P-001 | 目标可直接执行；S1～S4 粒度合适，**无需**再拆大量子目标。 |
-| 范围裁剪 | 「垂直切片证明可换存储 + composition root」正确；避免与 GOAL-002 混目标。 |
-| 与现状差距 | `main` 仍 `handler.Register` 直连，与目标态一致为「待 S2/S3 改造」，规划方向对。 |
-| 对下游供给 | 成功标准偏「骨架证明」；**对 GOAL-002 M2 的可操作交接说明不足**（F-001）。 |
+| 成功标准 / H# | 审计结论 |
+|---------------|----------|
+| 模块图 + P-M1～P-M8（H5） | **满足**（文档与目录一致） |
+| 唯一 composition root（H1） | **满足** |
+| MetaStore + SQLite + fake（H2/H3） | **满足** |
+| 配置 + 进程探针（H4） | **满足**（含本轮独立 smoke） |
+| service 接口测试（H3） | **满足**（`go test` 复验） |
+| 新增模块/换实现文档 + 空 BC（H6） | **满足** |
+| 无重型 DI（H7） | **满足** |
+| 交接 H1～H7 正式勾选并关 GOAL-002 I-009 | **技术证据齐**；清单文件已勾选；**目标 status 仍 active / 最后一勾未在 meta 正式关闭 / I-009 下游未标 verified**（属关门编排动作，非实施造假） |
 
 ### Findings
 
 | ID | 级别 | 严重度 | 说明 | 证据 / 关联 |
 |----|------|--------|------|-------------|
-| **F-001** | **required** | med | **对 GOAL-002 I-009 的供给契约未写清**：本目标成功标准自洽，但未声明「验收通过 = 关闭 GOAL-002 I-009 的充分条件」及下游如何按 D-001 扩展 auth/order 等 BC（仅 module-map 一句扩展点）。建议在 00-meta/01-decision 增加「下游交接」小节，与 GOAL-002 I-009 清单对齐。 | 成功标准；[module-map-draft](attachments/module-map-draft.md)；GOAL-002 I-009 |
-| **F-002** | recommended | low | **S1 状态滞后**：I-001/D-001 已 decided，module-map-draft 已存在，但路线图 S1 仍「进行中」。建议 `/govern` 将 S1 标完成或写明唯一未完成物（例如 map 升为 active）。 | [00-meta 路线图](00-meta.md)；D-001 |
-| **F-003** | recommended | low | **I-003（SQLite 驱动库）open · non-blocking** 可接受；规划应承诺 **S3 接线当日**写入 execution 关闭，避免拖到 S4 验收争论。 | [00-meta I-003](00-meta.md) |
-| **F-004** | recommended | low | 成功标准「至少一条出站端口」示例（HealthStore / ExampleRepository）二选一未钉死；不影响合理性，S2 开工前选定可减少空转。 | 成功标准第 3 条 |
-| **F-005** | recommended | med | **风险（非否决）**：过薄骨架可能导致 GOAL-002 立刻重做分包。若用户更在意一次成型，可**有界**把「空 BC 目录约定 + README 新增模块步骤」写入本目标成功标准（仍禁止做完整 CRUD）。属产品取舍，需用户/编排器决定，非审计改范围。 | D-002；Root P-M4 |
+| **F-001** | recommended | med | **双态表述**：handover H1～H7 已全部 `[x]`，但 00-meta 最后成功标准未勾、`progress: 85%`、`status: active`。建议 `/govern` 一次闭环 done + I-009。 | handover；00-meta；goal-tree |
+| **F-002** | recommended | low | **自动化覆盖缺口**：`app.New` / `repository/sqlite` 无单测。不阻断关门。 | `go test ./...` |
+| **F-003** | recommended | low | **`DB_DRIVER` 未在 composition root 分支**：MVP 仅 sqlite 可接受残余。 | config；app.go |
 
 ### 必改项汇总
 
-1. **F-001**：补充与 GOAL-002 I-009 对齐的**下游交接说明**（充分条件列表 + BC 扩展步骤指针）；与 GOAL-002 A-001 F-001 成对关闭。
-
-### 与既有意见的异同
-
-- 此前无 A-00N。  
-- 与 GOAL-002 **A-001** 同向：R0.8→R1 串行合理；共同必改主题为 **交接契约**。本侧不要求扩大为完整 MVP。
+- **无 required / 必改 findings。**
 
 ### 结论 + 建议给编排器/用户的下一步
 
-**结论**：GOAL-003 **规划合理且必要**——独立可验收骨架、手动 IoC、范围不吞业务，符合 Root D-008/D-009 与 P-001。因对 GOAL-002 门禁供给表述不足，verdict = **conditional**。
+**结论**：GOAL-003 **实施事实与成功标准（技术侧）一致**；verdict = **pass**。剩余为治理关门与下游 I-009 同步。
 
-**建议 `/govern`**：
-
-1. 响应本 A-001 + GOAL-002 A-001；先闭环 F-001（交接清单），再推进 **S2 目录与端口落地**。  
-2. 可选：收尾 S1（F-002）、S2 前选定垂直切片端口形态（F-004）。  
-3. P-004：询问是否需要对本目标 design-plan 做 self 审计后再推进 S2。  
-4. **不要**在本目标未达成功标准（或用户书面有界放行）时启动 GOAL-002 M2 业务编码。
+**建议 `/govern`**：done + 勾选最后标准；关 I-009；P-004 询问 self 关门审计。
 
 ### 声明
 
@@ -92,36 +108,80 @@ version: 0.3.0
 
 ---
 
-## A-002 · 编排响应 A-001（2026-07-24）
+## A-004 · self 关门审计（2026-07-24）
 
-- **source**：self（编排响应，**非** independent）
-- **auditor**：/govern · Grok
-- **类型**：response
-- **scope**：响应 A-001 findings；规划补强；不审代码
-- **verdict**：**pass**（required 已关闭；代码实施未开始属预期）
+- **source**：**self**
+- **auditor**：/govern · Grok（用户 P-004 要求 self 关门审计）
+- **类型**：close-out
+- **scope**：GOAL-003 整体关门；成功标准 / H1～H7 / 信息门禁 / 与 A-003 对照；是否可 `done`
+- **verdict**：**pass**
 
-### 关闭证据表
+### 范围与区间
 
-| Finding | 处置 | 状态 | 证据 |
-|---------|------|------|------|
-| **F-001** | 交接清单 + D-003；GOAL-002 D-014 成对 | **closed** | [handover-to-goal-002.md](attachments/handover-to-goal-002.md)；[01-decision D-003](01-decision.md)；GOAL-002 D-014 |
-| F-002 | S1 → 完成 | **closed** | [00-meta 路线图](00-meta.md) |
-| F-003 | I-003 最晚 **S3 当日** | **closed**（承诺） | [00-meta I-003](00-meta.md) |
-| F-004 | 钉死 **MetaStore** | **closed** | D-004；I-004 decided |
-| F-005 | 有界空 BC + README 步骤入成功标准 | **closed** | D-005；00-meta 成功标准 |
+- 工作区绑定：`workspace-001-allinme-core-api` / Root `GOAL-001-allinme-core-api` / canonical 一致。
+- 依据：00-meta、01-decision、02-execution、handover、module-map、modular-ioc、代码树、A-001～A-003。
+- 本轮复验：`go test ./...` **pass**（2026-07-24 关门时）。
 
-### 仍开放项
+### 对照成功标准
 
-| 项 | 说明 |
-|----|------|
-| 代码 S2～S4 | 未开始 |
-| I-003 驱动库 | S3 当日 verified |
-| design-plan self | 未做（P-004 待用户） |
+| 成功标准 | 状态 | 证据 |
+|----------|------|------|
+| 模块图 active + 依赖方向 | 达成 | attachments/module-map-draft.md；docs/architecture/modular-ioc.md |
+| composition root 唯一 | 达成 | cmd/server → app.New；仅 app 构造 sqlite |
+| MetaStore + SQLite + fake | 达成 | port / repository/sqlite / repository/memory |
+| 配置 + 探针 | 达成 | SQLITE_PATH；readyz→meta.Ready；execution smoke + A-003 smoke |
+| 接口测试 | 达成 | internal/service/meta/service_test.go |
+| 扩展文档 + 空 BC | 达成 | modular-ioc.md；README；service/*/.gitkeep |
+| 无重型 DI | 达成 | go.mod 无 fx/dig/wire |
+| 交接勾选 + 关 I-009 | **本轮完成** | handover H1～H7；GOAL-002 I-009 verified；本目标 done |
+
+### Findings
+
+| ID | 级别 | 说明 | 状态 |
+|----|------|------|------|
+| — | — | 无新 required | — |
+| 采纳 A-003 F-002 | recommended | 后续可补 sqlite/app 单测 | **deferred 改进**（不阻断关门） |
+| 采纳 A-003 F-003 | recommended | 换库时再分支 DB_DRIVER | **accepted residual（MVP 范围）** |
+
+### 必改项汇总
+
+- **无**未关闭 required。
+- 相关意见：A-003 pass、无 required；A-001 required 已由 A-002 关闭。
 
 ### 结论
 
-可进入 **S2 目录与 MetaStore 端口落地**；完成 H1～H7 前不得放行 GOAL-002 M2。
+成功标准与 H1～H7 证据充分；信息门禁无开放 required；**同意关门** `status: done`。
+
+---
+
+## A-005 · 编排响应 A-003 并执行关门（2026-07-24）
+
+- **source**：self（编排响应，**非** independent）
+- **auditor**：/govern · Grok
+- **类型**：response + close-out 执行记录
+- **scope**：响应 A-003；执行用户指令（done、勾选最后标准、关 GOAL-002 I-009）；前置 A-004 self 关门
+- **verdict**：**pass**
+
+### 关闭证据表
+
+| 项 | 状态 | 证据 |
+|----|------|------|
+| A-003 overall | 接受 pass | 本节；A-003 |
+| A-003 **F-001**（recommended） | **closed** | 00-meta 最后标准勾选；status done；progress 100%；goal-tree；GOAL-002 I-009 verified |
+| A-003 F-002 | deferred 改进 | 不阻断；可另开改进项 |
+| A-003 F-003 | accepted residual（MVP） | modular-ioc 换库步骤；不伪称多驱动已实现 |
+| 成功标准最后一条 | **closed** | 00-meta 勾选 |
+| GOAL-002 I-009 | **verified** | GOAL-002 00-meta / 02-execution / 03-audit 响应节 |
+
+### 仍开放项
+
+- 无本目标开放 required。
+- GOAL-002 仍有 I-010（M4）等，与本目标无关。
+
+### 结论
+
+A-003 已响应；self 关门 A-004 pass；GOAL-003 **done**；GOAL-002 **I-009 verified**，可进入 **M2**。
 
 ## 备注
 
-- 2026-07-24：A-001 independent；A-002 govern 响应。
+- 2026-07-24：A-001 independent；A-002 response；A-003 independent pass；A-004 self close-out；A-005 govern 关门响应。

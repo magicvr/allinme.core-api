@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/magicvr/allinme.core-api/internal/app"
 	"github.com/magicvr/allinme.core-api/internal/config"
-	"github.com/magicvr/allinme.core-api/internal/handler"
 	"github.com/magicvr/allinme.core-api/internal/server"
 )
 
@@ -27,13 +27,21 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	mux := http.NewServeMux()
-	handler.Register(mux, logger)
+	application, err := app.New(cfg, logger)
+	if err != nil {
+		logger.Error("wire app", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := application.Close(); err != nil {
+			logger.Error("app close", "err", err)
+		}
+	}()
 
-	srv := server.New(cfg, mux, logger)
+	srv := server.New(cfg, application.Handler, logger)
 
 	go func() {
-		logger.Info("server starting", "addr", cfg.HTTP.Addr)
+		logger.Info("server starting", "addr", cfg.HTTP.Addr, "sqlite", cfg.DB.SQLitePath)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("server failed", "err", err)
 			os.Exit(1)

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/magicvr/allinme.core-api/internal/service/meta"
 )
 
 type healthResponse struct {
@@ -20,9 +22,17 @@ func healthz() http.Handler {
 	})
 }
 
-func readyz() http.Handler {
-	// Expand later with dependency checks (DB, cache, etc.).
+func readyz(metaSvc *meta.Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if metaSvc != nil {
+			if err := metaSvc.Ready(r.Context()); err != nil {
+				writeJSON(w, http.StatusServiceUnavailable, healthResponse{
+					Status:    "not_ready",
+					Timestamp: time.Now().UTC(),
+				})
+				return
+			}
+		}
 		writeJSON(w, http.StatusOK, healthResponse{
 			Status:    "ready",
 			Timestamp: time.Now().UTC(),

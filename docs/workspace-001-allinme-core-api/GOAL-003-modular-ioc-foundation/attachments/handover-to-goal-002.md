@@ -17,13 +17,13 @@ version: 0.1.0
 
 | # | 交接项 | 对应 GOAL-003 成功标准 / 证据 | 关闭 I-009 时核验 |
 |---|--------|------------------------------|-------------------|
-| H1 | **Composition root 唯一组装** | `cmd/server`（及可选 `internal/app`）为唯一 `New` 具体实现处；业务包不互相构造具体 repository | [ ] 代码路径 + 简短说明写入 GOAL-003 execution |
-| H2 | **出站端口 + SQLite 实现** | 至少一条 port 接口 + `internal/repository/sqlite` 实现；配置含 SQLite 路径 | [ ] |
-| H3 | **可替换证明（测试）** | 至少 1 个测试：service 只依赖接口，用 fake/memory **无 SQLite** 跑通 | [ ] `go test` 路径记入 execution |
-| H4 | **进程可启动** | `/healthz`、`/readyz`、`/v1/ping` 仍可用 | [ ] 本地或 CI 记录 |
-| H5 | **模块图 active** | [module-map-draft.md](module-map-draft.md) 与仓库目录一致，frontmatter `status: active`（或等价定稿文档） | [ ] |
-| H6 | **扩展 BC 指引可读** | README 或 docs 含「如何新增业务模块 / 如何换 Repository 实现」；空 BC 目录约定见 §2 | [ ] |
-| H7 | **无重型 DI 容器** | 手动构造注入；未默认引入 fx/dig 等 | [ ] 依赖清单目视 |
+| H1 | **Composition root 唯一组装** | `cmd/server`（及可选 `internal/app`）为唯一 `New` 具体实现处；业务包不互相构造具体 repository | [x] `internal/app/app.go` + `cmd/server/main.go`；见 02-execution 2026-07-24 |
+| H2 | **出站端口 + SQLite 实现** | 至少一条 port 接口 + `internal/repository/sqlite` 实现；配置含 SQLite 路径 | [x] `port.MetaStore` + `repository/sqlite`；`SQLITE_PATH` |
+| H3 | **可替换证明（测试）** | 至少 1 个测试：service 只依赖接口，用 fake/memory **无 SQLite** 跑通 | [x] `go test ./internal/service/meta` |
+| H4 | **进程可启动** | `/healthz`、`/readyz`、`/v1/ping` 仍可用 | [x] 2026-07-24 本地 smoke ok/ready/pong |
+| H5 | **模块图 active** | [module-map-draft.md](module-map-draft.md) 与仓库目录一致，frontmatter `status: active`（或等价定稿文档） | [x] module-map + [modular-ioc.md](../../../architecture/modular-ioc.md) |
+| H6 | **扩展 BC 指引可读** | README 或 docs 含「如何新增业务模块 / 如何换 Repository 实现」；空 BC 目录约定见 §2 | [x] README + modular-ioc.md；service/* 占位 |
+| H7 | **无重型 DI 容器** | 手动构造注入；未默认引入 fx/dig 等 | [x] 仅 modernc.org/sqlite 等驱动依赖；手动 `app.New` |
 
 **判定**：H1～H7 均勾选 → GOAL-003 可关门（若其成功标准亦满）且 **GOAL-002 I-009 → verified**，证据为：本表勾选记录 + GOAL-003 `status: done`（或 execution 验收节）+ GOAL-002 更新 I-009。
 

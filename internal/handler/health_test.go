@@ -6,6 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/magicvr/allinme.core-api/internal/repository/memory"
+	"github.com/magicvr/allinme.core-api/internal/service/meta"
 )
 
 func TestHealthz(t *testing.T) {
@@ -33,9 +36,10 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestReadyz(t *testing.T) {
+	svc := meta.New(memory.NewMetaStore())
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rr := httptest.NewRecorder()
-	readyz().ServeHTTP(rr, req)
+	readyz(svc).ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)

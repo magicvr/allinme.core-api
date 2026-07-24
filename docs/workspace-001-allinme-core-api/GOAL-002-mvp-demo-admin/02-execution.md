@@ -5,7 +5,7 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-24
-version: 0.5.0
+version: 0.6.0
 ---
 
 # 执行记录 · GOAL-002
@@ -38,14 +38,20 @@ version: 0.5.0
 - **F-005**：D-017 保持全量验收 + 切片实施顺序。
 - progress → **22%**；**未**开始业务代码；I-009/I-010 仍 open。
 
+### 2026-07-24 · I-009 关闭（GOAL-003 关门）
+
+- GOAL-003 independent **A-003** pass；self **A-004** 关门 pass；编排 **A-005** 响应。
+- GOAL-003 `status: done`；handover H1～H7 已勾。
+- 本目标 **I-009 → verified**；M1 完成；progress → **25%**。
+- **仍未**开始 M2 业务代码（下一步可开始）。
+
 ## 待办
 
-1. 等待 GOAL-003 H1～H7 → 关闭 I-009
-2. M2 鉴权 + RBAC + 菜单（I-009 后）
-3. M3 三域 API（订单优先）
-4. M4 page schema + **关闭 I-010** 校验路径
-5. M5 验收
+1. **M2** 鉴权 + RBAC + 菜单
+2. M3 三域 API（订单优先）
+3. M4 page schema + **关闭 I-010** 校验路径
+4. M5 验收
 
 ## 进度评估
 
-**约 22%**：方案冻结 + 审计必改响应；实施门禁 I-009/I-010 仍开。
+**约 25%**：方案冻结完成；I-009 已关；I-010 仍开；M2 业务代码未开始。

@@ -1,41 +1,40 @@
 ---
-title: 模块图草案（GOAL-003）
-status: draft
+title: 模块图（GOAL-003）
+status: active
 created: 2026-07-24
 updated: 2026-07-24
 parent: GOAL-003-modular-ioc-foundation
-version: 0.1.0
+version: 0.2.0
 ---
 
-# 模块图草案
-
-> 实施完成后将 `status` 改为 active，并与仓库实际目录对齐。
+# 模块图（与仓库对齐）
 
 ```text
                     ┌─────────────────┐
-                    │   cmd/server    │  composition root
+                    │   cmd/server    │  入口；调用 app.New
                     └────────┬────────┘
                              │
                     ┌────────▼────────┐
-                    │  internal/app   │  NewApp: wire-up
+                    │  internal/app   │  composition root（唯一 New 具体实现）
                     └────────┬────────┘
            ┌─────────────────┼─────────────────┐
            │                 │                 │
    ┌───────▼──────┐  ┌───────▼──────┐  ┌───────▼──────┐
-   │   handler    │  │   service    │  │   config     │
+   │   handler    │  │ service/meta │  │   config     │
    └───────┬──────┘  └───────┬──────┘  └──────────────┘
            │                 │
            │         ┌───────▼──────┐
-           │         │    port      │  interfaces only
+           │         │  port.MetaStore │
            │         └───────▲──────┘
            │                 │
-           │         ┌───────┴──────────┐
-           │         │ repository/sqlite│  (future: postgres)
-           │         └──────────────────┘
+           │    ┌────────────┴────────────┐
+           │    │ repository/sqlite       │
+           │    │ repository/memory(fake) │
+           │    └─────────────────────────┘
            ▼
         net/http
 ```
 
-**依赖规则**：箭头表示「知道/依赖」；`repository` 不得 import `handler`；`service` 不得 import `repository/sqlite`。
+**GOAL-002 扩展点**（空目录占位）：`internal/service/{auth,order,wallet,notification,schemaui}` — 仍只在 `app` 组装。
 
-**GOAL-002 扩展点**：在 `service`/`port`/`handler` 下增加 `auth`、`order`、`wallet`、`notification`、`schemaui` 子树，仍只在 `app` 组装。
+详见 [modular-ioc.md](../../../architecture/modular-ioc.md)。

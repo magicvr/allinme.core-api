@@ -5,8 +5,8 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-24
-version: 0.5.0
-progress: 22%
+version: 0.6.0
+progress: 25%
 ---
 
 # GOAL-002 · MVP · Demo 完整 Admin（协议驱动）
@@ -51,9 +51,9 @@ progress: 22%
 
 | 阶段 | 名称 | 状态 | 说明 |
 |------|------|------|------|
-| **M0** | 方案冻结 | **完成** | I-002～I-007 decided；A-001 响应后 I-010 已登记 |
-| **M1** | 门禁：I-009 | **等待** | **非本目标工作包**；交接清单 H1～H7 全勾或书面有界放行后进入 M2 |
-| **M2** | 鉴权 + RBAC + 菜单 | 未开始 | 建议交付切片优先：auth → 再扩三域 |
+| **M0** | 方案冻结 | **完成** | I-002～I-007 decided；I-010 已登记 |
+| **M1** | 门禁：I-009 | **完成** | GOAL-003 done；H1～H7 勾选；I-009 **verified**（2026-07-24） |
+| **M2** | 鉴权 + RBAC + 菜单 | **可开始** | 建议交付切片优先：auth → 再扩三域 |
 | **M3** | 三域 API + 种子数据 | 未开始 | 建议顺序：订单 → 钱包 → 通知（仍一次验收全量成功标准） |
 | **M4** | page schema 生产与校验 | 未开始 | 依赖 **I-010** verified |
 | **M5** | 验收对照成功标准 | 未开始 | — |
@@ -70,7 +70,7 @@ progress: 22%
 | I-005 | required | 2.4.1 CRUD 生命周期映射 | 方案冻结（写路径 UI） | 方案冻结前 | D-010 + 附件 | **decided** | — | [protocol-capability-mapping.md](attachments/protocol-capability-mapping.md) |
 | I-006 | required | 持久化选型与可换库 | 实施数据层 | 实施前 | D-011 | **decided** | — | 默认 SQLite |
 | I-007 | required | page schema 存储与下发 | 实施 page 生产 | 实施前 | D-012 | **decided** | — | embed YAML/JSON |
-| I-009 | required | GOAL-003 骨架可验收（交接清单 H1～H7 或书面有界放行） | **M2 起业务编码** | M1→M2 | 勾选 [handover-to-goal-002.md](../GOAL-003-modular-ioc-foundation/attachments/handover-to-goal-002.md) | **open** | 责任人：本仓；触发：H1～H7 全勾或 §3 书面放行 | 关闭判据见 D-014；**未**因清单而 verified |
+| I-009 | required | GOAL-003 骨架可验收（交接清单 H1～H7 或书面有界放行） | **M2 起业务编码** | M1→M2 | 勾选 handover + GOAL-003 done | **verified** | — | **2026-07-24**：H1～H7 已勾；GOAL-003 `done`；A-003 pass + A-004 self 关门；见 GOAL-003 A-005 / 本目标 02-execution |
 | I-010 | required | 2.4.1 协议制品本地落仓与结构校验方式（路径、命令、失败门禁） | **M4 schema 校验 / 宣称校验通过** | **M4 前** | 决策 D-016 + 实施证据 | **open** | 收集中；M4 前关闭 | 见 D-016 候选方案；关闭前不得宣称校验门禁已满足 |
 
 ## 父目标
@@ -83,4 +83,5 @@ progress: 22%
 
 ## 备注
 
-- 2026-07-24：方案包 A 冻结；A-001 审计响应（F-001/F-002 处置）。
+- 2026-07-24：方案包 A 冻结；A-001 审计响应。
+- 2026-07-24：GOAL-003 关门；**I-009 verified**；可推进 M2。

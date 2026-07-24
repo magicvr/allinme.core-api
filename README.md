@@ -48,34 +48,34 @@ curl http://localhost:8080/v1/ping
 
 ```
 .
-├── cmd/server/          # 进程入口
+├── cmd/server/                 # 进程入口（调用 composition root）
 ├── internal/
-│   ├── config/          # 环境变量配置
-│   ├── handler/         # HTTP 路由与处理器
-│   ├── middleware/      # 中间件占位
-│   ├── repository/      # 数据访问占位
-│   ├── response/        # 统一 JSON 响应
-│   ├── server/          # http.Server 组装
-│   └── service/         # 业务逻辑占位
-├── pkg/
-│   └── version/         # 版本信息（可 -ldflags 注入）
-├── Dockerfile           # 多阶段构建
-├── docker-compose.yml   # 本地/演示编排
-├── .dockerignore
-├── .env.example
-├── .gitignore
-├── go.mod
-├── Makefile
-└── README.md
+│   ├── app/                    # composition root：唯一 New 具体实现并注入
+│   ├── config/                 # 环境变量配置
+│   ├── handler/                # HTTP 入站适配
+│   ├── port/                   # 出站/入站接口（如 MetaStore）
+│   ├── repository/
+│   │   ├── sqlite/             # SQLite 实现（默认）
+│   │   └── memory/             # 测试 double
+│   ├── service/
+│   │   ├── meta/               # 元数据应用服务（依赖 port）
+│   │   ├── auth|order|…/       # 业务 BC 占位（GOAL-002）
+│   │   └── …
+│   ├── response/               # 统一 JSON 响应
+│   └── server/                 # http.Server 组装
+├── pkg/version/
+├── docs/architecture/modular-ioc.md
+└── …
 ```
 
 约定：
 
 - `cmd/` — 可执行入口，尽量薄
-- `internal/` — 本服务私有逻辑，不对外 import
+- `internal/app` — **唯一**组装根（IoC / 构造注入）
+- `service` 只依赖 `port` 接口；换库只改 `repository/*` + `app` 接线
 - `pkg/` — 可被其他模块/项目安全复用的小包
 
-后续可按需充实 `service` / `repository` / `middleware`、`api/openapi` 等，优先服务 Demo 闭环与 Admin 对接，避免空转的治理层。
+**如何新增业务模块 / 换 Repository**：见 [docs/architecture/modular-ioc.md](docs/architecture/modular-ioc.md)。
 
 ## 配置
 
@@ -89,6 +89,8 @@ curl http://localhost:8080/v1/ping
 | `HTTP_WRITE_TIMEOUT` | `10s` | 写超时 |
 | `HTTP_IDLE_TIMEOUT` | `60s` | 空闲超时 |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
+| `DB_DRIVER` | `sqlite` | 预留多驱动；MVP 仅实现 sqlite |
+| `SQLITE_PATH` | `data/demo.db` | SQLite 文件路径 |
 | `HTTP_PORT` | `8080` | Compose 宿主机映射端口 |
 
 Compose 可通过环境变量或取消注释 `env_file: .env` 覆盖配置。
