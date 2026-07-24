@@ -5,7 +5,7 @@ status: active
 parent: null
 created: 2026-07-23
 updated: 2026-07-24
-version: 0.3.0
+version: 0.4.0
 ---
 
 # 决策记录 · GOAL-001
@@ -15,8 +15,9 @@ version: 0.3.0
 权威表见 [00-meta.md](00-meta.md)。
 
 - **I-001** 策略已 `decided`（A 协议演进）。
-- **I-006** 新协议制品 **`verified`**（2.4.1）；Root / R1 协议门禁已关闭。
-- I-002 / I-003 已恢复主动收集（仍为 required，阻断各自实施/方案冻结门禁）。
+- **I-006** 新协议制品 **`verified`**（2.4.1）。
+- **I-002 / I-003** **`decided`**（权威在 GOAL-002 D-007 / D-008）。
+- **I-007** 模块化/IoC 原则 **`decided`**（本文件 D-008；落地 GOAL-003）。
 
 ## D-001 · 总目的与交付边界
 
@@ -148,3 +149,67 @@ version: 0.3.0
 **为什么**：D-005 恢复条件已齐；用户指令「OK 钉死 2.4.1 并解除 blocked」。
 
 **未选方案**：只记录证据仍保持 blocked（会继续空转）。
+
+## D-008 · 模块化与 IoC 基础设计原则
+
+**日期**：2026-07-24  
+**状态**：`accepted`  
+**关联**：关闭 Root I-007；约束全部子目标实施；落地见 GOAL-003
+
+**决定**：从设计与编码开始，本仓采用 **IoC（构造注入）+ 接口边界** 的模块化结构，目标为高内聚、低耦合，**替换模块实现时不修改调用方业务代码**。
+
+### 模块划分原则（P-M1～P-M8）
+
+| # | 原则 | 要求 |
+|---|------|------|
+| **P-M1** | Composition Root | 仅 `cmd/server`（及可选极薄 `internal/app` / `internal/di`）负责组装与 `New`；业务包不互相构造具体实现类型 |
+| **P-M2** | 依赖倒置 | 应用/领域层依赖 **接口**；基础设施（SQLite、HTTP 细节、时钟等）实现接口 |
+| **P-M3** | 接口隔离 | 接口按用例切分（如读写分离），避免上帝接口 |
+| **P-M4** | 高内聚分包 | 按业务能力/限界上下文分包（auth、order、wallet、notification、schemaui 等），而非无限膨胀的单一 `service` 大包 |
+| **P-M5** | 稳定依赖方向 | `handler → service → port ← repository`；禁止基础设施依赖入站适配器；禁止跨域 service 直连对方内部未导出细节 |
+| **P-M6** | 可替换实现 | 持久化、密码哈希、ID/时钟等可测边界一律接口；测试可用 fake / memory double |
+| **P-M7** | IoC 方式（MVP） | **手动构造注入**；接线膨胀后再评估 `google/wire` 等代码生成，**默认不上**重型运行时 IoC 容器 |
+| **P-M8** | 协议边界不变 | 模块化不改变 Schema-UI 权威；只消费钉死 2.4.1，不在本仓发明协议语义 |
+
+### 推荐包轮廓（GOAL-003 细化并可微调）
+
+```text
+cmd/server                 composition root
+internal/config
+internal/domain/<bc>       领域模型（可薄）
+internal/port 或 */port    入站/出站接口
+internal/service/<bc>      应用服务（只依赖接口）
+internal/repository/sqlite 出站适配器（默认可换）
+internal/handler           HTTP 入站
+internal/auth
+internal/schemaui          page schema 生产
+pkg/*                      仅真正跨项目可复用内核
+```
+
+**为什么**：
+
+- 用户明确要求从设计起 IoC、接口协作、可换实现。
+- 与「可复用核心 API 基座 / 模板复用」一致；SQLite 默认可换库也依赖同一倒置边界。
+- 手动注入在小中型 Go 服务中清晰、少魔法，利于模板复制。
+
+**未选方案**：
+
+- **无接口、包内直接依赖 sqlite 驱动**：换库必改业务层。
+- **全局 service locator / 包级 var 单例乱取**：隐藏依赖，难测难换。
+- **默认上重量级 DI 容器**：与 MVP 与模板简洁性不符。
+
+## D-009 · 设立 GOAL-003 作为 R0.8 骨架前置
+
+**日期**：2026-07-24  
+**状态**：`accepted`  
+**关联**：D-008；GOAL-002 实施顺序
+
+**决定**：
+
+1. 新建子目标 **`GOAL-003-modular-ioc-foundation`**（parent = Root），路线图阶段 **R0.8**。
+2. GOAL-003 交付可验收的模块目录、端口接口约定、composition root、SQLite 适配器骨架与文档化模块图；**不**在本目标内完成三域完整业务。
+3. GOAL-002 **大规模业务与 page schema 实施**以 GOAL-003 达到其成功标准（或用户书面放行的有界并行）为前提；方案冻结本身不阻塞，**编码顺序**优先骨架。
+
+**为什么**：模块化单独可验收，避免与三域业务进度混在同一目标里难审计。
+
+**未选方案**：仅写原则不落骨架目标；或把骨架完全塞进 GOAL-002 无独立门禁。
