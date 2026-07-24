@@ -5,7 +5,7 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-25
-version: 0.10.0
+version: 0.11.0
 progress: 50%
 ---
 
@@ -55,7 +55,7 @@ progress: 50%
 | **M1** | 门禁：I-009 | **完成** | GOAL-003 done |
 | **M2** | 鉴权 + RBAC + 菜单 | **完成** | [GOAL-004](../GOAL-004-auth-rbac-menu/00-meta.md)（依据既有事实补录，done） |
 | **M3a** | 订单 API 首切片 | **完成** | [GOAL-005](../GOAL-005-order-api-first-slice/00-meta.md)（依据既有事实补录，done） |
-| **M3b** | 钱包 API + 种子数据 | **进行中（W0 完成）** | [GOAL-006](../GOAL-006-wallet-api/00-meta.md)（I-001 verified；W1 下一步） |
+| **M3b** | 钱包 API + 种子数据 | **进行中（W1 完成）** | [GOAL-006](../GOAL-006-wallet-api/00-meta.md)（20%；W2 SQLite/seed 下一步） |
 | **M3c** | 通知 API + 种子数据 | 未开始 | 进入阶段时创建子目标 |
 | **M3d** | 订单 DELETE / refund 补齐 | 未开始 | 进入阶段时创建子目标；不把首切片误记为全量完成 |
 | **M4** | page schema、仪表盘与协议校验 | 未开始 | 进入阶段时创建子目标；依赖 **I-010** verified |
@@ -97,5 +97,6 @@ progress: 50%
 - 2026-07-24：M2 落地 JWT + RBAC 菜单。
 - 2026-07-25：M3 订单首切片完成（API、SQLite seed、测试）。
 - 2026-07-25：采用渐进子目标拆分；补录 GOAL-004/005，创建 GOAL-006；父目标 progress 暂保持 50%，不因治理重排机械重算。
-- 2026-07-25：GOAL-006 D-003 + A-001 关闭钱包 I-001，W0 完成，W1 可开始；产品实施进度仍为 0%。
+- 2026-07-25：GOAL-006 D-003 + A-001 关闭钱包 I-001，W0 完成。
+- 2026-07-25：GOAL-006 W1 domain/port/service 与接口级测试完成，子目标 progress 20%，下一步 W2 SQLite/seed。
 - I-010 仍 open 且仅阻断 M4 校验宣称。
