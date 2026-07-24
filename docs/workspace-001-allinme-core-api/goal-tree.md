@@ -4,7 +4,7 @@ status: active
 created: 2026-07-23
 updated: 2026-07-24
 parent: null
-version: 0.5.0
+version: 0.6.0
 ---
 
 # 目标树 · allinme.core-api
@@ -15,17 +15,17 @@ version: 0.5.0
 
 ```text
 GOAL-001-allinme-core-api               [active  15%]  可复用的 Schema-UI 核心 API 基座
-├── GOAL-003-modular-ioc-foundation     [active   0%]  模块化 IoC 骨架（可换实现）· R0.8
-└── GOAL-002-mvp-demo-admin             [active  20%]  MVP · Demo 完整 Admin · R1（方案已冻；实施等 003）
+├── GOAL-003-modular-ioc-foundation     [active   5%]  模块化 IoC 骨架 · R0.8（S1 完；S2 下一步）
+└── GOAL-002-mvp-demo-admin             [active  22%]  MVP Admin · R1（方案冻；A-001 已响应；I-009/I-010 open）
 ```
 
 ## 状态表
 
 | ID | 标题 | parent | status | progress | 备注 |
 |----|------|--------|--------|----------|------|
-| GOAL-001-allinme-core-api | 可复用的 Schema-UI 核心 API 基座 | `null` | **active** | 15% | 协议 2.4.1；D-008 模块化；R0.8/R1 进行中 |
-| GOAL-003-modular-ioc-foundation | 模块化 IoC 骨架（可换实现） | GOAL-001-allinme-core-api | **active** | 0% | **当前优先实施**；P-M1～P-M8 |
-| GOAL-002-mvp-demo-admin | MVP · Demo 完整 Admin（协议驱动） | GOAL-001-allinme-core-api | **active** | 20% | I-002～I-007 decided；I-009 等 GOAL-003 |
+| GOAL-001-allinme-core-api | 可复用的 Schema-UI 核心 API 基座 | `null` | **active** | 15% | 协议 2.4.1；D-008 模块化 |
+| GOAL-003-modular-ioc-foundation | 模块化 IoC 骨架（可换实现） | GOAL-001-allinme-core-api | **active** | 5% | **优先**；交接 H1～H7；MetaStore |
+| GOAL-002-mvp-demo-admin | MVP · Demo 完整 Admin（协议驱动） | GOAL-001-allinme-core-api | **active** | 22% | A-001 响应完；I-009/I-010 open |
 
 ## 路线图摘要（Root）
 
@@ -54,6 +54,7 @@ Root **D-008**：P-M1 Composition Root · P-M2 依赖倒置 · P-M3 接口隔离
 
 ## 开放门禁提示
 
-- **GOAL-003**：实施骨架（当前主推进）。
-- **GOAL-002 I-009**：M2 业务编码前需 GOAL-003 可验收（或用户书面放行）。
-- GOAL-002 方案信息 I-002～I-007：**已关闭**。
+- **GOAL-003**：推进 **S2**（MetaStore / composition root）；S3 当日关 I-003 驱动选型。
+- **GOAL-002 I-009**：H1～H7 全勾后 verified（见 handover 附件）；阻断 M2。
+- **GOAL-002 I-010**：协议制品落仓/校验；阻断 M4 校验宣称。
+- A-001 required findings：**已响应关闭**（A-002）；I-009/I-010 信息门禁仍开。

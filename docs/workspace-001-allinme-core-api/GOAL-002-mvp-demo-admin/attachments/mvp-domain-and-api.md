@@ -38,7 +38,8 @@ version: 0.1.0
 | POST | `/orders/{id}/mark-paid` | 行内：仅 pending |
 | POST | `/orders/{id}/cancel` | 行内：仅 pending |
 
-列表响应形状对齐 Schema-UI mapping：`{ "data": { "list": [], "total": n } }`（具体 envelope 与现有 `internal/response` 统一时再定，但 mapping 路径需稳定）。
+列表响应 envelope（D-015）：`{ "code": 0, "message": "ok", "data": { "list": [], "total": n } }`。  
+Schema-UI `responseMapping` 稳定路径：`list: data.list`，`total: data.total`。
 
 ## 2. 钱包 Wallet
 
@@ -54,12 +55,12 @@ version: 0.1.0
 | GET | `/wallets` | 列表筛选 |
 | GET | `/wallets/{id}` | 详情 |
 | POST | `/wallets` | 创建 |
-| PUT | `/wallets/{id}` | 更新元数据（非任意改余额可另定 adjust） |
+| PUT | `/wallets/{id}` | 仅元数据（如 ownerName）；**不得**改 balanceCents（D-015） |
 | POST | `/wallets/{id}/freeze` | 行内 |
 | POST | `/wallets/{id}/unfreeze` | 行内 |
 | POST | `/wallets/batch-freeze` | body：`{ "ids": [] }` |
 
-不做支付网关、充值渠道对接。
+创建时可设初始 `balanceCents`；**无**调账/充值 API。不做支付网关。
 
 ## 3. 通知 Notification
 

@@ -5,7 +5,7 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-24
-version: 0.4.0
+version: 0.5.0
 ---
 
 # 执行记录 · GOAL-002
@@ -22,27 +22,30 @@ version: 0.4.0
 
 ### 2026-07-24 · I-008 关闭；解除 blocked
 
-- 钉死 2.4.1；status active；progress 5%。
+- 钉死 2.4.1；status active。
 
-### 2026-07-24 · 方案冻结（I-002～I-007）与 GOAL-003 依赖
+### 2026-07-24 · 方案冻结（I-002～I-007）
 
-- 用户确认方案包 **A**（推荐包 + SQLite + IoC + 新建 GOAL-003）。
-- 写入 D-007～D-013；I-002～I-007 → **decided**；I-009（骨架门禁）→ open。
-- 附件：
-  - [mvp-domain-and-api.md](attachments/mvp-domain-and-api.md)
-  - [protocol-capability-mapping.md](attachments/protocol-capability-mapping.md)
-- 本目标路线图 M0 完成；M1 等待 GOAL-003。
-- progress → **20%**。
-- **未**开始业务代码实施。
+- 方案包 A；D-007～D-013；附件领域与协议映射；progress 20%。
+
+### 2026-07-24 · 响应 A-001 交叉审计
+
+- independent A-001：conditional；required F-001/F-002。
+- **F-001**：D-014 + 共享交接清单 H1～H7（GOAL-003 attachments）。
+- **F-002**：登记 **I-010** + D-016（M4 前关闭；候选 A 缓存下载 / B vendor）。
+- **F-003**：M1 改为门禁叙述（非工作包）。
+- **F-004**：D-015 钉死 list envelope 与钱包无调账。
+- **F-005**：D-017 保持全量验收 + 切片实施顺序。
+- progress → **22%**；**未**开始业务代码；I-009/I-010 仍 open。
 
 ## 待办
 
-1. 等待 / 配合 GOAL-003 骨架可验收（关闭 I-009）
-2. M2 鉴权 + RBAC + 菜单
-3. M3 三域 API + seed
-4. M4 page schema embed 与校验
-5. M5 对照成功标准验收
+1. 等待 GOAL-003 H1～H7 → 关闭 I-009
+2. M2 鉴权 + RBAC + 菜单（I-009 后）
+3. M3 三域 API（订单优先）
+4. M4 page schema + **关闭 I-010** 校验路径
+5. M5 验收
 
 ## 进度评估
 
-**约 20%**：方案与信息门禁（除实施前置 I-009）已冻结；无业务代码。
+**约 22%**：方案冻结 + 审计必改响应；实施门禁 I-009/I-010 仍开。

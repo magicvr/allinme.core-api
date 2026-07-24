@@ -5,7 +5,7 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-24
-version: 0.4.0
+version: 0.5.0
 ---
 
 # 决策记录 · GOAL-002
@@ -15,8 +15,9 @@ version: 0.4.0
 权威表见 [00-meta.md](00-meta.md)。
 
 - I-001 / I-008：已关闭。
-- **I-002～I-007**：**`decided`**（本文件 D-007～D-012）；方案冻结完成。
-- **I-009**：**open** — 阻断 **M2 起业务编码**（待 GOAL-003 或用户放行）。
+- **I-002～I-007**：**`decided`**（D-007～D-012）；方案冻结完成。
+- **I-009**：**open** — 阻断 M2；关闭判据 = 交接清单 H1～H7（D-014）或 §3 书面放行。
+- **I-010**：**open** — 阻断 M4 校验宣称；见 D-016。
 
 ## D-001 · MVP 范围与验收口径
 
@@ -126,8 +127,59 @@ version: 0.4.0
 
 ## D-013 · 实施依赖 GOAL-003
 
-**日期**：2026-07-24 · **状态**：`accepted` · **关联** I-009
+**日期**：2026-07-24  
+**状态**：`accepted`（细节由 **D-014** 补强）  
+**关联** I-009
 
-**决定**：M2 起业务编码须在 GOAL-003 达到成功标准后进行，或经用户书面「有界并行」放行并记入 execution。方案冻结不依赖 GOAL-003 完成。
+**决定**：M2 起业务编码须在 GOAL-003 可验收后进行，或经用户书面「有界并行」放行。方案冻结不依赖 GOAL-003 完成。
 
 **为什么**：用户选方案 A（独立骨架目标）。
+
+## D-014 · I-009 关闭判据 = 交接清单 H1～H7（响应 A-001 F-001）
+
+**日期**：2026-07-24  
+**状态**：`accepted`  
+**关联**：I-009；GOAL-003 A-001 F-001；GOAL-002 A-001 F-001
+
+**决定**：
+
+1. **I-009 → verified** 的充分条件为：交接清单  
+   [handover-to-goal-002.md](../GOAL-003-modular-ioc-foundation/attachments/handover-to-goal-002.md)  
+   中 **H1～H7 全部勾选**，且 GOAL-003 execution/验收节有对应证据路径。
+2. **例外**：该附件 §3「用户有界并行放行」书面要素齐全时，可将 I-009 标为 `accepted-residual`（范围有界），**不得**伪装为 verified 全量骨架完成。
+3. GOAL-003 成功标准自洽通过 **且** H1～H7 对齐勾选，二者一致时关闭 I-009；仅「003 自己勾成功标准」而无清单勾选 **不足** 关闭 I-009。
+
+**为什么**：消除审计指出的门禁歧义。
+
+## D-015 · 列表 envelope 与钱包余额路径（响应 A-001 F-004）
+
+**日期**：2026-07-24  
+**状态**：`accepted`
+
+**决定**：
+
+1. **列表 JSON envelope**（三域 list 与 dashboard 列表类）：HTTP 200 体为  
+   `{ "code": 0, "message": "ok", "data": { "list": [ ... ], "total": <int> } }`  
+   与现有 `internal/response` 风格对齐；schema `responseMapping` 稳定路径为 `data.list` / `data.total`。
+2. **钱包余额**：MVP **不提供**任意调账 API。`PUT /wallets/{id}` 仅更新元数据，**不得**改 `balanceCents`。创建时可写初始余额；后续余额变更不在 MVP。
+
+## D-016 · 协议制品本地消费路径（登记 I-010；响应 A-001 F-002）
+
+**日期**：2026-07-24  
+**状态**：`accepted`（登记信息项；**I-010 仍 open** 直至 M4 落地证据）
+
+**决定**：
+
+1. 新增 **I-010**（required，最晚 **M4**）：回答 2.4.1 制品如何落仓、如何校验、失败是否阻断。
+2. **候选方案（实施 M4 时选定其一并 verified）**：
+   - **A（推荐）**：按 Root D-006 SHA 下载 tar 至只读缓存（如 `.cache/schema-ui-protocol-2.4.1/`，gitignore）；校验 artifact SHA-256；用制品内 JSON Schema 校验 embed page。
+   - **B**：vendor/submodule 钉死 schemas，并记录与 2.4.1 SHA 对应关系。
+3. **关闭前禁止**：宣称结构校验门禁已满足或 success 该项打勾。
+4. workspace 可保持 `shared_materials_catalog: none`；版本+SHA 必须可核对。
+
+## D-017 · MVP 交付节奏（响应 A-001 F-005 recommended）
+
+**日期**：2026-07-24  
+**状态**：`accepted`
+
+**决定**：**保持全量成功标准一次验收**（不缩 scope）。实施切片优先级：M2 auth+菜单 → M3 订单闭环 → 钱包 → 通知 → M4 全入口 schema。切片只影响交付顺序，不改变关门标准。
