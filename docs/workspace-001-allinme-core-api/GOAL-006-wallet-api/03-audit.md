@@ -5,7 +5,7 @@ status: done
 parent: GOAL-002-mvp-demo-admin
 created: 2026-07-25
 updated: 2026-07-25
-version: 0.3.0
+version: 0.5.0
 ---
 
 # 审计 · GOAL-006
@@ -148,3 +148,151 @@ D-003 覆盖 D-002 与 I-001 要求的全部跨层维度，字段、状态、CAS
 ### 关门结论
 
 GOAL-006 的范围、成功标准、required 信息项、实施事实与强制验证均已闭环；不存在开放 required finding。I-002 是父目标 M4 的 non-blocking 项，不属于本 API 子目标关门条件。close-out verdict = **pass**，可将 GOAL-006 更新为 `done` / 100%，同步父目标摘要与 `goal-tree.md`。
+
+---
+
+## A-003 · 钱包 API 关门独立复审（2026-07-25）
+
+- **source**：independent
+- **auditor**：Grok · `/audit`
+- **类型**：close-out
+- **scope**：GOAL-006 关门条件：成功标准、D-003 跨层契约、W1～W4 实施事实、I-001/I-002 信息门禁、A-001/A-002 既有意见关闭证据、强制验证可重复性；不审 GOAL-002 M4 Page Schema、仪表盘、协议制品校验、通知 API 或订单 DELETE/refund
+- **verdict**：**pass**
+- **完整意见**：本节即全文
+
+### 范围与区间
+
+| 项 | 核对结果 |
+|----|----------|
+| 工作区 | `workspace-001-allinme-core-api`；Root `GOAL-001-allinme-core-api`；canonical `docs/workspace-001-allinme-core-api/` |
+| 目标路径 | `docs/workspace-001-allinme-core-api/GOAL-006-wallet-api/` 在 canonical 范围内；`parent: GOAL-002-mvp-demo-admin` 与 goal-tree 一致 |
+| 共享资料 | `shared_materials_catalog: none`；本 scope 无共享资料引用，未将其当作证据 |
+| 既有状态 | meta/goal-tree 已为 `done` / 100%（A-002 自审关门后）；本独立审**不修改** status/progress，只验证关门是否站得住 |
+| 排除 | I-002 / 父目标 M4 及后续域不作为本子目标关门条件 |
+
+### 成果（有证据）
+
+| 层 | 证据路径 | 独立核对要点 |
+|----|----------|--------------|
+| 领域 | `internal/domain/wallet.go` | `active`/`frozen`、`balanceCents`、`currency`、`version` 字段齐全 |
+| Port / IoC | `internal/port/wallet.go`、`internal/app/app.go` | service 仅依赖 `WalletRepository`；composition root 装配 SQLite + `SeedWallets` + wallet service |
+| Service | `internal/service/wallet/service.go` + `service_test.go` | 默认 CNY/余额 0、币种规范化、owner-only UpdateInput、CAS、状态机、batch 1～100/去重 |
+| SQLite | `db.go` wallets schema、`wallet.go`、`seed.go`、`wallet_test.go` | unique accountNo、CHECK 约束、LIKE 字面转义、时间戳排序、事务 batch-freeze、seed 回滚/幂等 |
+| HTTP/RBAC | `handler.go`、`wallet.go`、`wallet_test.go`、`wallet_internal_test.go` | 七个 `/v1/wallets*` 路由；全 Bearer；写路由 admin/operator；稳定错误与 internal 不泄露 |
+| 契约与门禁 | D-003、I-001 verified、A-001 pass | 实施与契约维度一一对应，无开放 required 信息项 |
+| 强制验证（本轮复跑） | 命令见下 | targeted + 全量 test、vet、diff check 均 pass |
+
+本轮独立复跑（2026-07-25）：
+
+- `go test -count=1 ./internal/service/wallet ./internal/repository/sqlite ./internal/handler`：**pass**
+- `go test -count=1 ./...`：**pass**
+- `go vet ./...`：**pass**
+- `git diff --check` / `git diff --cached --check`：**pass**
+
+### 对照成功标准
+
+| 成功标准 | 结论 | 独立证据 |
+|----------|------|----------|
+| 领域模型含账户/余额/币种/active·frozen/version | **达成** | `domain/wallet.go`；service 创建与状态测试 |
+| Port + service + SQLite 遵守 IoC | **达成** | port 接口；service 无 sqlite/http import；`app.go` 唯一装配 |
+| 七端点 API | **达成** | `handler.Register` 七条路由；HTTP 集成测试全覆盖 |
+| PUT 仅元数据、不可改 balanceCents | **达成** | `UpdateInput`/`UpdateOwner` 仅 ownerName；未知字段 400；HTTP 断言余额/币种/状态不变 |
+| viewer 只读；admin/operator 可写；全 Bearer | **达成** | GET `RequireAuth`；写 `RequireRoles(admin,operator)`；401/403 测试 |
+| 空库种子幂等且含 active/frozen | **达成** | `walletSeeds` 两条；seed 幂等/失败回滚测试；HTTP 启动后 total=2 |
+| 跨层测试覆盖状态/CAS/RBAC/batch/错误 envelope | **达成** | service/sqlite/handler 测试矩阵与 D-003 §8 对齐 |
+| `go test` / `go vet` / `git diff --check` | **达成** | 本轮复跑全部 pass |
+
+### D-003 关键契约抽查
+
+| 维度 | 结论 |
+|------|------|
+| 仅 `/v1/wallets` 前缀，无裸 `/wallets` | **满足**（路由表与父附件路径差为既有 `/v1` 统一约定，与订单一致） |
+| 创建 active / version=1 / 币种与余额规则 | **满足** |
+| freeze/unfreeze 方向 + version CAS + 错误分类 | **满足**（含 HTTP `invalid_state` / `version_conflict`） |
+| list status/q/page/pageSize、溢出、LIKE `%` `_` | **满足**（repository 测试含字面转义与分页） |
+| batch-freeze `{ids}`、1～100、事务预检、all-or-nothing | **满足**（mixed frozen / missing 回滚后状态仍 active） |
+| envelope：`list/total`、单项 wallet、`frozen` 计数 | **满足** |
+| 稳定错误 400/404/409/500 与 internal 不泄露 | **满足** |
+| 无 DELETE / batch-unfreeze / 调账 / 充值 / 提现 / Page Schema | **满足**（代码与范围边界一致） |
+
+### 信息就绪与开放意见
+
+| 项 | 状态 | 关门判断 |
+|----|------|----------|
+| I-001 实施契约 | **verified / required** | D-003 + A-001；实现与测试可重复核对；无开放 required 门禁 |
+| I-002 Page Schema | open / **non-blocking** | 明确归属 GOAL-002 M4；**不阻断**本 API 子目标关门 |
+| A-001 findings | 无 | 无待关闭 |
+| A-002 findings | 无 | 无待关闭；自审 close-out pass 与本独立复审结论一致 |
+| 验证限制（race） | 环境限制 | A-002 已如实记录 Windows cgo race 未跑；**非**成功标准，**不**升格为 finding |
+
+### Findings
+
+- **无 required findings。**
+- **无 recommended findings。**
+
+### 必改项汇总
+
+- **无。**
+
+### 与既有意见的异同
+
+| 意见 | 关系 |
+|------|------|
+| A-001 design-plan pass | 同意：D-003 足以解除 I-001；本审确认后续实现未偏离契约 |
+| A-002 execution-facts/close-out pass | **同意**关门结论；本轮独立复跑验证命令并抽查代码/测试，未发现自审遗漏的 required 缺口 |
+| 差异 | 无 verdict 冲突；本审补充「目标已 done 后的事后独立复审」立场，仍不改状态 |
+
+### 结论 + 建议给编排器/用户的下一步
+
+GOAL-006 关门条件在独立交叉审计下**成立**：范围未漂移，成功标准与 D-003 有可重复代码/测试证据，I-001 已 verified，I-002 不阻断，无开放 required/必改 finding。verdict = **pass**。
+
+建议 `/govern`：
+
+1. 记录已响应 A-003（independent close-out pass）；**无需**为 GOAL-006 重开或降级 status。
+2. 继续父目标 GOAL-002 后续（通知 API、订单 DELETE/refund、M4/I-010 等），勿把 I-002 回灌为本子目标缺口。
+
+### 声明
+
+本意见 `source: independent`，**不修改** `status` / `progress` / goal-tree 状态列；响应与是否维持关门由 `/govern` 处理。
+
+---
+
+## A-004 · 响应 A-003：维持 GOAL-006 done（2026-07-25）
+
+- **source**：self
+- **auditor**：/govern · Grok
+- **类型**：response
+- **scope**：响应 A-003 independent close-out pass；核对是否维持 `done` / 100%；不重开范围、不改产品代码
+- **verdict**：**pass**
+- **完整意见**：本节即全文
+
+### 响应对象
+
+| 意见 | source | verdict | 本轮响应 |
+|------|--------|---------|----------|
+| A-003 | independent | pass | 采纳；维持关门 |
+
+### 关闭证据表
+
+| 项 | 状态 | 证据 |
+|----|------|------|
+| A-003 required findings | 无 | A-003 Findings / 必改项汇总为空 |
+| A-003 recommended findings | 无 | 同上 |
+| I-001 实施契约 | verified | D-003 + A-001；A-002/A-003 实施与契约一致 |
+| I-002 Page Schema | open / non-blocking | 明确归属 GOAL-002 M4；**不**回灌为本子目标缺口 |
+| status / progress | **维持** `done` / 100% | 与 A-002 自审关门及 A-003 独立复审一致；无降级或重开依据 |
+
+### 裁决与放行
+
+1. A-003 与 A-001/A-002 **无 verdict 冲突**，无开放必改 finding。
+2. 用户书面确认：响应 A-003、**维持 done**，并推进父目标 GOAL-002 M3c。
+3. 本响应**不**修改 GOAL-006 `status`/`progress`；I-002 继续仅由父目标 M4 处理。
+
+### 仍开放项
+
+- **无**本目标范围内的开放 required finding 或到期 required 信息项。
+- I-002 仍 open 且 non-blocking，不阻断本目标保持 `done`。
+
+### 结论 + 建议下一步
+
+GOAL-006 关门在 independent close-out 下成立；编排器响应完成，**维持 done**。下一拍进入 GOAL-002 **M3c**：创建通知 API 子目标，并先登记/冻结通知首切片实施契约（编码前关闭该子目标 I-001）。

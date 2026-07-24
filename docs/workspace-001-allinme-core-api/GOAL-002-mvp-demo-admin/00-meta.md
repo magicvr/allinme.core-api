@@ -5,7 +5,7 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-25
-version: 0.14.0
+version: 0.16.0
 progress: 60%
 ---
 
@@ -55,8 +55,8 @@ progress: 60%
 | **M1** | 门禁：I-009 | **完成** | GOAL-003 done |
 | **M2** | 鉴权 + RBAC + 菜单 | **完成** | [GOAL-004](../GOAL-004-auth-rbac-menu/00-meta.md)（依据既有事实补录，done） |
 | **M3a** | 订单 API 首切片 | **完成** | [GOAL-005](../GOAL-005-order-api-first-slice/00-meta.md)（依据既有事实补录，done） |
-| **M3b** | 钱包 API + 种子数据 | **完成** | [GOAL-006](../GOAL-006-wallet-api/00-meta.md)（done / 100%；A-002 close-out pass） |
-| **M3c** | 通知 API + 种子数据 | 未开始 | 进入阶段时创建子目标 |
+| **M3b** | 钱包 API + 种子数据 | **完成** | [GOAL-006](../GOAL-006-wallet-api/00-meta.md)（done / 100%；A-002/A-003 close-out pass，A-004 响应维持 done） |
+| **M3c** | 通知 API + 种子数据 | **进行中** | [GOAL-007](../GOAL-007-notification-api/00-meta.md)（active / 20%；I-001 verified；N1 完成，N2 待） |
 | **M3d** | 订单 DELETE / refund 补齐 | 未开始 | 进入阶段时创建子目标；不把首切片误记为全量完成 |
 | **M4** | page schema、仪表盘与协议校验 | 未开始 | 进入阶段时创建子目标；依赖 **I-010** verified |
 | **M5** | MVP 集成验收 | 未开始 | 最后创建验收子目标，对照本目标全部成功标准 |
@@ -90,7 +90,8 @@ progress: 60%
 
 - [GOAL-004-auth-rbac-menu](../GOAL-004-auth-rbac-menu/00-meta.md) — M2，**done**（补录）
 - [GOAL-005-order-api-first-slice](../GOAL-005-order-api-first-slice/00-meta.md) — M3a，**done**（补录）
-- [GOAL-006-wallet-api](../GOAL-006-wallet-api/00-meta.md) — M3b，**active**
+- [GOAL-006-wallet-api](../GOAL-006-wallet-api/00-meta.md) — M3b，**done**
+- [GOAL-007-notification-api](../GOAL-007-notification-api/00-meta.md) — M3c，**active**
 
 ## 备注
 
@@ -100,4 +101,6 @@ progress: 60%
 - 2026-07-25：GOAL-006 D-003 + A-001 关闭钱包 I-001，W0 完成。
 - 2026-07-25：GOAL-006 W1～W3 实施完成。
 - 2026-07-25：GOAL-006 A-002 close-out pass，钱包 API 子目标 `done` / 100%；父目标因真实产品增量调整为 60%。
+- 2026-07-25：GOAL-006 A-003 independent close-out pass；A-004 响应维持 done。进入 M3c：创建 GOAL-007，D-003 冻结通知首切片契约；父目标 progress 仍 60%（尚无通知产品代码）。
+- 2026-07-25：GOAL-007 A-001 design-plan pass，I-001 verified；N1 domain/port/service 完成（20%）；父目标 progress 仍 60%（N2/N3 未交付 HTTP）。
 - I-010 仍 open 且仅阻断 M4 校验宣称。

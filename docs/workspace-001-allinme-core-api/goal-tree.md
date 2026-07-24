@@ -4,7 +4,7 @@ status: active
 created: 2026-07-23
 updated: 2026-07-25
 parent: null
-version: 0.16.0
+version: 0.18.0
 ---
 
 # 目标树 · allinme.core-api
@@ -19,7 +19,8 @@ GOAL-001-allinme-core-api                   [active  25%]  可复用的 Schema-U
 └── GOAL-002-mvp-demo-admin                 [active  60%]  MVP Admin · R1（渐进子目标）
     ├── GOAL-004-auth-rbac-menu             [done   100%]  鉴权、RBAC 与菜单闭环（补录）
     ├── GOAL-005-order-api-first-slice      [done   100%]  订单 API 首切片（补录）
-    └── GOAL-006-wallet-api                 [done   100%]  钱包 API 与种子数据
+    ├── GOAL-006-wallet-api                 [done   100%]  钱包 API 与种子数据
+    └── GOAL-007-notification-api           [active  20%]  通知 API 与种子数据
 ```
 
 ## 状态表
@@ -28,10 +29,11 @@ GOAL-001-allinme-core-api                   [active  25%]  可复用的 Schema-U
 |----|------|--------|--------|----------|------|
 | GOAL-001-allinme-core-api | 可复用的 Schema-UI 核心 API 基座 | `null` | **active** | 25% | R0.8 完成；R1 渐进推进 |
 | GOAL-003-modular-ioc-foundation | 模块化 IoC 骨架（可换实现） | GOAL-001-allinme-core-api | **done** | 100% | 已关门 |
-| GOAL-002-mvp-demo-admin | MVP · Demo 完整 Admin（协议驱动） | GOAL-001-allinme-core-api | **active** | 60% | 父目标；M2/M3a/M3b 子目标已完成，通知下一步 |
+| GOAL-002-mvp-demo-admin | MVP · Demo 完整 Admin（协议驱动） | GOAL-001-allinme-core-api | **active** | 60% | 父目标；M3c 通知进行中（N1 完成） |
 | GOAL-004-auth-rbac-menu | 鉴权、RBAC 与菜单闭环 | GOAL-002-mvp-demo-admin | **done** | 100% | 依据 2026-07-24 既有实施事实补录 |
 | GOAL-005-order-api-first-slice | 订单 API 首切片 | GOAL-002-mvp-demo-admin | **done** | 100% | 不含单项 DELETE/refund |
-| GOAL-006-wallet-api | 钱包 API 与种子数据 | GOAL-002-mvp-demo-admin | **done** | 100% | A-002 close-out pass；无 required findings |
+| GOAL-006-wallet-api | 钱包 API 与种子数据 | GOAL-002-mvp-demo-admin | **done** | 100% | A-003 independent close-out pass；A-004 维持 done |
+| GOAL-007-notification-api | 通知 API 与种子数据 | GOAL-002-mvp-demo-admin | **active** | 20% | A-001 pass；I-001 verified；N1 完成，N2 待 |
 
 ## 路线图摘要（Root）
 
@@ -40,7 +42,7 @@ GOAL-001-allinme-core-api                   [active  25%]  可复用的 Schema-U
 | R0 治理与边界冻结 | 完成（阶段） | 立项 + 协议钉死 |
 | R0.5 协议演进（外仓） | 完成 | schema-ui-docs v2.4.1 |
 | **R0.8 模块化 IoC 骨架** | **完成** | GOAL-003 done |
-| R1 MVP Demo Admin | **进行中** | GOAL-002；GOAL-004/005/006 done；通知 API 下一步 |
+| R1 MVP Demo Admin | **进行中** | GOAL-002；GOAL-004/005/006 done；GOAL-007 active |
 | R2 协议对齐与复用沉淀 | 未开始 | 待建 |
 | R3 多项目消费就绪 | 未开始 | 待建 |
 
@@ -60,7 +62,7 @@ Root **D-008**：P-M1～P-M8；落地见 GOAL-003 done + [modular-ioc.md](../../
 
 ## 门禁与下一步提示
 
-- **GOAL-006**：A-002 close-out pass，`done` / 100%；I-002 保留给 GOAL-002 M4，不阻断钱包 API 子目标。
-- **GOAL-002 后续 M3**：通知 API 与订单单项 DELETE/refund 尚未立项；按渐进路线图进入阶段时创建。
-- **GOAL-002 I-010**：协议制品落仓/校验；阻断 M4 校验宣称。
+- **GOAL-006**：A-003 independent close-out pass；A-004 响应维持 `done` / 100%；I-002 保留给 GOAL-002 M4。
+- **GOAL-007**：A-001 design-plan pass；I-001 verified；N1 domain/port/service 完成（20%）；下一步 N2 SQLite/seed。
+- **GOAL-002 后续**：M3d 订单 DELETE/refund、M4 Page Schema/I-010、M5 验收尚未立项。
 - GOAL-003、GOAL-004、GOAL-005：**已关门**。
