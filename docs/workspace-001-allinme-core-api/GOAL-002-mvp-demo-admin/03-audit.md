@@ -5,7 +5,7 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-25
-version: 0.9.0
+version: 0.12.0
 ---
 
 # 审计 · GOAL-002
@@ -251,8 +251,199 @@ version: 0.9.0
 
 ---
 
+## A-007 · M3a 订单首切片实施事实独立审计（2026-07-25）
+
+- **source**：independent
+- **auditor**：Claude Code · Opus 4.8
+- **类型**：execution-facts
+- **scope**：GOAL-002 M3a 订单 API 首切片实施事实；核对父目标 D-018、02-execution、代码与测试，并交叉核对补录子目标 GOAL-005；不审钱包/通知、订单 DELETE/refund、Page Schema 或 GOAL-002 整体关门
+- **verdict**：**conditional**
+- **完整意见**：本节即全文
+
+### 范围与区间
+
+- 工作区：`workspace-001-allinme-core-api`；`root_goal=GOAL-001-allinme-core-api`；`canonical_scope=docs/workspace-001-allinme-core-api/`，目标及 GOAL-005 均在该范围内。
+- `shared_materials_catalog: none`；本 scope 未使用或声明共享资料引用。
+- 权威实施契约：本目标 [01-decision.md](01-decision.md) **D-018**；原始实施记录：[02-execution.md](02-execution.md) 2026-07-25 M3；补录边界：[GOAL-005](../GOAL-005-order-api-first-slice/00-meta.md)。
+- 代码区间：`internal/domain/order.go`、`internal/port/order.go`、`internal/service/order/`、`internal/repository/sqlite/`、`internal/handler/order*`、`internal/app/app.go` 与 `internal/response/`。
+- 本审计仅追加意见，未修改目标 `status` / `progress`、决策正文或 `goal-tree.md`。
+
+### 成果（有证据）
+
+| 主张 | 证据与复核结论 |
+|------|----------------|
+| 首切片七个 `/v1/orders` 端点已接线 | `internal/handler/handler.go` 注册 list/detail/create/update/mark-paid/cancel/batch-delete；无裸 `/orders` 兼容路由。 |
+| Bearer 与角色边界已落实 | 同文件对全部订单路由套 `RequireAuth`；写路由另套 `RequireRoles("admin", "operator")`；`internal/handler/order_test.go` 覆盖未认证 401、viewer 写入 403 与三角色读写路径。 |
+| 领域、port、service 与唯一 composition root 边界存在 | `internal/domain/order.go`、`internal/port/order.go`、`internal/service/order/service.go`；`internal/app/app.go` 注入 SQLite repository，service 未直连 `database/sql`。 |
+| D-018 的分页、搜索、默认值、CAS 与 pending-only 状态机已实现 | `service.go` 校验 page/pageSize/status、默认创建 pending/CNY/version=1、PUT 与动作校验 version/state；SQLite `WHERE version=? AND status=pending` 执行 CAS。 |
+| batch-delete 为事务 all-or-nothing | service 拒绝空/重复/超过 100；`internal/repository/sqlite/order.go` 先在单事务内核对全部状态，再删除并提交；测试覆盖混合状态回滚。 |
+| SQLite seed 与复核修正事实可核对 | `seed.go` 在单事务内做空表检查和四状态插入；repository 测试覆盖中途失败回滚、重试、固定宽度时间戳与同秒排序。 |
+| 成功 envelope 与主要错误映射存在 | `internal/response/envelope.go` 输出 `{code:0,message:"ok",data:...}`；`internal/handler/order.go` 映射 400/404/409/500 且不回传底层错误文本。 |
+| 当前验证命令可重复通过 | 本轮执行 `go test -count=1 ./...` **pass**、`go vet ./...` **pass**、`git diff --check` **pass**。 |
+
+### 对照成功标准（M3a / GOAL-005 首切片）
+
+| 标准 | 结论 |
+|------|------|
+| 领域状态、Repository port、service 用例 | **达成** |
+| SQLite schema、查询、CAS、事务 batch-delete、幂等种子 | **达成** |
+| list/detail/create/update/mark-paid/cancel/batch-delete | **达成** |
+| Bearer 与 admin/operator/viewer 读写边界 | **达成** |
+| 分页、搜索、CAS、状态机与成功 envelope 的跨层证据 | **基本达成** |
+| D-018 稳定错误码的跨层测试证据 | **证据不足**（F-008） |
+| 本轮 test/vet/diff-check | **达成** |
+| 单项 DELETE/refund 与 Page Schema | 明确范围外；父目标 M3d/M4 仍开放，未被本结论放行 |
+
+### Findings
+
+| ID | 级别 | 严重度 | 说明 | 证据 / 关联 |
+|----|------|--------|------|-------------|
+| **F-008** | **required** | med | **“错误 envelope 有跨层测试”及 D-018 稳定错误码的完成主张证据不足**：HTTP 集成测试对 404、stale version、invalid state、batch invalid state 仅断言 HTTP 状态，没有断言响应 `code` 分别为 `order_not_found`、`version_conflict`、`invalid_state`；未覆盖 `order_no_conflict` 的 HTTP code，也未通过可注入失败路径覆盖未知内部错误统一映射为 `internal` 且不泄露底层错误。当前实现静态阅读符合映射，但测试不能防止稳定错误码或泄露约束回归，因此 GOAL-002 02-execution“错误 envelope 有跨层测试”和 GOAL-005 对应成功标准不宜无条件视为已证实。 | D-018 §8；[02-execution.md](02-execution.md) 第 74 行主张；[GOAL-005 00-meta](../GOAL-005-order-api-first-slice/00-meta.md) 成功标准；`internal/handler/order_test.go` 仅状态断言；`internal/handler/order.go` `orderError` |
+| **F-009** | recommended | low | `versionConflict` 将 CAS 更新 0 行统一折叠为 `version_conflict`；在 service 读取成功后、实际 UPDATE 前记录被并发删除时，HTTP 会返回 409 而非 D-018 的 404。该竞态窗口很窄，不否定首切片主体完成，但建议后续明确 repository 的“not found vs stale”判别语义并补测试。 | D-018 §8；`internal/repository/sqlite/order.go` 的 `Update` / `ChangeStatus` / `versionConflict` |
+
+### 必改项汇总
+
+1. **F-008**：补充 HTTP 跨层断言，至少验证 `bad_request`、`order_not_found`、`order_no_conflict`、`version_conflict`、`invalid_state` 的响应 `code`；为未知 repository/service 错误建立可注入 handler 测试，断言 500 `internal` 且响应不包含底层错误文本。完成后更新实施事实，或将现有“错误 envelope 有跨层测试”主张收窄为当前实际覆盖范围。
+
+### 与既有意见的异同
+
+- 与 **A-004/A-005** 同向：D-018 的实施入口契约完整且 required F-006 已在编码前关闭；本意见不重开方案 finding。
+- 与 **GOAL-005 A-001 self close-out** 的主体结论一致：实现、RBAC、SQLite、CAS、事务与验证命令均有事实证据；差异是该自审把“错误 envelope”整体判定为达成，而本次独立审计发现稳定错误 `code` 的跨层断言缺口，故 verdict 从 pass 收紧为 **conditional**。
+- **A-006** 审的是渐进路线图，不覆盖本次 execution-facts；两者无冲突。
+
+### 结论 + 建议给编排器/用户的下一步
+
+订单首切片的代码实现、SQLite 事务与种子、Bearer/RBAC、CAS 状态机以及本轮 test/vet/diff-check 均可重复核对，主体实施事实成立；但 D-018 把错误码定义为稳定契约，而现有跨层测试未验证这些 `code`，与文档“错误 envelope 有跨层测试”的完成主张存在重要证据缺口。因此本 scope verdict = **conditional**，在 F-008 关闭前不宜把 M3a 实施事实视为无条件通过，也不宜基于本意见推进 GOAL-002 整体关门。
+
+建议由 `/govern`：
+
+1. 汇总本 A-007 与 GOAL-005 A-001 的差异，确认以补测试关闭 F-008（推荐），或收窄成功主张并重新评估 GOAL-005 关门状态；
+2. 修正后记录可核对命令与测试路径，必要时请求 `/audit GOAL-002 A-007 F-008 关闭复审`；
+3. F-009 作为非阻断项排入后续订单健壮性工作。
+
+### 声明
+
+本意见不修改 `status` / `progress`；响应由 `/govern` 处理。
+
+---
+
+## A-008 · 编排响应 A-007 F-008（2026-07-25）
+
+- **source**：self（编排响应，非 independent）
+- **auditor**：/govern · Claude Code
+- **类型**：response / finding-closure
+- **scope**：响应 A-007 F-008；核对稳定错误码与 500 internal 不泄露测试；评估 GOAL-005 既有 done 状态；不复审 F-009，不审订单后续范围或 GOAL-002 整体关门
+- **verdict**：**pass**
+- **完整意见**：本节即全文
+
+### 响应范围与用户裁决
+
+- 被响应：**A-007 F-008**（independent，required / med）。
+- 既有差异：GOAL-005 A-001 self close-out 为 pass；A-007 对相同首切片实施事实收紧为 conditional，指出错误 `code` 测试证据不足。
+- 用户本轮书面指令选择按 A-007 建议**补齐测试并留痕评估 done 状态**，未选择忽略 independent finding 或接受残余风险；该修正路径消解了结论差异。
+- 工作区、Root Goal 与 canonical scope 仍匹配；本 scope 不使用共享资料。I-010 仅阻断 M4，与本次 M3a finding 关闭无关。
+
+### 关闭证据表
+
+| Finding / 项 | 状态 | 修正与证据 |
+|--------------|------|------------|
+| A-007 **F-008**：400/404/409 稳定错误 `code` 缺少跨层断言 | **closed** | `internal/handler/order_test.go` 新增 `bad_request`、`order_not_found`、`order_no_conflict`、`version_conflict`、`invalid_state` 的 HTTP 响应 code 断言。 |
+| A-007 **F-008**：未知内部错误未验证统一 `internal` 且不泄露 | **closed** | `internal/handler/order.go` 以本地 `orderService` 接口支持 handler 依赖注入；新增 `internal/handler/order_internal_test.go`，注入含敏感路径的失败错误并断言 HTTP 500、`code=internal`、响应不含底层错误文本。 |
+| 修正后验证 | **pass** | `gofmt`；`go test -count=1 ./...`；`go vet ./...`；`git diff --check` 均于 2026-07-25 通过；事实写入 [02-execution.md](02-execution.md)。 |
+| GOAL-005 状态留痕 | **done 保持** | [GOAL-005 02-execution](../GOAL-005-order-api-first-slice/02-execution.md) 记录关门后 finding 与修正；[GOAL-005 A-002](../GOAL-005-order-api-first-slice/03-audit.md) 记录关闭复核。无 status/progress 变化。 |
+
+### GOAL-005 done 状态评估
+
+1. A-007 确认首切片端点、SQLite、事务、RBAC、CAS 与主体实现事实成立；F-008 针对的是 D-018 错误契约的**测试证据缺口**，并未发现产品范围或实现主路径缺失。
+2. P-003 下 required finding 在开放期间不得作为放行依据；本轮先完成修正和验证，再形成关闭记录，未用 GOAL-005 的既有 `done` 绕过该门禁推进 GOAL-002 关门。
+3. 修正未改变 GOAL-005 成功边界或产品进度；在 F-008 有证据关闭后，GOAL-005 可继续保持 `done` / 100%。因 status/progress/parent 均未变化，`goal-tree.md` 无需更新。
+4. 若修正未通过验证，正确处置应为恢复开放 F-008 并重新评估 GOAL-005 状态；本轮未触发该分支。
+
+### 仍开放项
+
+| 项 | 级别 | 状态 | 影响 |
+|----|------|------|------|
+| A-007 **F-009** | recommended / low | open | 非阻断；后续订单健壮性工作明确并发删除时 404 vs 409 语义。 |
+| **I-010** | required | open | 仅阻断 M4 协议制品校验宣称；不影响本次 M3a F-008 关闭。 |
+
+### 结论
+
+A-007 F-008 的两部分证据缺口均已由可重复测试关闭；A-007 的 execution-facts 门禁可由 conditional 转为响应后的 **pass**。GOAL-005 保持 `done` / 100%，并已在父子目标 execution/audit 中留下“关门后 finding → 修正 → 验证 → 关闭”的完整轨迹。本响应不放行 GOAL-002 整体关门，也不关闭 F-009 或 I-010。
+
+---
+
+## A-009 · A-007 F-008 关闭独立复审（2026-07-25）
+
+- **source**：independent
+- **auditor**：Claude Code · Opus 4.8
+- **类型**：finding-closure
+- **scope**：仅复审 A-007 F-008 的关闭证据与 A-008 响应真实性；核对稳定错误 code、500 internal 不泄露、验证命令及 GOAL-005 done 留痕；不复审 F-009，不审订单后续范围、钱包、M4 或 GOAL-002 整体关门
+- **verdict**：**pass**
+- **完整意见**：本节即全文
+
+### 范围与区间
+
+- 工作区：`workspace-001-allinme-core-api`；Root `GOAL-001-allinme-core-api`；canonical scope 与目标路径匹配。
+- `shared_materials_catalog: none`；本 scope 未使用共享资料引用。
+- 被复审意见：A-007 F-008（required / med）；响应记录：A-008；子目标留痕：GOAL-005 A-002 与其 02-execution。
+- I-010 仅阻断 M4 协议制品校验；与本次 M3a 错误契约测试关闭无关。F-009 明确排除在本复审 scope 外。
+- 本意见未修改任何目标 `status` / `progress`、决策正文或 `goal-tree.md`。
+
+### 关闭证据复核
+
+| F-008 要求 | 证据 | 复核结果 |
+|------------|------|----------|
+| HTTP 跨层断言 `bad_request` | `internal/handler/order_test.go`：未知 JSON 字段与极大分页均断言 HTTP 400 + `code=bad_request` | **满足** |
+| HTTP 跨层断言 `order_not_found` | 同文件：不存在订单详情断言 HTTP 404 + `code=order_not_found` | **满足** |
+| HTTP 跨层断言 `order_no_conflict` | 同文件：重复 `ORD-HTTP` 创建断言 HTTP 409 + `code=order_no_conflict` | **满足** |
+| HTTP 跨层断言 `version_conflict` | 同文件：stale version PUT 断言 HTTP 409 + `code=version_conflict` | **满足** |
+| HTTP 跨层断言 `invalid_state` | 同文件：paid 后 cancel 与混合状态 batch-delete 均断言 HTTP 409 + `code=invalid_state` | **满足** |
+| 未知内部错误可注入 | `internal/handler/order.go` 的本地 `orderService` 接口允许 handler 测试注入失败 service；生产 `*order.Service` 仍满足接口 | **满足** |
+| 500 `internal` 且不泄露底层错误 | `internal/handler/order_internal_test.go` 注入含 `C:\\secret\\orders.db` 的 SQLite 错误，断言 HTTP 500、`code=internal`，且响应不含完整错误或敏感路径 | **满足** |
+| 修正事实与状态留痕 | GOAL-002 02-execution、A-008；GOAL-005 02-execution、A-002 对关门后 finding、修正、验证及 done 保留依据互相指回 | **满足** |
+
+### 可重复验证
+
+本轮独立复审重新执行：
+
+- `go test -count=1 ./internal/handler`：**pass**
+- `go test -count=1 ./...`：**pass**
+- `go vet ./...`：**pass**
+- `git diff --check`：**pass**
+
+### Findings
+
+- **无新增 required 或 recommended finding。**
+- A-007 **F-008**：**closed（独立复审确认）**。
+- A-007 **F-009**：仍为 recommended / low / open；不在本次复审范围，不影响 F-008 关闭结论。
+
+### 与既有意见的异同
+
+- 与 **A-008 self response** 同向：其关闭表中的代码路径、测试覆盖和命令结果均可重复核对。
+- 与 **GOAL-005 A-002 self 关闭复核** 同向：F-008 是测试证据缺口，修正后不改变首切片成功边界；保留 `done` / 100% 有可追踪依据。
+- A-007 原 conditional verdict 的唯一 required F-008 已关闭；历史 verdict 保留不改，由本 A-009 记录关闭后的独立结论。
+
+### 必改项汇总
+
+- **无。**
+
+### 结论 + 建议给编排器/用户的下一步
+
+A-007 F-008 的全部关闭要求均有代码、跨层测试、内部错误不泄露测试和可重复命令证据，A-008 的关闭声明真实充分。**F-008 独立关闭复审 verdict = pass**；该 finding 不再阻断 M3a 实施事实或 GOAL-005 首切片关门状态。
+
+本结论不关闭 F-009、I-010，不放行 GOAL-002 整体关门。建议由 `/govern` 汇总 A-009，并继续按当前路线图处理 GOAL-006 钱包契约门禁，或另行安排非阻断 F-009。
+
+### 声明
+
+本意见不修改 `status` / `progress`；响应由 `/govern` 处理。
+
+---
+
 ## 备注
 
 - 2026-07-24：A-001 independent；A-002 govern 响应；A-003 I-009 关闭。
 - 2026-07-25：A-004 self design-plan；已由 A-005 以 D-018 与附件关闭其 required finding。
 - 2026-07-25：A-006 self design-plan 审视渐进子目标路线图，pass，无 required；GOAL-006 I-001 仍作为钱包实施门禁。
+- 2026-07-25：A-007 independent execution-facts 审计订单首切片，conditional；提出 F-008 required 与 F-009 recommended。
+- 2026-07-25：A-008 `/govern` 响应以稳定错误码和 internal 不泄露测试关闭 F-008；GOAL-005 保持 done，F-009 仍开放。
+- 2026-07-25：A-009 independent finding-closure 复审确认 F-008 closed / pass，无新增 finding。

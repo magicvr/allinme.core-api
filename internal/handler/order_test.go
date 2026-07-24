@@ -91,7 +91,7 @@ func TestOrderHTTPIntegration(t *testing.T) {
 		t.Fatalf("cancel envelope = %s", cancelled.Body.String())
 	}
 
-	assertOrderStatus(t, application.Handler, http.MethodGet, "/v1/orders/does-not-exist", nil, admin, http.StatusNotFound)
+	assertOrderError(t, application.Handler, http.MethodGet, "/v1/orders/does-not-exist", nil, admin, http.StatusNotFound, "order_not_found")
 	updated := requestOrder(t, application.Handler, http.MethodPut, "/v1/orders/"+createEnv.Data.ID, []byte(`{"version":1,"customerName":"Updated Customer","amountCents":2999,"currency":"USD","remark":"updated"}`), admin, http.StatusOK)
 	var updateEnv struct {
 		Data struct {
@@ -102,7 +102,7 @@ func TestOrderHTTPIntegration(t *testing.T) {
 	if updateEnv.Data.Version != 2 {
 		t.Fatalf("update envelope = %s", updated.Body.String())
 	}
-	assertOrderStatus(t, application.Handler, http.MethodPut, "/v1/orders/"+createEnv.Data.ID, []byte(`{"version":1,"customerName":"Stale","amountCents":1,"currency":"CNY"}`), operator, http.StatusConflict)
+	assertOrderError(t, application.Handler, http.MethodPut, "/v1/orders/"+createEnv.Data.ID, []byte(`{"version":1,"customerName":"Stale","amountCents":1,"currency":"CNY"}`), operator, http.StatusConflict, "version_conflict")
 
 	paid := requestOrder(t, application.Handler, http.MethodPost, "/v1/orders/"+createEnv.Data.ID+"/mark-paid", []byte(`{"version":2}`), operator, http.StatusOK)
 	var paidEnv struct {
@@ -115,9 +115,9 @@ func TestOrderHTTPIntegration(t *testing.T) {
 	if paidEnv.Data.Status != "paid" || paidEnv.Data.Version != 3 {
 		t.Fatalf("paid envelope = %s", paid.Body.String())
 	}
-	assertOrderStatus(t, application.Handler, http.MethodPost, "/v1/orders/"+createEnv.Data.ID+"/cancel", []byte(`{"version":3}`), admin, http.StatusConflict)
+	assertOrderError(t, application.Handler, http.MethodPost, "/v1/orders/"+createEnv.Data.ID+"/cancel", []byte(`{"version":3}`), admin, http.StatusConflict, "invalid_state")
 
-	batch := requestOrder(t, application.Handler, http.MethodPost, "/v1/orders/batch-delete", []byte(`{"ids":["ord_seed_pending","ord_seed_paid"]}`), admin, http.StatusConflict)
+	batch := assertOrderError(t, application.Handler, http.MethodPost, "/v1/orders/batch-delete", []byte(`{"ids":["ord_seed_pending","ord_seed_paid"]}`), admin, http.StatusConflict, "invalid_state")
 	if batch.Code != http.StatusConflict {
 		t.Fatalf("batch status = %d", batch.Code)
 	}
@@ -133,8 +133,10 @@ func TestOrderHTTPIntegration(t *testing.T) {
 		t.Fatalf("delete envelope = %s", deleted.Body.String())
 	}
 
-	assertOrderStatus(t, application.Handler, http.MethodPost, "/v1/orders", []byte(`{"orderNo":"ORD-BAD","unknown":true}`), admin, http.StatusBadRequest)
-	assertOrderStatus(t, application.Handler, http.MethodGet, "/v1/orders?page=9223372036854775807&pageSize=100", nil, viewer, http.StatusBadRequest)
+	assertOrderError(t, application.Handler, http.MethodPost, "/v1/orders", []byte(`{"orderNo":"ORD-BAD","unknown":true}`), admin, http.StatusBadRequest, "bad_request")
+	assertOrderError(t, application.Handler, http.MethodGet, "/v1/orders?page=9223372036854775807&pageSize=100", nil, viewer, http.StatusBadRequest, "bad_request")
+
+	assertOrderError(t, application.Handler, http.MethodPost, "/v1/orders", []byte(`{"orderNo":"ORD-HTTP","customerName":"Duplicate","amountCents":1}`), admin, http.StatusConflict, "order_no_conflict")
 }
 
 func orderTestToken(t *testing.T, handler http.Handler, username string) string {
@@ -150,6 +152,19 @@ func orderTestToken(t *testing.T, handler http.Handler, username string) string 
 		t.Fatalf("missing token for %s", username)
 	}
 	return envelope.Data.AccessToken
+}
+
+func assertOrderError(t *testing.T, handler http.Handler, method, path string, body []byte, token string, wantStatus int, wantCode string) *httptest.ResponseRecorder {
+	t.Helper()
+	rr := requestOrder(t, handler, method, path, body, token, wantStatus)
+	var envelope struct {
+		Code string `json:"code"`
+	}
+	decodeOrderBody(t, rr, &envelope)
+	if envelope.Code != wantCode {
+		t.Fatalf("%s %s error code=%q want=%q body=%s", method, path, envelope.Code, wantCode, rr.Body.String())
+	}
+	return rr
 }
 
 func assertOrderStatus(t *testing.T, handler http.Handler, method, path string, body []byte, token string, want int) {

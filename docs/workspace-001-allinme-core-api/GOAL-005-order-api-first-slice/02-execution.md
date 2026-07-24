@@ -5,7 +5,7 @@ status: done
 parent: GOAL-002-mvp-demo-admin
 created: 2026-07-25
 updated: 2026-07-25
-version: 0.1.0
+version: 0.2.0
 ---
 
 # 执行记录 · GOAL-005
@@ -35,6 +35,16 @@ version: 0.1.0
 
 - 将 GOAL-002 M3 的订单首切片补录为独立 done 子目标。
 - 未将单项 DELETE/refund 伪记为完成；二者继续归父目标后续范围。
+
+### 2026-07-25 · 父目标 A-007 F-008 关闭修正
+
+- 父目标 GOAL-002 A-007 独立审计指出：现有实现具备稳定错误映射，但跨层测试只断言部分 HTTP 状态，尚不足以证明 D-018 的稳定错误 `code` 与 internal 不泄露约束。
+- `internal/handler/order_test.go` 已增加 `bad_request`、`order_not_found`、`order_no_conflict`、`version_conflict`、`invalid_state` 的 HTTP 响应 code 断言。
+- 新增 `internal/handler/order_internal_test.go`，通过可注入失败 service 验证未知错误返回 HTTP 500 / `internal`，且不泄露底层敏感错误文本。
+- 为支持该测试，`internal/handler/order.go` 的 handler 依赖改为本地最小接口；生产 composition root 与订单业务行为保持不变。
+- `gofmt`、`go test -count=1 ./...`、`go vet ./...`、`git diff --check` 均通过。
+
+**状态留痕**：F-008 是关门后发现的测试证据缺口，不是首切片端点或产品范围缺失。本轮在继续推进父目标其他阶段前完成修正并形成 GOAL-002 A-008 / 本目标 A-002 关闭记录，因此本目标保留 `done` / 100%；未发生 status/progress 变化，无需修改 `goal-tree.md`。
 
 ## 待办
 

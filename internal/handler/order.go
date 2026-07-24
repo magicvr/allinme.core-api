@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,6 +15,16 @@ import (
 )
 
 const maxOrderRequestBody = 1 << 20
+
+type orderService interface {
+	List(context.Context, port.OrderListFilter) ([]domain.Order, int, error)
+	Get(context.Context, string) (domain.Order, error)
+	Create(context.Context, orderservice.CreateInput) (domain.Order, error)
+	Update(context.Context, string, orderservice.UpdateInput) (domain.Order, error)
+	MarkPaid(context.Context, string, int64) (domain.Order, error)
+	Cancel(context.Context, string, int64) (domain.Order, error)
+	BatchDelete(context.Context, []string) (int, error)
+}
 
 type createOrderRequest struct {
 	OrderNo      string `json:"orderNo"`
@@ -44,7 +55,7 @@ type orderListData struct {
 	Total int            `json:"total"`
 }
 
-func listOrders(service *orderservice.Service) http.Handler {
+func listOrders(service orderService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		filter, err := parseOrderListFilter(r)
 		if err != nil {
@@ -60,7 +71,7 @@ func listOrders(service *orderservice.Service) http.Handler {
 	})
 }
 
-func getOrder(service *orderservice.Service) http.Handler {
+func getOrder(service orderService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		order, err := service.Get(r.Context(), r.PathValue("id"))
 		if err != nil {
@@ -71,7 +82,7 @@ func getOrder(service *orderservice.Service) http.Handler {
 	})
 }
 
-func createOrder(service *orderservice.Service) http.Handler {
+func createOrder(service orderService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req createOrderRequest
 		if err := decodeOrderJSON(w, r, &req); err != nil {
@@ -92,7 +103,7 @@ func createOrder(service *orderservice.Service) http.Handler {
 	})
 }
 
-func updateOrder(service *orderservice.Service) http.Handler {
+func updateOrder(service orderService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req updateOrderRequest
 		if err := decodeOrderJSON(w, r, &req); err != nil {
@@ -113,7 +124,7 @@ func updateOrder(service *orderservice.Service) http.Handler {
 	})
 }
 
-func markOrderPaid(service *orderservice.Service) http.Handler {
+func markOrderPaid(service orderService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req orderActionRequest
 		if err := decodeOrderJSON(w, r, &req); err != nil {
@@ -128,7 +139,7 @@ func markOrderPaid(service *orderservice.Service) http.Handler {
 	})
 }
 
-func cancelOrder(service *orderservice.Service) http.Handler {
+func cancelOrder(service orderService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req orderActionRequest
 		if err := decodeOrderJSON(w, r, &req); err != nil {
@@ -143,7 +154,7 @@ func cancelOrder(service *orderservice.Service) http.Handler {
 	})
 }
 
-func batchDeleteOrders(service *orderservice.Service) http.Handler {
+func batchDeleteOrders(service orderService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req batchDeleteOrdersRequest
 		if err := decodeOrderJSON(w, r, &req); err != nil {
