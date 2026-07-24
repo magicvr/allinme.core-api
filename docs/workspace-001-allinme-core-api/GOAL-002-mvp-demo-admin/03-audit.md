@@ -5,7 +5,7 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-25
-version: 0.8.0
+version: 0.9.0
 ---
 
 # 审计 · GOAL-002
@@ -197,7 +197,62 @@ version: 0.8.0
 
 ---
 
+## A-006 · 渐进子目标路线图规划自审（2026-07-25）
+
+- **source**：self
+- **auditor**：Claude Code
+- **类型**：design-plan / stage
+- **scope**：GOAL-002 经 D-019/D-020 调整后的父子目标结构、完成切片补录边界、未来阶段渐进立项、信息门禁与进度口径；不审钱包实施代码
+- **verdict**：**pass**
+- **完整意见**：本节即全文
+
+### 范围与区间
+
+- 工作区：`workspace-001-allinme-core-api`；Root `GOAL-001-allinme-core-api`；canonical scope 与目标路径一致；`shared_materials_catalog: none`，本 scope 不使用共享资料。
+- 对照：P-001～P-005、父目标 M0～M5、D-017～D-020、A-001～A-005、GOAL-004/005/006 五件套及更新后的 `goal-tree.md`。
+- 本次仅审路线图与治理结构；GOAL-006 代码尚未实施，也未被写成已完成。
+
+### 成果（有证据）
+
+| 主张 | 证据 |
+|------|------|
+| GOAL-002 保留总范围与最终验收责任 | [00-meta.md](00-meta.md) 成功标准/路线图；D-019 |
+| 已完成切片有独立边界和关门证据 | [GOAL-004](../GOAL-004-auth-rbac-menu/00-meta.md)、[GOAL-005](../GOAL-005-order-api-first-slice/00-meta.md) 及各自 A-001 |
+| 订单未虚标全量完成 | GOAL-005 明确排除 DELETE/refund；父目标 M3d 保留后续 |
+| 当前工作包独立且未虚构进度 | [GOAL-006](../GOAL-006-wallet-api/00-meta.md) active / 0%；execution 仅记录立项 |
+| 未来目标未过早批量创建 | 父目标 M3c/M3d/M4/M5 仅保留路线图说明 |
+| 树与状态一致 | [goal-tree.md](../goal-tree.md) 含 GOAL-004～006 的 parent/status/progress |
+
+### 对照规划质量与信息门禁
+
+| 维度 | 结论 |
+|------|------|
+| P-001 路线图与拆分 | **满足**：先有既有路线图，再按有独立交付/证据的阶段拆分；未来阶段渐进立项。 |
+| 历史真实性 | **满足**：补录日与历史实施日分开；父目标历史未迁移或删除。 |
+| 完成边界 | **满足**：GOAL-004/005 各自 close-out；GOAL-005 不冒充订单全量完成。 |
+| progress 口径 | **满足**：父目标保持 50%，结构调整未计为产品进展；GOAL-006 为 0%。 |
+| P-005 当前门禁 | **满足**：GOAL-006 I-001 明确 required/open，并阻断 W1～W3；GOAL-002 I-010 继续只阻断 M4 校验宣称。 |
+| 审计意见响应 | **满足**：A-001 required 已由 A-002/A-003 关闭；A-004 required 已由 A-005 关闭；本次补足新版路线图同 scope 的 self 审视。 |
+
+### Findings
+
+| ID | 级别 | 说明 | 状态 |
+|----|------|------|------|
+| F-007 | recommended | 父目标长期保留历史实现细节会有一定重复；后续更新应以子目标为当前执行真相，父目标只追加摘要与链接，避免双写漂移。 | open（非阻断） |
+
+### 必改项汇总
+
+- **无 required / 必改 findings。**
+- 当前开放 required 信息门禁不是本次路线图缺陷：GOAL-006 I-001 阻断钱包实施；GOAL-002 I-010 阻断 M4 校验宣称。
+
+### 结论 + 建议下一步
+
+渐进拆分符合 P-001，父子边界、历史事实、状态与信息门禁一致；新版路线图规划自审 **pass**。下一步应聚焦 **GOAL-006 I-001 钱包实施契约冻结与 design-plan 审视**，在其关闭前不进入钱包代码实施。
+
+---
+
 ## 备注
 
 - 2026-07-24：A-001 independent；A-002 govern 响应；A-003 I-009 关闭。
 - 2026-07-25：A-004 self design-plan；已由 A-005 以 D-018 与附件关闭其 required finding。
+- 2026-07-25：A-006 self design-plan 审视渐进子目标路线图，pass，无 required；GOAL-006 I-001 仍作为钱包实施门禁。

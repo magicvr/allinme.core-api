@@ -5,7 +5,7 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-25
-version: 0.8.0
+version: 0.9.0
 progress: 50%
 ---
 
@@ -47,16 +47,21 @@ progress: 50%
 | 用户 / 角色权限 | admin / operator / viewer |
 | 持久化 | **SQLite 默认**，可换库 |
 
-## 高层路线图（本目标内）
+## 高层路线图（渐进子目标）
 
-| 阶段 | 名称 | 状态 | 说明 |
-|------|------|------|------|
-| **M0** | 方案冻结 | **完成** | I-002～I-007 decided |
+| 阶段 | 名称 | 状态 | 对应目标 / 说明 |
+|------|------|------|-----------------|
+| **M0** | 方案冻结 | **完成** | I-002～I-007 decided；父目标保留权威决策 |
 | **M1** | 门禁：I-009 | **完成** | GOAL-003 done |
-| **M2** | 鉴权 + RBAC + 菜单 | **完成** | JWT / seed / menu API（2026-07-24） |
-| **M3** | 三域 API + 种子数据 | **进行中** | 订单首切片完成（2026-07-25）；钱包 → 通知待实施 |
-| **M4** | page schema 生产与校验 | 未开始 | 依赖 **I-010** verified |
-| **M5** | 验收对照成功标准 | 未开始 | — |
+| **M2** | 鉴权 + RBAC + 菜单 | **完成** | [GOAL-004](../GOAL-004-auth-rbac-menu/00-meta.md)（依据既有事实补录，done） |
+| **M3a** | 订单 API 首切片 | **完成** | [GOAL-005](../GOAL-005-order-api-first-slice/00-meta.md)（依据既有事实补录，done） |
+| **M3b** | 钱包 API + 种子数据 | **进行中** | [GOAL-006](../GOAL-006-wallet-api/00-meta.md)（active；I-001 契约门禁 open） |
+| **M3c** | 通知 API + 种子数据 | 未开始 | 进入阶段时创建子目标 |
+| **M3d** | 订单 DELETE / refund 补齐 | 未开始 | 进入阶段时创建子目标；不把首切片误记为全量完成 |
+| **M4** | page schema、仪表盘与协议校验 | 未开始 | 进入阶段时创建子目标；依赖 **I-010** verified |
+| **M5** | MVP 集成验收 | 未开始 | 最后创建验收子目标，对照本目标全部成功标准 |
+
+> 采用渐进拆分：已有独立证据的完成切片补录为 `done` 子目标；当前阶段创建 `active` 子目标；未来阶段仅保留路线图，进入阶段时再立项，避免提前生成空目标。
 
 ## 信息就绪与未知项（P-005）
 
@@ -81,7 +86,15 @@ progress: 50%
 
 - [GOAL-003-modular-ioc-foundation](../GOAL-003-modular-ioc-foundation/00-meta.md) — **done**
 
+## 子目标
+
+- [GOAL-004-auth-rbac-menu](../GOAL-004-auth-rbac-menu/00-meta.md) — M2，**done**（补录）
+- [GOAL-005-order-api-first-slice](../GOAL-005-order-api-first-slice/00-meta.md) — M3a，**done**（补录）
+- [GOAL-006-wallet-api](../GOAL-006-wallet-api/00-meta.md) — M3b，**active**
+
 ## 备注
 
-- 2026-07-24：M2 落地 JWT + RBAC 菜单；下一步 M3 三域 API。
-- 2026-07-25：M3 订单首切片完成（API、SQLite seed、测试）；钱包/通知待，I-010 仍 open 且仅阻断 M4 校验宣称。
+- 2026-07-24：M2 落地 JWT + RBAC 菜单。
+- 2026-07-25：M3 订单首切片完成（API、SQLite seed、测试）。
+- 2026-07-25：采用渐进子目标拆分；补录 GOAL-004/005，创建 GOAL-006；父目标 progress 暂保持 50%，不因治理重排机械重算。
+- I-010 仍 open 且仅阻断 M4 校验宣称。

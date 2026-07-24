@@ -5,7 +5,7 @@ status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
 updated: 2026-07-25
-version: 0.9.0
+version: 0.10.0
 ---
 
 # 执行记录 · GOAL-002
@@ -77,12 +77,22 @@ progress → **40%**；M2 **完成**；**未**开始三域业务 API（M3）。
 
 progress → **50%**；M3 仍为进行中（订单首切片完成，钱包/通知待）。
 
+### 2026-07-25 · GOAL-002 路线图渐进拆分
+
+**治理事实**：
+
+- 依据用户确认与 P-001，将 GOAL-002 从仅含内部 M0～M5 阶段调整为父目标 + 渐进子目标结构。
+- 补录 [GOAL-004-auth-rbac-menu](../GOAL-004-auth-rbac-menu/00-meta.md)：承接 2026-07-24 已完成的 M2 鉴权/RBAC/菜单事实，`done` / 100%。
+- 补录 [GOAL-005-order-api-first-slice](../GOAL-005-order-api-first-slice/00-meta.md)：承接 2026-07-25 已完成的订单首切片事实，`done` / 100%；明确不含 DELETE/refund。
+- 创建 [GOAL-006-wallet-api](../GOAL-006-wallet-api/00-meta.md)：当前下一执行工作包，`active` / 0%；I-001 required 契约门禁 open，尚未实施代码。
+- 通知、订单补齐、M4 和 M5 暂留在父目标路线图，进入阶段时再创建。
+- 记录 D-019/D-020；父目标 progress 保持 **50%**，治理重排未被计为产品进度。
+
 ## 待办
 
-1. **M3** 钱包 / 通知 API + 种子业务数据（订单单项 DELETE/refund 后续补齐）
-2. M4 page schema embed + **I-010** 校验路径
-3. M5 验收
+1. **GOAL-006**：固定钱包首切片实施契约，完成 design-plan 自审后再编码
+2. 后续按路线图进入通知、订单补齐、M4 page schema + **I-010**、M5 验收
 
 ## 进度评估
 
-**约 50%**：鉴权与菜单闭环、订单首切片及其 SQLite 种子/测试均已完成；钱包、通知与 page schema 仍未做。I-010 仍 open，仅阻断 M4 校验宣称。
+**约 50%**：鉴权与菜单闭环、订单首切片及其 SQLite 种子/测试均已完成；钱包目标已立项但尚未实施，通知与 page schema 仍未做。I-010 仍 open，仅阻断 M4 校验宣称。
