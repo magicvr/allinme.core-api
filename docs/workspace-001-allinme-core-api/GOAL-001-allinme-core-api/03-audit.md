@@ -1,11 +1,11 @@
 ---
 id: GOAL-001-allinme-core-api
 doc: audit
-status: blocked
+status: active
 parent: null
 created: 2026-07-23
-updated: 2026-07-23
-version: 0.2.0
+updated: 2026-07-24
+version: 0.3.0
 ---
 
 # 审计 · GOAL-001
@@ -15,8 +15,8 @@ version: 0.2.0
 | 项 | 状态 | 说明 |
 |----|------|------|
 | I-001 策略 | decided | A 协议演进 |
-| I-006 新协议制品 | collecting · **阻断恢复** | 外仓未完成 |
-| I-002 / I-003 | open · 暂停 | 待 I-006 |
+| I-006 新协议制品 | **verified** | 2.4.1 钉死（D-006）；已解除 blocked（D-007） |
+| I-002 / I-003 | open · 主动收集 | 阻断各自 R1 实施/方案门禁，不阻断「已恢复推进」 |
 
 ## 审计意见台账
 
@@ -24,4 +24,5 @@ version: 0.2.0
 
 ## 备注
 
-Root **blocked**；解除阻塞前应以 I-006 证据为准，不宜在无新协议时推进 R1 实施。
+- 2026-07-24：协议门禁关闭后 Root 为 **active**；R1 实施前仍须 GOAL-002 侧 I-002～I-005。
+- 建议在 GOAL-002 方案冻结前做一次阶段自审或 `/audit`（非本回合强制）。

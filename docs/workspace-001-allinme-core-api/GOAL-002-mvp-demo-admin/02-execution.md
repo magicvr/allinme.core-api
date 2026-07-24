@@ -1,11 +1,11 @@
 ---
 id: GOAL-002-mvp-demo-admin
 doc: execution
-status: blocked
+status: active
 parent: GOAL-001-allinme-core-api
 created: 2026-07-23
-updated: 2026-07-23
-version: 0.2.0
+updated: 2026-07-24
+version: 0.3.0
 ---
 
 # 执行记录 · GOAL-002
@@ -25,12 +25,21 @@ version: 0.2.0
 - `status`：`active` → **`blocked`**；I-002～I-005 标注暂停主动收集至 I-008 关闭。
 - **未**开始业务代码实施。
 
+### 2026-07-24 · I-008 关闭；解除 blocked
+
+- 跟随 Root `/govern`：确认 `schema-ui-docs` **v2.4.1** 制品可固定引用；能力覆盖批量与 CRUD 生命周期主路径。
+- 用户确认钉死 2.4.1 并解除 blocked。
+- I-008 → **`verified`**（版本/tag/SHA-256 见 meta）；写入 **D-006**。
+- `status`：`blocked` → **`active`**；I-002～I-005 恢复主动收集。
+- progress → **5%**（协议门禁关闭；业务方案未开始）。
+- **未**开始业务代码实施。
+
 ## 待办
 
-1. （协议仓）完成含批量等能力的 Schema-UI 新协议版本发布
-2. 关闭 I-008：记录制品版本 / tag / SHA-256 与能力覆盖结论
-3. Root 重新钉死协议版本后，用户确认恢复 → 再推进 I-002～I-005 与方案冻结
+1. 推进 I-002（鉴权选型）、I-003（三域模型）、I-004（RBAC）、I-005（2.4.1 capability → MVP 页面映射）
+2. 方案冻结后进入实施（登录、三域 API、page schema 生产）
+3. 结构校验与 `meta.protocolVersion: "2.4"` 对齐钉死制品
 
 ## 进度评估
 
-**约 0%**：立项与策略裁决完成；实施因协议依赖阻塞。
+**约 5%**：立项、策略 A、协议制品门禁关闭；鉴权/领域/权限/映射与代码实施尚未开始。
