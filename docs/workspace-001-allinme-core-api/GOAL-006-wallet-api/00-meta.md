@@ -1,12 +1,12 @@
 ---
 id: GOAL-006-wallet-api
 title: 钱包 API 与种子数据
-status: active
+status: done
 parent: GOAL-002-mvp-demo-admin
 created: 2026-07-25
 updated: 2026-07-25
-version: 0.4.0
-progress: 50%
+version: 0.6.0
+progress: 100%
 ---
 
 # GOAL-006 · 钱包 API 与种子数据
@@ -19,12 +19,12 @@ progress: 50%
 
 - [x] 钱包领域模型包含账户、余额、币种、active/frozen 状态与 version
 - [x] Repository port、service 用例和 SQLite 实现遵守既有 IoC 边界
-- [ ] list/detail/create/update/freeze/unfreeze/batch-freeze API 完成
-- [ ] `PUT` 仅更新允许的元数据，不可修改 `balanceCents`
-- [ ] viewer 只读，admin/operator 可写；全部钱包路由需要 Bearer
-- [ ] 空库种子幂等，至少覆盖 active/frozen 演示数据
-- [ ] service、SQLite 与 HTTP 集成测试覆盖状态、CAS、RBAC、批量原子性和错误 envelope
-- [ ] `go test -count=1 ./...`、`go vet ./...`、`git diff --check` 通过
+- [x] list/detail/create/update/freeze/unfreeze/batch-freeze API 完成
+- [x] `PUT` 仅更新允许的元数据，不可修改 `balanceCents`
+- [x] viewer 只读，admin/operator 可写；全部钱包路由需要 Bearer
+- [x] 空库种子幂等，至少覆盖 active/frozen 演示数据
+- [x] service、SQLite 与 HTTP 集成测试覆盖状态、CAS、RBAC、批量原子性和错误 envelope
+- [x] `go test -count=1 ./...`、`go vet ./...`、`git diff --check` 通过
 
 ## 范围边界
 
@@ -39,8 +39,8 @@ progress: 50%
 | W0 实施契约审视 | **完成** | D-003 固定跨层契约；A-001 design-plan 自审 pass |
 | W1 领域/port/service | **完成** | domain、WalletRepository port、全部 service 用例与 fake 接口测试 |
 | W2 SQLite/seed | **完成** | wallets schema、CAS/错误分类、事务 batch-freeze、事务 seed 与 repository 测试 |
-| W3 HTTP/RBAC | **下一步** | composition root seed 接线、handler、路由与集成测试 |
-| W4 验证与自审 | 未开始 | 命令验证并对照成功标准 |
+| W3 HTTP/RBAC | **完成** | composition root + startup seed、七端点 handler/RBAC、跨层 HTTP 与 internal 不泄露测试 |
+| W4 验证与自审 | **完成** | 强制验证 pass；A-002 execution-facts/close-out 自审 pass；无 findings |
 
 ## 信息就绪与未知项（P-005）
 
@@ -60,8 +60,7 @@ progress: 50%
 
 ## 备注
 
-- W0～W2 已完成；当前产品进度 50%。
-- WalletRepository SQLite adapter、wallets schema、事务 batch-freeze、SeedWallets 与 repository 测试已落地。
-- I-001 verified；下一步 W3 接入 composition root、启动 seed、HTTP/RBAC 与集成测试。
-- 尚未实现钱包 HTTP 路由，因此 API/RBAC/错误 envelope 和“启动时 seed”成功标准仍未勾选。
-- I-002 仍为 non-blocking/open，由父目标 M4 处理。
+- W0～W4 全部完成；A-002 close-out 自审 pass，无 required/recommended finding，目标 `done` / 100%。
+- composition root、SQLite/seed、七个 API、Bearer/RBAC、稳定错误与跨层测试均有可重复证据。
+- 强制 test/vet/diff checks 通过；额外 race 因本机 Windows cgo 工具链失败未完成，已在 A-002 如实记录为非阻断验证限制。
+- I-001 verified；I-002 仍为 non-blocking/open，由父目标 M4 处理，不属于本 API 子目标关门范围。

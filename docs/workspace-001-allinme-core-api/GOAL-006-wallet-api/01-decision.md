@@ -1,11 +1,11 @@
 ---
 id: GOAL-006-wallet-api
 doc: decision
-status: active
+status: done
 parent: GOAL-002-mvp-demo-admin
 created: 2026-07-25
 updated: 2026-07-25
-version: 0.2.0
+version: 0.3.0
 ---
 
 # 决策记录 · GOAL-006

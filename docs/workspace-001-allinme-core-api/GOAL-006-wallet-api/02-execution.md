@@ -1,11 +1,11 @@
 ---
 id: GOAL-006-wallet-api
 doc: execution
-status: active
+status: done
 parent: GOAL-002-mvp-demo-admin
 created: 2026-07-25
 updated: 2026-07-25
-version: 0.4.0
+version: 0.6.0
 ---
 
 # 执行记录 · GOAL-006
@@ -77,11 +77,44 @@ version: 0.4.0
 
 **边界**：`SeedWallets` 尚未接入 composition root；钱包 HTTP/RBAC、请求边界与跨层集成测试仍属于 W3。progress 调整为 **50%**。
 
+### 2026-07-25 · W3 composition root、HTTP/RBAC 与跨层测试完成
+
+**实现事实**：
+
+| 路径 | 说明 |
+|------|------|
+| `internal/app/app.go` | 唯一 composition root 构造 SQLite WalletRepository，启动时运行 SeedWallets，注入 wallet service，并暴露于 App/handler deps。 |
+| `internal/handler/handler.go` | 注册七个 `/v1/wallets` 路由；全部 Bearer，GET 三角色可读，写路由仅 admin/operator。 |
+| `internal/handler/wallet.go` | list/detail/create/update/freeze/unfreeze/batch-freeze HTTP 适配；1 MiB body、未知字段/尾随 JSON 拒绝、分页解析、成功 envelope 与六类稳定错误映射。 |
+| `internal/handler/wallet_test.go` | 完整 app→JWT→handler→service→SQLite 集成：启动 seed、RBAC、创建/筛选/详情、owner-only 更新、frozen owner 更新、CAS、状态动作、batch 回滚/成功及错误 code。 |
+| `internal/handler/wallet_internal_test.go` | 注入含敏感 SQLite 路径的未知 service 错误，验证 HTTP 500 / `internal` 且响应不泄露底层文本。 |
+
+**D-003 对齐与验证范围**：
+
+- 成功响应：list `data.list/data.total`；单项 `data=wallet`；batch `data.frozen`。
+- 稳定错误跨层断言：`bad_request`、`wallet_not_found`、`account_no_conflict`、`version_conflict`、`invalid_state`、`internal`。
+- PUT 请求类型只暴露 version/ownerName；携带 balance 等不可编辑字段因 `DisallowUnknownFields` 返回 400。
+- HTTP 测试确认 owner 更新不改变 balance/currency/status；active/frozen 两状态均可更新 owner。
+- batch-freeze 对 mixed frozen、missing 均回滚，对成功目标全部冻结；重复 IDs 返回 bad_request。
+- 请求边界覆盖未知字段、尾随第二个 JSON、非法 status、极大分页和超过 1 MiB body。
+
+**验证事实**：`go test -count=1 ./internal/handler` **pass**；`go test -count=1 ./...` **pass**；`go vet ./...` **pass**；`git diff --check` 与 `git diff --cached --check` **pass**。
+
+**边界**：全部产品成功标准已有当前证据，但尚未执行 W4 execution-facts/close-out 自审，因此目标保持 `active`，progress 调整为 **90%**，不提前标记 done。
+
+### 2026-07-25 · W4 最终验证、实施事实自审与关门
+
+- 重新执行 wallet service/SQLite/handler targeted tests、全量 `go test -count=1 ./...`、`go vet ./...`、staged/unstaged `git diff --check`，全部 **pass**。
+- 额外 targeted `go test -race` 因本机 Windows `runtime/cgo` 的 `cgo.exe: exit status 2` 未完成；不属于成功标准，作为环境验证限制写入 A-002，未伪记为 pass。
+- 完成 A-002 execution-facts / close-out 自审：对照 D-003、全部成功标准、I-001/I-002、代码和测试，verdict **pass**，无 required/recommended finding。
+- I-001 verified；I-002 non-blocking/open 且属于父目标 M4，不阻断本目标关门。
+- GOAL-006 更新为 `done` / 100%；父目标摘要与 `goal-tree.md` 同步。
+
 ## 待办
 
-1. **W3**：接入 WalletRepository/SeedWallets/service，实现 HTTP/RBAC 与完整集成测试
-2. **W4**：运行最终验证命令并执行阶段/关门审计
+- 本目标内无待办。
+- 父目标后续：通知 API、订单 DELETE/refund、M4 Page Schema/协议制品校验及 MVP 集成验收。
 
 ## 进度评估
 
-**50% 产品实施进度**：W1 domain/port/service 与 W2 SQLite/repository/seed 均完成；W3 HTTP/RBAC/composition root 和 W4 最终验证与关门尚未完成。
+**100%**：W0～W4、全部成功标准、required 信息门禁、强制验证与 close-out 自审均已闭环；目标已关门。

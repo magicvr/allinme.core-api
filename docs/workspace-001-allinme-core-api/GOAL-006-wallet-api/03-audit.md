@@ -1,11 +1,11 @@
 ---
 id: GOAL-006-wallet-api
 doc: audit
-status: active
+status: done
 parent: GOAL-002-mvp-demo-admin
 created: 2026-07-25
 updated: 2026-07-25
-version: 0.2.0
+version: 0.3.0
 ---
 
 # 审计 · GOAL-006
@@ -68,3 +68,83 @@ version: 0.2.0
 ### 结论 + 建议下一步
 
 D-003 覆盖 D-002 与 I-001 要求的全部跨层维度，字段、状态、CAS、批量、RBAC、错误和测试入口均可直接转成 W1～W4 验收用例。design-plan verdict = **pass**；可关闭 W0 / I-001，并在下一轮进入 **W1 领域/port/service** 实施。
+
+---
+
+## A-002 · 钱包 API 实施事实与关门自审（2026-07-25）
+
+- **source**：self
+- **auditor**：/govern · Claude Code
+- **类型**：execution-facts / close-out
+- **scope**：GOAL-006 W1～W4 全部实施事实、D-003 契约、成功标准、信息门禁、验证命令与关门条件；不审 GOAL-002 后续 Page Schema、仪表盘、协议制品校验或订单/通知范围
+- **verdict**：**pass**
+- **完整意见**：本节即全文
+
+### 范围与区间
+
+- 工作区：`workspace-001-allinme-core-api`；Root `GOAL-001-allinme-core-api`；canonical scope 与目标路径一致。
+- 实施依据：D-001～D-003、I-001、A-001，以及 W1～W3 execution 事实。
+- 代码范围：wallet domain/port/service、SQLite schema/repository/seed、composition root、HTTP/RBAC、service/repository/handler 测试。
+- `shared_materials_catalog: none`；本 scope 未使用共享资料。
+- Page Schema、仪表盘和协议制品校验明确属于 GOAL-002 M4/I-010，不属于本目标关门范围。
+
+### 信息就绪与开放意见
+
+| 项 | 状态 | 关门判断 |
+|----|------|----------|
+| I-001 钱包首切片实施契约 | **verified / required** | D-003 + A-001；实施与测试逐项对照，无开放门禁 |
+| I-002 钱包 Page Schema 映射 | open / non-blocking | 父目标 M4 范围，不阻断本 API 子目标关门 |
+| A-001 findings | 无 required / recommended | 无待关闭意见 |
+| independent audit | 尚无 | 当前已有 design-plan 与本 close-out self；P-004“已有 independent 但无 self”未触发 |
+
+### 对照成功标准
+
+| 成功标准 | 状态 | 可核对证据 |
+|----------|------|------------|
+| 钱包领域模型与 active/frozen/version | **达成** | `internal/domain/wallet.go`；service 测试 |
+| Repository port、service、SQLite 与 IoC | **达成** | `internal/port/wallet.go`、`internal/service/wallet/`、`internal/repository/sqlite/wallet.go`、`internal/app/app.go` |
+| 七个钱包 API | **达成** | `internal/handler/handler.go`、`wallet.go`、`wallet_test.go` |
+| PUT 仅更新允许元数据 | **达成** | UpdateInput/UpdateOwner 仅 ownerName；service/repository/HTTP 测试验证 balance/accountNo/currency/status 不变；未知字段 400 |
+| Bearer 与 RBAC | **达成** | 全路由 RequireAuth；写路由 RequireRoles(admin/operator)；401/403 与三角色测试 |
+| 空库事务种子 active/frozen 且幂等 | **达成** | `SeedWallets` 已接入 app；seed rollback/retry/idempotent 测试；HTTP 启动后 seed list 测试 |
+| service/SQLite/HTTP 测试覆盖 | **达成** | 默认值/校验、LIKE 字面匹配、分页溢出、unique、CAS、状态机、batch 原子性、RBAC、全部稳定错误 code 与 internal 不泄露 |
+| 强制验证命令 | **达成** | 本轮 targeted、全量 test、vet、staged/unstaged diff check 全部 pass |
+
+### D-003 关键契约复核
+
+| 维度 | 结论 |
+|------|------|
+| `/v1/wallets` 唯一路由前缀 | 满足；无裸 `/wallets` 兼容路由 |
+| 创建默认 active/CNY/version=1 | 满足；币种 trim/uppercase/三位 A-Z，负余额拒绝 |
+| owner-only 更新 | 满足；active/frozen 均可，其他业务字段不可变 |
+| freeze/unfreeze CAS | 满足；期望状态、version、version+1 及错误分类均有测试 |
+| list/filter/page | 满足；status/q/defaults/上限/溢出/稳定排序/LIKE `%` `_` 转义有测试 |
+| batch-freeze | 满足；1～100/trim/去重由 service 校验，SQLite 单事务预检，missing/frozen 全回滚 |
+| envelope 与错误 | 满足；HTTP 200 data 形态及 400/404/409/500 code 均断言；internal 不泄露 |
+| 范围边界 | 满足；无 DELETE、batch-unfreeze、调账、充值、提现、支付网关或 Page Schema |
+
+### 最终验证
+
+2026-07-25 本轮重新执行：
+
+- `go test -count=1 ./internal/service/wallet ./internal/repository/sqlite ./internal/handler`：**pass**
+- `go test -count=1 ./...`：**pass**
+- `go vet ./...`：**pass**
+- `git diff --check`：**pass**
+- `git diff --cached --check`：**pass**
+
+额外尝试 `go test -race -count=1 ...`，本机 Windows `runtime/cgo` 在构建阶段以 `cgo.exe: exit status 2` 失败；`CGO_ENABLED=1`、`CC=gcc` 可见。race 不属于本目标成功标准，本次不将其写为 pass，也不把工具链失败归因于钱包代码。强制测试与静态检查均已通过。
+
+### Findings
+
+- **无 required findings。**
+- **无 recommended findings。**
+- **验证限制（非 finding）**：本机 targeted race 因本地 cgo 工具链不可用未完成；如后续 CI 具备稳定 race 环境，可作为额外质量增强运行。
+
+### 必改项汇总
+
+- **无。**
+
+### 关门结论
+
+GOAL-006 的范围、成功标准、required 信息项、实施事实与强制验证均已闭环；不存在开放 required finding。I-002 是父目标 M4 的 non-blocking 项，不属于本 API 子目标关门条件。close-out verdict = **pass**，可将 GOAL-006 更新为 `done` / 100%，同步父目标摘要与 `goal-tree.md`。

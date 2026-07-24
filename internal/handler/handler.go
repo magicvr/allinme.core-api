@@ -9,6 +9,7 @@ import (
 	"github.com/magicvr/allinme.core-api/internal/service/menu"
 	"github.com/magicvr/allinme.core-api/internal/service/meta"
 	orderservice "github.com/magicvr/allinme.core-api/internal/service/order"
+	walletservice "github.com/magicvr/allinme.core-api/internal/service/wallet"
 )
 
 // Deps are inbound adapter dependencies injected by the composition root.
@@ -18,6 +19,7 @@ type Deps struct {
 	Auth   *auth.Service
 	Menu   *menu.Service
 	Order  *orderservice.Service
+	Wallet *walletservice.Service
 }
 
 // Register mounts all HTTP routes on mux.
@@ -48,4 +50,16 @@ func Register(mux *http.ServeMux, deps Deps) {
 	mux.Handle("POST /v1/orders/{id}/mark-paid", orderWrite(markOrderPaid(deps.Order)))
 	mux.Handle("POST /v1/orders/{id}/cancel", orderWrite(cancelOrder(deps.Order)))
 	mux.Handle("POST /v1/orders/batch-delete", orderWrite(batchDeleteOrders(deps.Order)))
+
+	mux.Handle("GET /v1/wallets", require(listWallets(deps.Wallet)))
+	mux.Handle("GET /v1/wallets/{id}", require(getWallet(deps.Wallet)))
+
+	walletWrite := func(next http.Handler) http.Handler {
+		return require(middleware.RequireRoles("admin", "operator")(next))
+	}
+	mux.Handle("POST /v1/wallets", walletWrite(createWallet(deps.Wallet)))
+	mux.Handle("PUT /v1/wallets/{id}", walletWrite(updateWallet(deps.Wallet)))
+	mux.Handle("POST /v1/wallets/{id}/freeze", walletWrite(freezeWallet(deps.Wallet)))
+	mux.Handle("POST /v1/wallets/{id}/unfreeze", walletWrite(unfreezeWallet(deps.Wallet)))
+	mux.Handle("POST /v1/wallets/batch-freeze", walletWrite(batchFreezeWallets(deps.Wallet)))
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/magicvr/allinme.core-api/internal/service/menu"
 	"github.com/magicvr/allinme.core-api/internal/service/meta"
 	orderservice "github.com/magicvr/allinme.core-api/internal/service/order"
+	walletservice "github.com/magicvr/allinme.core-api/internal/service/wallet"
 )
 
 // App is the wired application graph (composition result).
@@ -25,6 +26,7 @@ type App struct {
 	Auth    *auth.Service
 	Menu    *menu.Service
 	Order   *orderservice.Service
+	Wallet  *walletservice.Service
 
 	cleanup func() error
 }
@@ -72,6 +74,14 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 	var orders port.OrderRepository = orderRepository
 	orderSvc := orderservice.New(orders)
 
+	walletRepository := sqlite.NewWalletRepository(db)
+	if err := sqlite.SeedWallets(context.Background(), walletRepository); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("app: seed wallets: %w", err)
+	}
+	var wallets port.WalletRepository = walletRepository
+	walletSvc := walletservice.New(wallets)
+
 	mux := http.NewServeMux()
 	handler.Register(mux, handler.Deps{
 		Logger: logger,
@@ -79,6 +89,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		Auth:   authSvc,
 		Menu:   menuSvc,
 		Order:  orderSvc,
+		Wallet: walletSvc,
 	})
 
 	return &App{
@@ -88,6 +99,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*App, error) {
 		Auth:    authSvc,
 		Menu:    menuSvc,
 		Order:   orderSvc,
+		Wallet:  walletSvc,
 		cleanup: func() error {
 			return db.Close()
 		},
