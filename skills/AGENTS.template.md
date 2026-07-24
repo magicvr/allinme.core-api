@@ -2,9 +2,9 @@
 title: AGENTS 模板 · 目标治理 AI 规则
 status: active
 created: 2026-07-18
-updated: 2026-07-20
+updated: 2026-07-24
 parent: null
-version: 0.8.0
+version: 0.9.0
 ---
 
 # AGENTS.md
@@ -20,11 +20,11 @@ version: 0.8.0
 |------|------|------|
 | 目标与过程记录 | `docs/workspace-<NNN>-<slug>/` | 当前工作区内的唯一长期存储 |
 | 目标树与状态 | `<workspace-root>/goal-tree.md` | **必读、必更新** |
-| 架构约定 | `docs/architecture/` | 若项目启用 |
-| 治理原则 | `docs/architecture/principles.md` | 若存在；含 P-001～P-005 |
-| 文档使用规范 | `docs/README.md` | 若存在 |
-| 核心方法论与模板 | `{{CORE_TEMPLATES_DIR}}` | 若项目采用独立核心层；canonical 模板优先 |
-| 工作区与共享资料协议 | `<workspace-root>/workspace.md`、`docs/architecture/workspace-protocol.md` | 前者存在时必读；目标状态仍以该工作区根为准 |
+| 核心方法论（architecture） | `docs/architecture/` | **与 Skills 同级必备**（install 默认安装）；含 principles、workspace-protocol 等 |
+| 治理原则全文 | `docs/architecture/principles.md` | **必备**；P-001～P-005 权威长文；AGENTS §6/6b 为操作摘要 |
+| 文档使用规范 | `docs/README.md` | **必备**（install 默认精简入口） |
+| 核心模板 | `docs/templates/`（或 `{{CORE_TEMPLATES_DIR}}`） | **必备**；创建五件套与 workspace 上下文 |
+| 工作区与共享资料协议 | `<workspace-root>/workspace.md`、`docs/architecture/workspace-protocol.md` | workspace.md 存在时必读；protocol **必备**；目标状态仍以该工作区根为准 |
 
 冲突时以已验证的工作区 canonical root 与本文件为准。
 
@@ -100,11 +100,13 @@ docs/workspace-001-example/GOAL-NNN-short-slug/
 4. 路线图就位后，再**按阶段**创建与执行具体子目标。
 5. 已可直接执行的小目标**无需**强行补路线图。
 
-原则以**本文件（AGENTS）第 6 节**为准；`docs/architecture/principles.md` **若存在**可作补充，**不要求**每个项目都有 architecture 目录。
+原则以**本文件（AGENTS）第 6 节**为操作入口；**全文**以 `docs/architecture/principles.md` 为准（**完整安装必备**）。  
+Skills 与核心方法论**同级必备**：缺 `docs/architecture/` 视为不完整安装，应先补 core（重跑 install 或从包内 `core/docs` 复制），不得当作可跳过。
 
 ## 6b. 治理闭环、交叉审计与信息就绪（P-002～P-005）
 
-操作摘要如下；全文见 `docs/architecture/principles.md`（若存在）。**无 architecture 时仍须遵守本小节。**
+操作摘要如下；**全文**见 `docs/architecture/principles.md`。  
+降级兜底：若 principles 文件暂时缺失，仍须遵守本小节，并在推进前报告不完整安装——**这不是「architecture 可选」产品定位**。
 
 ### P-002 · 阶段质量意识
 
@@ -158,7 +160,7 @@ docs/workspace-001-example/GOAL-NNN-short-slug/
 
 ## 6c. 工作区与共享资料边界
 
-先定位当前 `docs/workspace-<NNN>-<slug>/workspace.md`，再按 `docs/architecture/workspace-protocol.md`（若存在）校验其 `root_goal`、`canonical_scope` 和共享资料引用。多个工作区而用户未指定焦点时必须 fail closed：
+先定位当前 `docs/workspace-<NNN>-<slug>/workspace.md`，再按 `docs/architecture/workspace-protocol.md`（完整安装必备）校验其 `root_goal`、`canonical_scope` 和共享资料引用。多个工作区而用户未指定焦点时必须 fail closed：
 
 1. 工作区绑定一个 `parent: null` 的 Root Goal 与其 canonical 目标范围；它不是 `parent` 层级、审计 scope 或第二套状态。
 2. 同一项目的 MVP、二阶段、三阶段等通常更新 Root Goal 路线图并建立串行子目标；只有长期目的、成功边界或战略方向实际变化时，才记录决策后改写 Root Goal 定义。
@@ -187,7 +189,7 @@ docs/workspace-001-example/GOAL-NNN-short-slug/
   - 若项目已约定子目录（如 `web/`、`app/`、`services/`）：按该约定；`{{APP_DIR}}` 仅在有约定时填写。
   - 刚装本包、文件很少时：项目性质与代码路径标为待确认，**问用户**或读已有 README/架构；目录观察只作参考。
 - **语言与日期**：标题/正文跟随用户语言；slug 建议小写英文短横线；日期用会话/系统 `YYYY-MM-DD`。
-- **architecture**：已有则改架构先更新文档；没有则按用户要求再考虑是否建立。
+- **architecture**：完整安装必须具备；缺失时先补 core 再推进治理写入。改治理元规则时先更新 `docs/architecture/` 再改实现。
 
 ## 8b. Skills 包路径
 
@@ -210,7 +212,7 @@ docs/workspace-001-example/GOAL-NNN-short-slug/
   扫描 → 意见台账 → 分类 → P-004 裁决 → 提议 → 确认 → 原语 `01`～`04`。
 - **交叉审计**：`{{SKILLS_DIR}}/prompts/05-independent-audit.md` → **`/audit`**（只出意见，不改 status；响应归 `/govern`）。
 - advanced 填表 slash 可选（`--with-primitives`）。
-- **P-001** 以本文件第 6 节为准；**P-002～P-005** 以第 6b 节为准；有 architecture 原则文档时一并参考。
+- **P-001** 以本文件第 6 节为准；**P-002～P-005** 以第 6b 节为准；**全文**以 `docs/architecture/principles.md` 为准（必备）。
 
 ## 10. 变更工作流
 
@@ -238,7 +240,8 @@ docs/workspace-001-example/GOAL-NNN-short-slug/
 - 执行/审计：只写有证据的事实；计划单独标注。
 - 代码布局与 Root slug：默认见第 8 节；以用户/项目约定为准（`web/` 等为可选约定示例）。
 - Skills 包：按内容定位 SKILLS_PKG。
-- P-001：本文件第 6 节；P-002～P-005：第 6b 节；architecture 原则全文可选补充。
+- P-001：本文件第 6 节；P-002～P-005：第 6b 节；architecture 原则全文**必备**（与 Skills 同级）。
+- 空仓 S0：先 scaffold `docs/workspace-001-<用户确认 slug>/`（workspace.md + goal-tree），再创建 Root；禁止静默默认 slug。
 - 目标可带未知立项，但信息项、阶段门禁、证据与残余风险接受必须可追踪；按工作量而非固定“两子目标”拆分。
 - 交叉审计意见由编排器统一响应；冲突与「是否自审」问用户并给建议。
 
@@ -287,6 +290,6 @@ docs/workspace-001-example/GOAL-NNN-short-slug/
 - Root Goal：`{{WORKSPACE_ROOT}}/{{ROOT_GOAL_FOLDER}}/00-meta.md`
 - 核心模板目录：`{{CORE_TEMPLATES_DIR}}`（若项目采用独立核心层）
 - 架构说明：`{{ARCHITECTURE_PATH}}`
-- 治理原则：AGENTS 第 6 / 6b 节；`docs/architecture/principles.md`（若存在，P-001～P-005）
+- 治理原则：AGENTS 第 6 / 6b 节；`docs/architecture/principles.md`（必备，P-001～P-005 全文）
 - 代码/应用布局：仓库根为常见默认；若已约定子目录则填 `{{APP_DIR}}`（可空）
 - Skills 目录：`{{SKILLS_DIR}}`

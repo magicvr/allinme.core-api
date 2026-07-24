@@ -4,8 +4,8 @@ title: 可复用的 Schema-UI 核心 API 基座
 status: blocked
 parent: null
 created: 2026-07-23
-updated: 2026-07-23
-version: 0.2.0
+updated: 2026-07-24
+version: 0.2.1
 progress: 5%
 ---
 
@@ -58,6 +58,6 @@ progress: 5%
 
 ## 备注
 
-- 工作区：隐式单工作区（仓库根）；无 `docs/workspace-*/workspace.md`。
+- 工作区：`docs/workspace-001-allinme-core-api/`（见同目录 `workspace.md`）。
 - 协议权威在 `magicvr/schema-ui-docs`；本仓只消费，不定义协议语义。
 - **`status: blocked`**（2026-07-23）：等待协议仓新版本（I-006）。见 01-decision D-005。

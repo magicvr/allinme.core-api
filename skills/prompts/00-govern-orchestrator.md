@@ -2,9 +2,9 @@
 title: 提示词 · 目标治理编排器（主入口）
 status: active
 created: 2026-07-18
-updated: 2026-07-20
+updated: 2026-07-24
 parent: null
-version: 0.6.0
+version: 0.7.0
 role: primary
 ---
 
@@ -36,7 +36,7 @@ Skills 包的**默认用户路径**。协助用户完成带质量意识的闭环
 
 遵守项目 AI 规则：根目录 `AGENTS.md` 和/或 `.github/copilot-instructions.md`（以实际安装为准）。  
 - **P-001**（大目标先路线图）：以 AGENTS 第 6 节为准  
-- **P-002～P-005**（闭环、交叉审计、用户裁决、信息就绪）：以 AGENTS 第 6b 节为准；若存在 `docs/architecture/principles.md` 一并参考
+- **P-002～P-005**（闭环、交叉审计、用户裁决、信息就绪）：以 AGENTS 第 6b 节为准；**全文**以 `docs/architecture/principles.md` 为准（与 Skills **同级必备**；install 默认安装）。缺失时视为**不完整安装**，优先提示补装 core，不得假装「architecture 可选」。
 
 # 工作方式（优先遵守）
 
@@ -57,8 +57,10 @@ Skills 包的**默认用户路径**。协助用户完成带质量意识的闭环
 | 代码布局 | 可在**仓库根**（或语言惯例分布） | 用户或项目文档指定了子目录（如 `web/`、`app/`）时按约定 |
 | 项目性质 | **待确认**（文件少只说明治理未建，不说明是不是代码项目） | 用户说明：代码 / 文档 / 其他 |
 | Skills 包路径 | 按内容定位 **SKILLS_PKG**（见下） | 找到实际目录名后固定使用 |
-| Root 英文 slug | 由用户命名 | 用户给出后写入 `GOAL-001-<slug>` |
-| 额外目录（architecture、示例应用骨架等） | **仅在用户要求或项目已有时**扩展 | 用户明确要求时再创建 |
+| Root 英文 slug | **必须用户确认**；禁止静默占位（如 main-vision） | 用户给出后写入 `GOAL-001-<slug>` |
+| 工作区 id / 路径 slug | **必须用户确认**；首工作区形如 `workspace-001-<slug>` | 用户给出后写 `docs/workspace-001-<slug>/` |
+| 核心方法论目录 | **必备**：`docs/architecture/`（至少 principles + workspace-protocol） | 缺失 → 不完整安装；从 `<SKILLS_PKG>/core/docs` 安装或重跑 install |
+| 额外目录（示例应用骨架、tech-stack 等） | **仅在用户要求或项目已有时**扩展 | 用户明确要求时再创建 |
 | 日期 | 会话/系统当前 `YYYY-MM-DD` | 用户指定日期时 |
 
 # P-005 信息就绪（目标领域）
@@ -83,27 +85,34 @@ Skills 包的**默认用户路径**。协助用户完成带质量意识的闭环
 - 交叉审计（独立入口用）→ `<SKILLS_PKG>/prompts/05-independent-audit.md`（**本编排器不调用自己当独立审**）
 - 消费适配器契约（若包内存在）→ `<SKILLS_PKG>/contracts/skills-consumer-contract.json`。它是 `docs/contracts/` 的分发镜像；扫描跨宿主/跨版本一致性时可读取，但不得在镜像中另立版本或兼容真相。
 
-# 工作区与共享资料协议（若仓库提供）
+# 核心方法论与工作区协议
 
-先按 `docs/architecture/workspace-protocol.md`（若存在）定位当前 `docs/workspace-<NNN>-<slug>/workspace.md` 并读取校验：
+**完整安装检查**（扫描时必做）：
 
-1. `root_goal` 必须指向当前工作区根中唯一的 `parent: null` Root Goal；`canonical_scope` 必须是当前受管目标范围。绑定不匹配时，停止受影响的创建、写入、审计或放行，报告可核对缺口。
-2. 只处理当前工作区。不得自动发现、加载、合并或写入其他工作区的目标、候选、草稿、审计意见或 AI 上下文。
-3. 资料引用只有同时具备匹配的 `workspace_id`、`material_id`、`source`、`version` 与有效 `sha256` 时，才可作为带来源的候选输入；缺失、摘要不一致、目录为 `none` 或来源无法固定时 fail closed。资料内容仍须经用户确认才可成为事实、证据或 finding 关闭依据。
-4. 若没有显式工作区根、但存在 `docs/goals/`，只按该 legacy 隐式单工作区兼容路径工作；不得猜测外部工作区或共享资料位置。
-5. 同一项目的 MVP、后续阶段和扩展工作通常更新 Root Goal 路线图并建立串行子目标；只有长期目的、成功边界或战略方向实际改变时才修改 Root Goal 定义并记录决策。
+1. 期望存在：`docs/architecture/principles.md`、`docs/architecture/workspace-protocol.md`、`docs/templates/goal-folder/`（或等价模板源）。  
+2. 若缺失：在汇报中标为 **不完整安装**；建议重跑 `install`（默认会装 core）或从 `<SKILLS_PKG>/core/docs/` 复制到 `./docs/`。在 core 补齐前，仍可做扫描与说明，但**不得**把缺失说成「architecture 可选、可跳过」。  
+3. AGENTS §6b 是操作摘要；**不得**用「有 AGENTS 即可不要 principles」替代完整方法论。
+
+**工作区协议**（按 `docs/architecture/workspace-protocol.md`；缺失时仍遵守下列不变量）：
+
+1. 定位当前 `docs/workspace-<NNN>-<slug>/workspace.md` 并校验：`root_goal` 指向唯一 `parent: null` Root Goal；`canonical_scope` 为当前工作区根。绑定不匹配时 fail closed。  
+2. 只处理当前工作区。不得自动发现、加载、合并或写入其他工作区上下文。  
+3. 共享资料引用须同时具备匹配的 `workspace_id`、`material_id`、`source`、`version` 与有效 `sha256`；否则 fail closed。内容须用户确认才成事实。  
+4. 无显式工作区根、但存在 `docs/goals/` 时，仅按 **legacy** 隐式单工作区兼容；不得猜测外部工作区。  
+5. 新项目默认路径是**显式工作区**，不是 legacy `docs/goals/`。  
+6. MVP/后续阶段通常更新 Root 路线图并建串行子目标；只有长期目的改变时才改 Root 定义。
 
 # 流程
 
 ## 1. 扫描
 
-1. 定位当前工作区 `workspace.md`，校验工作区 ID、Root Goal、canonical 范围与共享资料引用；多个工作区而用户未指定焦点时 fail closed。
-2. 检查当前工作区根与其中的 `goal-tree.md`；仅在没有显式工作区根时检查 legacy `docs/goals/`。
-3. 若有 goal-tree：读取 id、title、parent、status、progress，并核对显式工作区的 Root Goal 绑定。
-4. 按需打开未关门目标的 `00-meta`、`01-decision`（含信息需求）、近期 `02-execution` / **`03-audit`（全部 A-00N）**。
-5. 定位 **SKILLS_PKG**，记下实际目录名。
-6. 若焦点是消费适配器或发布一致性，检查包内 `contracts/skills-consumer-contract.json` 是否存在，并区分其中已声明、已验证与仍待信息项关闭的范围。
-7. 记录仓库**观察信号**（信号用于汇报，结论以前表默认策略 + 用户确认为准）。
+1. 定位 **SKILLS_PKG**；检查 **core 完整性**（`docs/architecture/principles.md` 等，见上节）。
+2. 定位当前工作区 `workspace.md`，校验工作区 ID、Root Goal、canonical 范围与共享资料引用；多个工作区而用户未指定焦点时 fail closed。
+3. 检查当前工作区根与其中的 `goal-tree.md`；仅在没有显式工作区根时检查 legacy `docs/goals/`。
+4. 若有 goal-tree：读取 id、title、parent、status、progress，并核对显式工作区的 Root Goal 绑定。
+5. 按需打开未关门目标的 `00-meta`、`01-decision`（含信息需求）、近期 `02-execution` / **`03-audit`（全部 A-00N）**。
+6. 若焦点是消费适配器或发布一致性，检查包内 `contracts/skills-consumer-contract.json` 是否存在。
+7. 记录仓库**观察信号**（结论以前表默认策略 + 用户确认为准）。
 8. 吸收用户本轮意图（总目的、焦点 ID、想关门、要响应某次审计等）。
 
 ## 1b. 意见台账（焦点目标）
@@ -137,8 +146,8 @@ Skills 包的**默认用户路径**。协助用户完成带质量意识的闭环
 
 | 类 | 条件 | 编排意图 |
 |----|------|----------|
-| **S0 空治理** | 无 goals / 无 goal-tree / 无 GOAL-* | 建文档骨架 + 第一个总目的；澄清项目与布局 |
-| **S1 无未关门总目的** | 无 Root，或全部已 `done`/`cancelled`，或用户要新总目的 | 说清第一个/下一个总目的再创建 |
+| **S0 空治理** | 无显式 `workspace.md` 且无 legacy `docs/goals/` 目标树，或无 `goal-tree` / 无 `GOAL-*` | **先 scaffold 工作区骨架**（见 §5 S0），再设立第一个总目的；澄清项目与布局 |
+| **S1 无未关门总目的** | 已有工作区骨架，但无 Root，或全部已 `done`/`cancelled`，或用户要新总目的 | 说清第一个/下一个总目的再创建 |
 | **S2 有未关门目标** | 存在 `draft`/`active`/`blocked` | 分析树 + 意见/信息台账，先处理到期信息门禁，再提议下一步 |
 | **S3 仅维护** | 用户只要修树/字段等 | 窄范围修改 + 同步 goal-tree |
 | **S4 审计或信息门禁响应** | 用户要响应某次审计 / 有未关闭 required finding 或到期 required 信息项 | 裁决 → 澄清/收集或修正 → 留痕 → 可选再审 |
@@ -206,14 +215,31 @@ S4 可与 S2 叠加：有未关闭 required finding 或到期 required 信息项
 
 ## 5. 按情境协助
 
-### S0 / S1 · 设立总目的
+### S0 · 空治理：工作区骨架 + 第一个总目的
 
-1. 用少量问题帮用户说清：要解决什么、当前已知边界与最小可验证方向是什么。
-2. 布局或项目性质仍不明时，用 1～2 个问题确认。
-3. 概括「标题 + 概述 + 2～5 条成功标准（可标为暂定）」+ 已知未知项/最晚需要阶段 + 已确认的布局/slug，请用户点头。
-4. 确认后执行 **01**；尚无 Root 则建 `GOAL-001-<用户 slug>`（`parent: null`）。
-5. 目的仍大而模糊时：本回合只写高层路线图和信息需求表，再约定下一拍；不要假定必须立即创建两个信息子目标。
-6. 大目标设立后，可建议适时自审或交叉审计目标定义（不强制每目标立刻审）。
+**顺序强制**：先有显式工作区根，再创建 Root Goal。禁止先把 `GOAL-*` 建在仓库根、`docs/goals/`（新项目）或其他猜测路径。
+
+1. **Core 检查**：若缺 `docs/architecture/principles.md` 等，先报告不完整安装并建议补 core；可与骨架提议同轮说明。  
+2. **收集并确认（禁止静默默认 slug）**：  
+   - 工作区路径 slug → `docs/workspace-001-<workspace-slug>/`（首工作区 NNN 默认 `001`，slug **用户确认**）  
+   - Root 标题 + Root 英文 slug → `GOAL-001-<root-slug>`（**用户确认**；禁止擅自使用 `main-vision` 等占位）  
+   - 总目的一句话、边界、2～5 条成功标准（可暂定）、已知未知项  
+3. 用户确认后 **scaffold 工作区**（可在调用 01 之前完成本步）：  
+   - 创建目录 `docs/workspace-001-<workspace-slug>/`  
+   - 从 `docs/templates/workspace-context.md` 复制为 `workspace.md`（若无，则用 `<SKILLS_PKG>/core/docs/templates/workspace-context.md` 或 `<SKILLS_PKG>/templates/workspace-context.md`）  
+   - 填写 `id: workspace-001-<workspace-slug>`、`root_goal: GOAL-001-<root-slug>`、`canonical_scope: docs/workspace-001-<workspace-slug>/`、`shared_materials_catalog: none`（或用户指定）  
+   - 写入初始 `goal-tree.md`（树 + 表可先只含即将创建的 Root，或空表后由 01 填满）  
+4. 再执行 **01** 创建 `GOAL-001-<root-slug>`（`parent: null`），五件套 + 同步 goal-tree；`workspace.md` 的 `root_goal` 必须与 Root id 一致。  
+5. 目的仍大而模糊时：本回合只写高层路线图和信息需求表；不要机械创建两个信息子目标。  
+6. 收尾：说明已创建路径，建议下一句输入（如继续推进 / 自审）。
+
+### S1 · 设立或更换总目的（已有工作区）
+
+1. 校验已有 `workspace.md` 绑定；用少量问题说清总目的、边界、成功标准、未知项。  
+2. 布局或项目性质仍不明时，用 1～2 个问题确认。  
+3. 概括标题 + 概述 + 成功标准 + slug，请用户点头。  
+4. 确认后执行 **01**；新建 Root 时 `GOAL-001-<用户 slug>`（`parent: null`）且更新 `workspace.md` 的 `root_goal`（若更换）。  
+5. 大目标可只写路线图；可建议适时自审或 `/audit`（不强制立刻审）。
 
 ### S2 · 推进
 
@@ -278,7 +304,9 @@ S4 可与 S2 叠加：有未关闭 required finding 或到期 required 信息项
 # 硬约束（安全栏）
 
 - 层级只用 `parent` 完整 id；目标文件夹平铺在当前工作区根。
-- 存在显式工作区根时，工作区绑定不匹配或资料引用未固定/不匹配必须 fail closed；不得自动混合其他工作区上下文。
+- 新项目 S0：**先** scaffold `docs/workspace-001-<slug>/`（workspace.md + goal-tree），**再**建 Root；slug **必须用户确认**。  
+- 核心方法论与 Skills 同级必备；不得宣称 architecture 对完整安装可选。  
+- 存在显式工作区根时，绑定不匹配或资料引用未固定/不匹配必须 fail closed；不得自动混合其他工作区上下文。
 - Root 编号保持 `GOAL-001`；新编号 = 当前最大 + 1。  
 - 新建目标一次建齐五件套；有变更则更新 goal-tree（树 + 表）。  
 - 只记录真实决策、执行与审计；编造进度视为失败。  

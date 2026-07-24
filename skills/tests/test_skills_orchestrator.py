@@ -99,6 +99,8 @@ class TestSkillsOrchestratorPackage(unittest.TestCase):
         self.assertIn("goal-tree", text)
         self.assertRegex(text, r"S0|情境|分类")
         self.assertRegex(text, r"未关门|总目的")
+        self.assertRegex(text, r"scaffold|工作区骨架")
+        self.assertRegex(text, r"不完整安装|同级必备")
         # Confirm before write + primitives
         self.assertRegex(text, r"确认")
         for name in (
@@ -549,7 +551,7 @@ class TestSkillsOrchestratorPackage(unittest.TestCase):
         self.assertEqual(runtime_schema["$id"], RUNTIME_EVIDENCE_SCHEMA_ID)
         self.assertEqual(matrix["schemaId"], MATRIX_SCHEMA_ID)
         self.assertEqual(matrix["format"], "goal-governance.skills-consumer-compatibility-matrix")
-        self.assertEqual(matrix["candidateRevision"], "v0.8.0")
+        self.assertEqual(matrix["candidateRevision"], "v0.9.0")
         self.assertEqual(matrix["canonicalContractPath"], "docs/contracts/skills-consumer-contract.json")
         self.assertEqual(matrix["protocol"]["current"], manifest["protocol"]["version"])
         self.assertIsNone(matrix["protocol"]["previous"])
@@ -582,28 +584,31 @@ class TestSkillsOrchestratorPackage(unittest.TestCase):
                 "web-readonly-parser",
             },
         )
-        self.assertEqual(consumers["claude-code-cli"]["host"]["version"], "2.1.215")
-        self.assertEqual(consumers["grok-build-cli"]["host"]["version"], "0.2.106")
+        self.assertEqual(consumers["claude-code-cli"]["host"]["version"], "2.1.218")
+        self.assertEqual(consumers["grok-build-cli"]["host"]["version"], "0.2.111")
         self.assertEqual(consumers["github-copilot-cli"]["host"]["version"], "1.0.71")
         self.assertEqual(consumers["github-copilot-cli"]["host"]["product"], "GitHub Copilot CLI")
-        for consumer_id in ("claude-code-cli", "grok-build-cli", "github-copilot-cli"):
-            entrypoints = {entry["name"]: entry for entry in consumers[consumer_id]["entrypoints"]}
+        adapters_by_id = {adapter["id"]: adapter for adapter in manifest["adapters"]}
+        # Claude + Grok + Copilot: all six entrypoints runtime-verified 2026-07-24
+        for consumer_id in (
+            "claude-code-cli",
+            "grok-build-cli",
+            "github-copilot-cli",
+        ):
+            entrypoints = {
+                entry["name"]: entry for entry in consumers[consumer_id]["entrypoints"]
+            }
             self.assertEqual(
                 consumers[consumer_id]["contractVerificationStatus"],
-                {adapter["id"]: adapter for adapter in manifest["adapters"]}[consumer_id]["verificationStatus"],
+                adapters_by_id[consumer_id]["verificationStatus"],
             )
             self.assertEqual(set(entrypoints), {"govern", "audit"})
-            self.assertEqual(entrypoints["govern"]["status"], "runtime-verified")
-            self.assertEqual(entrypoints["audit"]["status"], "runtime-verified")
-            for entrypoint in entrypoints.values():
-                self.assertTrue(entrypoint["evidence"])
-                for path in entrypoint["evidence"]:
-                    self.assertTrue(
-                        (SKILLS_ROOT.parent / path).is_file(),
-                        msg=path,
-                    )
-        copilot = consumers["github-copilot-cli"]
-        self.assertEqual(copilot["contractVerificationStatus"], "verified")
+            for name in ("govern", "audit"):
+                self.assertEqual(entrypoints[name]["status"], "runtime-verified")
+                self.assertTrue(entrypoints[name]["evidence"])
+                for path in entrypoints[name]["evidence"]:
+                    self.assertTrue((SKILLS_ROOT.parent / path).is_file(), msg=path)
+                    self.assertIn("2026-07-24", path)
         web = consumers["web-readonly-parser"]
         self.assertEqual(web["kind"], "goal-document-parser")
         self.assertEqual(web["supportCommitment"], "not-applicable")
@@ -717,6 +722,134 @@ class TestSkillsOrchestratorPackage(unittest.TestCase):
         self.assertRegex(ps1, r"govern")
         self.assertRegex(sh, r"00-govern-orchestrator|/govern")
         self.assertRegex(ps1, r"00-govern-orchestrator|/govern")
+
+    def test_core_d004_mirror_is_complete(self) -> None:
+        """GOAL-019 D-004: skills/core ships methodology subset without tech-stack."""
+        core = SKILLS_ROOT / "core" / "docs"
+        required = (
+            core / "README.md",
+            core / "architecture" / "principles.md",
+            core / "architecture" / "workspace-protocol.md",
+            core / "architecture" / "overview.md",
+            core / "architecture" / "directory-layout.md",
+            core / "templates" / "README.md",
+            core / "templates" / "workspace-context.md",
+            core / "templates" / "goal-folder" / "00-meta.md",
+            core / "templates" / "goal-folder" / "01-decision.md",
+            core / "templates" / "goal-folder" / "02-execution.md",
+            core / "templates" / "goal-folder" / "03-audit.md",
+        )
+        for path in required:
+            self.assertTrue(path.is_file(), f"missing core mirror file: {path}")
+        self.assertFalse(
+            (core / "architecture" / "tech-stack.md").is_file(),
+            "core mirror must not include tech-stack.md",
+        )
+        principles = (core / "architecture" / "principles.md").read_text(encoding="utf-8")
+        for marker in ("P-001", "P-002", "P-003", "P-004", "P-005"):
+            self.assertIn(marker, principles)
+        layout = (core / "architecture" / "directory-layout.md").read_text(encoding="utf-8")
+        self.assertIn("workspace-", layout)
+        self.assertNotIn("goal-governance/web", layout.replace("\\", "/"))
+        # goal-folder five-pack should match package templates mirror
+        for name in ("00-meta.md", "01-decision.md", "02-execution.md", "03-audit.md"):
+            self.assertEqual(
+                (core / "templates" / "goal-folder" / name).read_bytes(),
+                (SKILLS_TEMPLATES / name).read_bytes(),
+                f"core templates drift from skills/templates: {name}",
+            )
+        sh = INSTALL_SH.read_text(encoding="utf-8")
+        ps1 = INSTALL_PS1.read_text(encoding="utf-8")
+        self.assertIn("install_core_docs", sh)
+        self.assertIn("Install-CoreDocs", ps1)
+        self.assertIn("core/docs", sh.replace("\\", "/"))
+        self.assertIn("core", ps1)
+        self.assertRegex(sh, r"workspace-|init-workspace")
+        self.assertRegex(ps1, r"workspace-|InitWorkspace|init-workspace")
+        self.assertNotIn(r"docs\goals\goal-tree", ps1)
+        # GOAL-019 phase C: optional workspace scaffold (explicit slugs)
+        self.assertIn("--init-workspace", sh)
+        self.assertIn("init_workspace_skeleton", sh)
+        self.assertIn("--workspace-slug", sh)
+        self.assertIn("--root-slug", sh)
+        self.assertRegex(ps1, r"InitWorkspace|init-workspace")
+        self.assertIn("Initialize-WorkspaceSkeleton", ps1)
+        self.assertRegex(ps1, r"WorkspaceSlug|workspace-slug")
+        self.assertRegex(ps1, r"RootSlug|root-slug")
+        self.assertRegex(sh, r"no silent default|D-005")
+        self.assertRegex(ps1, r"no silent default|D-005")
+        # GOAL-019 A-001 F-002: refuse overwrite when workspace path exists
+        self.assertRegex(sh, r"already exists|refuse overwrite")
+        self.assertRegex(ps1, r"already exists|refuse overwrite")
+
+    @unittest.skipUnless(sys.platform.startswith("win"), "InitWorkspace refuse smoke is Windows/ps1-first")
+    def test_init_workspace_refuses_existing_path(self) -> None:
+        """GOAL-019 A-001 F-002: second -InitWorkspace on same path must fail."""
+        pwsh = shutil.which("powershell") or shutil.which("pwsh")
+        if not pwsh:
+            self.skipTest("PowerShell not found on PATH")
+        with tempfile.TemporaryDirectory(prefix="gg-init-refuse-") as tmp:
+            target = Path(tmp)
+            skills = SKILLS_ROOT
+            cmd_base = [
+                pwsh,
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(INSTALL_PS1),
+                "-InitWorkspace",
+                "-WorkspaceSlug",
+                "refuse-demo",
+                "-RootSlug",
+                "refuse-root",
+                "-SkillsDir",
+                str(skills),
+            ]
+            first = subprocess.run(
+                cmd_base,
+                cwd=str(target),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            self.assertEqual(
+                first.returncode,
+                0,
+                msg=f"first init failed:\n{first.stdout}\n{first.stderr}",
+            )
+            ws = target / "docs" / "workspace-001-refuse-demo" / "workspace.md"
+            self.assertTrue(ws.is_file(), msg="first init did not create workspace.md")
+            second = subprocess.run(
+                cmd_base,
+                cwd=str(target),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            self.assertNotEqual(
+                second.returncode,
+                0,
+                msg=f"second init should refuse:\n{second.stdout}\n{second.stderr}",
+            )
+            combined = (second.stdout or "") + (second.stderr or "")
+            self.assertRegex(
+                combined,
+                r"(?i)already exists|refuse",
+                msg=f"refuse message missing:\n{combined}",
+            )
+
+    def test_monorepo_agents_architecture_not_optional_supplement(self) -> None:
+        """GOAL-019 A-001 F-001: root AGENTS must not call architecture optional."""
+        agents = (SKILLS_ROOT.parent / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertNotRegex(agents, r"architecture 原则全文可选补充")
+        self.assertNotRegex(agents, r"architecture.*可选补充")
+        self.assertRegex(agents, r"同级必备|原则全文\*\*必备\*\*|必备.*同级")
 
     def test_install_all_ships_contract_mirror(self) -> None:
         sh = INSTALL_SH.read_text(encoding="utf-8")
@@ -877,11 +1010,12 @@ class TestSkillsOrchestratorPackage(unittest.TestCase):
             self.assertIn(name, readme)
             self.assertIn(digest, readme)
 
-    def test_portability_skills_pkg_and_optional_architecture(self) -> None:
-        """Reusable package must not require ./skills name or architecture/."""
+    def test_portability_skills_pkg_and_required_architecture(self) -> None:
+        """Package may rename skills dir; architecture is co-required (GOAL-019)."""
         template = (SKILLS_ROOT / "AGENTS.template.md").read_text(encoding="utf-8")
         orch = (PROMPTS / "00-govern-orchestrator.md").read_text(encoding="utf-8")
         govern = (COPILOT_PROMPTS / "govern.md").read_text(encoding="utf-8")
+        create01 = (PROMPTS / "01-create-new-goal.md").read_text(encoding="utf-8")
         for text, label in (
             (template, "AGENTS.template"),
             (orch, "orchestrator"),
@@ -892,15 +1026,23 @@ class TestSkillsOrchestratorPackage(unittest.TestCase):
                 r"SKILLS_PKG|改名|也可改名|其他名字|其他名",
                 msg=f"{label} should allow renamed skills package",
             )
-        self.assertRegex(template, r"architecture 可选|architecture.*可选|有 architecture")
-        self.assertRegex(orch, r"若存在|一并参考|architecture")
-        self.assertRegex(govern, r"若存在|architecture")
+        # Architecture is required for complete install — not optional product framing
+        self.assertRegex(template, r"同级必备|必备")
+        self.assertIn("docs/architecture/principles.md", template)
+        self.assertRegex(orch, r"不完整安装|同级必备")
+        self.assertIn("docs/architecture/principles.md", orch)
+        self.assertRegex(govern, r"不完整安装|同级必备|principles")
+        # S0 scaffold + user-confirmed slug (phase B)
+        self.assertRegex(orch, r"scaffold|工作区骨架")
+        self.assertRegex(orch, r"用户确认")
+        self.assertRegex(create01, r"步骤 0|工作区骨架|scaffold")
+        self.assertRegex(create01, r"禁止静默|用户确认")
         self.assertNotIn("GOAL-001-main-vision", orch)
-        self.assertNotIn("GOAL-001-main-vision", (PROMPTS / "01-create-new-goal.md").read_text(encoding="utf-8"))
+        self.assertNotIn("GOAL-001-main-vision", create01)
         self.assertIn("SKILLS_PKG", orch)
-        # Prefer positive defaults over long ban-lists
+        # Prefer positive defaults over long ban-lists in the fenced body
         ban_hits = len(__import__("re").findall(r"^[-*]\s*禁止", orch, flags=__import__("re").M))
-        self.assertLessEqual(ban_hits, 2, "orchestrator should not be a ban-list prompt")
+        self.assertLessEqual(ban_hits, 4, "orchestrator should not be a ban-list prompt")
 
     def test_skills_readme_documents_primary_and_audit_paths(self) -> None:
         text = README.read_text(encoding="utf-8")
@@ -915,6 +1057,9 @@ class TestSkillsOrchestratorPackage(unittest.TestCase):
         self.assertRegex(text, r"Grok|\.grok")
         self.assertIn("SKILL.md", text)
         self.assertIn("contracts/", text)
+        self.assertIn("core/", text)
+        self.assertRegex(text, r"同级必备|不完整安装")
+        self.assertIn("principles", text)
 
     def test_skills_readme_default_install_documents_govern_and_audit(self) -> None:
         """F-017 guard: README manual/script sections must match default govern+audit surface."""

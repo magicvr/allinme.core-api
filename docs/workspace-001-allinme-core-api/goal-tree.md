@@ -2,14 +2,14 @@
 title: 目标树
 status: active
 created: 2026-07-23
-updated: 2026-07-23
+updated: 2026-07-24
 parent: null
-version: 0.2.0
+version: 0.3.0
 ---
 
 # 目标树 · allinme.core-api
 
-> 工作区：隐式单工作区（仓库根）。真相源为本文件 + 各 `GOAL-*/` 五件套。
+> 工作区：`docs/workspace-001-allinme-core-api/`（`workspace.md`）。真相源为本文件 + 各 `GOAL-*/` 五件套。
 
 ## 树
 

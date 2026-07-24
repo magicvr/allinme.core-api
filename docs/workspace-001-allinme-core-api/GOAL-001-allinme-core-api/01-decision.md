@@ -4,8 +4,8 @@ doc: decision
 status: blocked
 parent: null
 created: 2026-07-23
-updated: 2026-07-23
-version: 0.2.0
+updated: 2026-07-24
+version: 0.2.1
 ---
 
 # 决策记录 · GOAL-001
@@ -74,10 +74,12 @@ version: 0.2.0
 
 **决定**：
 
-- 治理真相源：仓库根平铺 `GOAL-*` + `goal-tree.md`（隐式单工作区）。
+- 治理真相源：**显式工作区** `docs/workspace-001-allinme-core-api/`（`workspace.md` + `goal-tree.md` + 平铺 `GOAL-*`）。
 - 代码布局：维持现有 **仓库根 Go 布局**（`cmd/`、`internal/`、`pkg/`）。
 
-**为什么**：与当前仓库骨架一致。
+**为什么**：对齐 `docs/architecture/workspace-protocol.md` 与 directory-layout；代码布局与当前 Go 骨架一致。
+
+**修订（2026-07-24）**：初版误写「仓库根隐式单工作区」；已迁至上述 canonical 范围（见 02-execution 当日记录）。
 
 ## D-005 · 协议优先演进；本仓暂停
 

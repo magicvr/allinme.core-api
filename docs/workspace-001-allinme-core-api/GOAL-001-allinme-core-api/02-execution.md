@@ -4,8 +4,8 @@ doc: execution
 status: blocked
 parent: null
 created: 2026-07-23
-updated: 2026-07-23
-version: 0.2.0
+updated: 2026-07-24
+version: 0.2.1
 ---
 
 # 执行记录 · GOAL-001
@@ -25,6 +25,14 @@ version: 0.2.0
 - 路线图增加 **R0.5 协议演进（外仓）**；R0/R1 标为暂停/阻塞。
 - Root 与 GOAL-002：`status` → **`blocked`**。
 - 本仓无业务实施活动。
+
+### 2026-07-24 · 迁入显式工作区
+
+- 对照 `docs/architecture/`：仓库根放置 `goal-tree.md` + `GOAL-*` 既非 canonical，也非 legacy `docs/goals/`。
+- 用户确认 slug=`allinme-core-api`，建立 `docs/workspace-001-allinme-core-api/`：
+  - 新增 `workspace.md`（`root_goal=GOAL-001-allinme-core-api`，`shared_materials_catalog=none`）
+  - 移动 `goal-tree.md`、`GOAL-001-allinme-core-api/`、`GOAL-002-mvp-demo-admin/` 至该工作区根
+- 修订 D-004 与 goal-tree 工作区说明；目标 `status`/`progress` 未变（仍 blocked）。
 
 ## 待办
 

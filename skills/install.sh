@@ -21,6 +21,12 @@ INSTALL_GROK=0
 INSTALL_COPILOT=0
 INSTALL_EXTRAS=0
 INSTALL_PRIMITIVE_WRAPPERS=0
+INIT_WORKSPACE=0
+WORKSPACE_SLUG=""
+ROOT_SLUG=""
+ROOT_TITLE=""
+WORKSPACE_NNN="001"
+INIT_WORKSPACE_DONE=0
 
 usage() {
   cat <<'EOF'
@@ -36,6 +42,7 @@ Usage (run from target project root):
   ./install.sh --grok [--skills-dir DIR]
   ./install.sh --copilot [--skills-dir DIR] [--with-primitives]
   ./install.sh --all [--skills-dir DIR] [--with-primitives]
+  ./install.sh --init-workspace --workspace-slug SLUG --root-slug SLUG [host flags…]
   ./install.sh --help
 
 Options:
@@ -51,6 +58,12 @@ Options:
                         Opt-in only — avoids form-menu UX.
   --all                 Install Claude + Grok + Copilot + ensure prompts/, templates/ and
                         contracts/ under --skills-dir; primary entry remains /govern
+  --init-workspace      GOAL-019: create docs/workspace-NNN-SLUG/ with workspace.md +
+                        goal-tree.md (does NOT create GOAL-* five-pack; use /govern for Root)
+  --workspace-slug S    Required with --init-workspace (lowercase hyphen slug)
+  --root-slug S         Required with --init-workspace → GOAL-001-<S>
+  --root-title T        Optional display title for planned Root (default: pending)
+  --workspace-nnn NNN   Optional three-digit workspace number (default: 001)
   --skills-dir DIR      Skills package / destination directory (default: ./skills)
                         Relative paths are resolved from the current working directory.
   --help, -h            Show this help
@@ -61,6 +74,9 @@ Behavior:
   - Grok skills → ./.grok/skills/govern/ + audit/
   - Default Copilot slash surface: /govern (primary) + /audit (cross-audit)
   - Advanced form-filling slashes are NOT installed unless --with-primitives
+  - Core methodology (GOAL-019 D-004): ALWAYS installs package core/docs → ./docs/
+    (architecture + templates + slim docs/README). Missing core = incomplete install.
+  - --init-workspace alone is allowed (still installs core); slugs must be explicit (D-005)
   - Core orchestrator: prompts/00-govern-orchestrator.md
   - Cross-audit core: prompts/05-independent-audit.md
   - prompts/, templates/ and contracts/ are placed under --skills-dir (with --all)
@@ -71,9 +87,10 @@ Behavior:
 Examples:
   cd /path/to/your-project
   bash ./skills/install.sh --claude --skills-dir ./skills
-  bash ./skills/install.sh --grok --skills-dir ./skills
-  bash ./skills/install.sh --copilot --skills-dir ./skills
   bash ./skills/install.sh --all --skills-dir ./skills
+  bash ./skills/install.sh --all --init-workspace \
+    --workspace-slug my-product --root-slug product-vision \
+    --root-title "My product vision" --skills-dir ./skills
 EOF
 }
 
@@ -139,16 +156,26 @@ copy_dir_merge() {
 }
 
 print_next_steps() {
+  local step2
+  if [[ "$INIT_WORKSPACE_DONE" -eq 1 ]]; then
+    step2="2. Workspace skeleton ready: docs/workspace-${WORKSPACE_NNN}-${WORKSPACE_SLUG}/
+     Run /govern to create Root GOAL-001-${ROOT_SLUG} (five-pack)."
+  else
+    step2="2. Create workspace skeleton (pick one):
+     - /govern S0 (AI asks for slugs), or
+     - re-run install with --init-workspace --workspace-slug S --root-slug S"
+  fi
   cat <<EOF
 
 Done.
 
 Next steps:
-  1. Review installed rule file(s) and adjust paths for your project.
-  2. Ensure a docs/workspace-<NNN>-<slug>/ workspace root and its goal-tree.md exist.
+  1. Review installed rule file(s) and docs/architecture (core methodology; required).
+  $step2
   3. DEFAULT user path: /govern (orchestrator) + /audit (cross-audit)
-     - Core: $SKILLS_DIR/prompts/00-govern-orchestrator.md
-     - Cross: $SKILLS_DIR/prompts/05-independent-audit.md
+     - Methodology: ./docs/architecture/principles.md
+     - Orchestrator: $SKILLS_DIR/prompts/00-govern-orchestrator.md
+     - Cross-audit: $SKILLS_DIR/prompts/05-independent-audit.md
      - Contract: $SKILLS_DIR/contracts/skills-consumer-contract.json
      - Claude: /govern + /audit under ./.claude/skills/
      - Grok:   /govern + /audit under ./.grok/skills/
@@ -159,6 +186,129 @@ Project root:  $TARGET_DIR
 Skills dir:    $SKILLS_DIR
 Package root:  $PACKAGE_ROOT
 EOF
+}
+
+validate_slug() {
+  local label="$1"
+  local value="$2"
+  [[ -n "$value" ]] || die "$label is required"
+  [[ "$value" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || die "$label must be lowercase hyphen slug (got: $value)"
+}
+
+validate_nnn() {
+  local value="$1"
+  [[ "$value" =~ ^[0-9]{3}$ ]] || die "--workspace-nnn must be three digits (got: $value)"
+}
+
+init_workspace_skeleton() {
+  validate_slug "--workspace-slug" "$WORKSPACE_SLUG"
+  validate_slug "--root-slug" "$ROOT_SLUG"
+  validate_nnn "$WORKSPACE_NNN"
+  local title="${ROOT_TITLE:-Root Goal (pending definition)}"
+  local today
+  today="$(date +%Y-%m-%d 2>/dev/null || echo '2026-07-24')"
+  local ws_id="workspace-${WORKSPACE_NNN}-${WORKSPACE_SLUG}"
+  local root_id="GOAL-001-${ROOT_SLUG}"
+  local scope="docs/${ws_id}/"
+  local ws_dir="$TARGET_DIR/$scope"
+  local ws_file="${ws_dir}workspace.md"
+  local tree_file="${ws_dir}goal-tree.md"
+
+  if [[ -e "$ws_dir" ]]; then
+    die "Workspace path already exists (refuse overwrite): $ws_dir"
+  fi
+  # Prefer installed templates; fall back to package core
+  local tmpl="$TARGET_DIR/docs/templates/workspace-context.md"
+  if [[ ! -f "$tmpl" ]]; then
+    tmpl="$PACKAGE_ROOT/core/docs/templates/workspace-context.md"
+  fi
+  [[ -f "$tmpl" ]] || die "Missing workspace template: $tmpl (install core first)"
+
+  mkdir -p "$ws_dir"
+  # Write concrete workspace.md (template is example-filled; generate authoritative frontmatter + body)
+  cat >"$ws_file" <<EOF
+---
+id: ${ws_id}
+title: ${ws_id}
+status: active
+root_goal: ${root_id}
+canonical_scope: ${scope}
+shared_materials_catalog: none
+created: ${today}
+updated: ${today}
+version: 0.1.0
+---
+
+# 工作区上下文 · ${ws_id}
+
+本工作区由 \`install --init-workspace\` 脚手架创建（GOAL-019）。目标状态只存在于本目录的 \`goal-tree.md\` 与 \`GOAL-*\` 五件套。
+
+## 绑定
+
+| 字段 | 当前值 | 说明 |
+|------|--------|------|
+| 工作区 ID | \`${ws_id}\` | 与共享资料引用的 \`workspace_id\` 一致。 |
+| Root Goal | \`${root_id}\` | **尚未创建五件套**；用 \`/govern\` 创建后 \`parent: null\`。 |
+| canonical 范围 | \`${scope}\` | 本工作区唯一目标状态范围。 |
+| 共享资料目录 | \`none\` | 需要资料时再改为固定路径并补引用表。 |
+
+## 固定共享资料引用
+
+| reference_id | workspace_id | material_id | source | version | sha256 | purpose | local_record | status |
+|--------------|--------------|-------------|--------|---------|--------|---------|--------------|--------|
+
+## 备注
+
+- Root 计划标题（可改）：${title}
+- 脚手架**不**创建 \`GOAL-*\` 文件夹；下一步：\`/govern\` 设立 Root。
+EOF
+
+  cat >"$tree_file" <<EOF
+---
+title: Goal Tree · 目标树与进展总览
+status: active
+created: ${today}
+updated: ${today}
+parent: null
+version: 0.1.0
+---
+
+# Goal Tree
+
+> 工作区 \`${ws_id}\` 已 scaffold。Root \`${root_id}\` 尚未创建五件套 — 运行 \`/govern\` 完成设立。
+
+## 树状结构
+
+\`\`\`text
+(empty — pending Root ${root_id})
+\`\`\`
+
+## 状态总览
+
+| ID | 标题 | Parent | Status | Progress | 路径 |
+|----|------|--------|--------|----------|------|
+| ${root_id} | ${title} | — | draft | 0% | _(not created yet)_ |
+EOF
+
+  echo "Scaffolded workspace: ${scope}"
+  echo "  workspace.md + goal-tree.md (Root ${root_id} pending /govern)"
+  INIT_WORKSPACE_DONE=1
+}
+
+install_core_docs() {
+  local core_docs="$PACKAGE_ROOT/core/docs"
+  [[ -d "$core_docs/architecture" ]] || die "Missing package core mirror: $core_docs/architecture (GOAL-019 D-004)"
+  [[ -d "$core_docs/templates" ]] || die "Missing package core mirror: $core_docs/templates (GOAL-019 D-004)"
+  [[ -f "$core_docs/README.md" ]] || die "Missing package core mirror: $core_docs/README.md (GOAL-019 D-004)"
+  [[ -f "$core_docs/architecture/principles.md" ]] || die "Missing principles.md in core mirror"
+  [[ -f "$core_docs/architecture/workspace-protocol.md" ]] || die "Missing workspace-protocol.md in core mirror"
+  if [[ -f "$core_docs/architecture/tech-stack.md" ]]; then
+    die "core mirror must not ship tech-stack.md (D-004)"
+  fi
+  echo "Installing core methodology → ./docs/ (architecture + templates + README)"
+  copy_file "$core_docs/README.md" "$TARGET_DIR/docs/README.md"
+  copy_dir_merge "$core_docs/architecture" "$TARGET_DIR/docs/architecture" "core architecture"
+  copy_dir_merge "$core_docs/templates" "$TARGET_DIR/docs/templates" "core templates"
 }
 
 # --- parse args ---
@@ -192,6 +342,46 @@ while [[ $# -gt 0 ]]; do
       INSTALL_PRIMITIVE_WRAPPERS=1
       shift
       ;;
+    --init-workspace)
+      INIT_WORKSPACE=1
+      shift
+      ;;
+    --workspace-slug)
+      [[ $# -ge 2 ]] || die "--workspace-slug requires a value"
+      WORKSPACE_SLUG="$2"
+      shift 2
+      ;;
+    --workspace-slug=*)
+      WORKSPACE_SLUG="${1#--workspace-slug=}"
+      shift
+      ;;
+    --root-slug)
+      [[ $# -ge 2 ]] || die "--root-slug requires a value"
+      ROOT_SLUG="$2"
+      shift 2
+      ;;
+    --root-slug=*)
+      ROOT_SLUG="${1#--root-slug=}"
+      shift
+      ;;
+    --root-title)
+      [[ $# -ge 2 ]] || die "--root-title requires a value"
+      ROOT_TITLE="$2"
+      shift 2
+      ;;
+    --root-title=*)
+      ROOT_TITLE="${1#--root-title=}"
+      shift
+      ;;
+    --workspace-nnn)
+      [[ $# -ge 2 ]] || die "--workspace-nnn requires a value"
+      WORKSPACE_NNN="$2"
+      shift 2
+      ;;
+    --workspace-nnn=*)
+      WORKSPACE_NNN="${1#--workspace-nnn=}"
+      shift
+      ;;
     --skills-dir)
       [[ $# -ge 2 ]] || die "--skills-dir requires a path argument"
       SKILLS_DIR_ARG="$2"
@@ -212,9 +402,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$INSTALL_CLAUDE" -eq 0 && "$INSTALL_GROK" -eq 0 && "$INSTALL_COPILOT" -eq 0 ]]; then
+if [[ "$INSTALL_CLAUDE" -eq 0 && "$INSTALL_GROK" -eq 0 && "$INSTALL_COPILOT" -eq 0 && "$INIT_WORKSPACE" -eq 0 ]]; then
   usage
   exit 1
+fi
+
+if [[ "$INIT_WORKSPACE" -eq 1 ]]; then
+  [[ -n "$WORKSPACE_SLUG" ]] || die "--init-workspace requires --workspace-slug (D-005: no silent default)"
+  [[ -n "$ROOT_SLUG" ]] || die "--init-workspace requires --root-slug (D-005: no silent default)"
 fi
 
 # Resolve skills-dir (relative to CWD / project root)
@@ -237,10 +432,12 @@ COPILOT_WRAPPERS_SRC="$PACKAGE_ROOT/install/copilot/prompts"
 PROMPTS_SRC="$PACKAGE_ROOT/prompts"
 TEMPLATES_SRC="$PACKAGE_ROOT/templates"
 CONTRACTS_SRC="$PACKAGE_ROOT/contracts"
+CORE_DOCS_SRC="$PACKAGE_ROOT/core/docs"
 
 [[ -d "$PROMPTS_SRC" ]] || die "Missing package directory: $PROMPTS_SRC"
 [[ -d "$TEMPLATES_SRC" ]] || die "Missing package directory: $TEMPLATES_SRC"
 [[ -d "$CONTRACTS_SRC" ]] || die "Missing package directory: $CONTRACTS_SRC"
+[[ -d "$CORE_DOCS_SRC" ]] || die "Missing package directory: $CORE_DOCS_SRC (GOAL-019 core mirror)"
 [[ -d "$TARGET_DIR" ]] || die "Current working directory is not a directory: $TARGET_DIR"
 
 if [[ "$INSTALL_CLAUDE" -eq 1 ]]; then
@@ -304,6 +501,13 @@ if [[ "$INSTALL_EXTRAS" -eq 1 ]]; then
   copy_dir_merge "$PROMPTS_SRC" "$SKILLS_DIR/prompts" "prompts"
   copy_dir_merge "$TEMPLATES_SRC" "$SKILLS_DIR/templates" "templates"
   copy_dir_merge "$CONTRACTS_SRC" "$SKILLS_DIR/contracts" "contracts"
+fi
+
+# GOAL-019 D-003/D-004: core methodology is co-required with any host or workspace init
+install_core_docs
+
+if [[ "$INIT_WORKSPACE" -eq 1 ]]; then
+  init_workspace_skeleton
 fi
 
 print_next_steps

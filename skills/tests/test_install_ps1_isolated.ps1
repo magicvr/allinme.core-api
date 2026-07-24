@@ -24,7 +24,11 @@ Write-Host "  target:  $TempRoot"
 
 try {
     Push-Location $TempRoot
-    & $InstallPs1 -All -SkillsDir $SkillsDest
+    & $InstallPs1 -All -SkillsDir $SkillsDest `
+        -InitWorkspace `
+        -WorkspaceSlug 'pilot-app' `
+        -RootSlug 'pilot-vision' `
+        -RootTitle 'Pilot vision'
     if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
         throw "install.ps1 exited with code $LASTEXITCODE"
     }
@@ -43,7 +47,18 @@ try {
         (Join-Path $SkillsDest 'prompts\05-independent-audit.md'),
         (Join-Path $SkillsDest 'templates\workspace-context.md'),
         (Join-Path $SkillsDest 'contracts\skills-consumer-contract.schema.json'),
-        (Join-Path $SkillsDest 'contracts\skills-consumer-contract.json')
+        (Join-Path $SkillsDest 'contracts\skills-consumer-contract.json'),
+        # GOAL-019 D-004: core methodology default install (from package core/, not skills dest)
+        (Join-Path $TempRoot 'docs\README.md'),
+        (Join-Path $TempRoot 'docs\architecture\principles.md'),
+        (Join-Path $TempRoot 'docs\architecture\workspace-protocol.md'),
+        (Join-Path $TempRoot 'docs\architecture\overview.md'),
+        (Join-Path $TempRoot 'docs\architecture\directory-layout.md'),
+        (Join-Path $TempRoot 'docs\templates\workspace-context.md'),
+        (Join-Path $TempRoot 'docs\templates\goal-folder\00-meta.md'),
+        # GOAL-019 phase C: --init-workspace skeleton
+        (Join-Path $TempRoot 'docs\workspace-001-pilot-app\workspace.md'),
+        (Join-Path $TempRoot 'docs\workspace-001-pilot-app\goal-tree.md')
     )
 
     $missing = @()
@@ -54,7 +69,8 @@ try {
     }
 
     $forbidden = @(
-        (Join-Path $TempRoot '.github\prompts\new-goal.prompt.md')
+        (Join-Path $TempRoot '.github\prompts\new-goal.prompt.md'),
+        (Join-Path $TempRoot 'docs\architecture\tech-stack.md')
     )
     $leaked = @()
     foreach ($path in $forbidden) {
@@ -84,6 +100,24 @@ try {
         $contentOk = $false
     }
 
+    $wsPath = Join-Path $TempRoot 'docs\workspace-001-pilot-app\workspace.md'
+    if (Test-Path -LiteralPath $wsPath -PathType Leaf) {
+        $wsText = Get-Content -LiteralPath $wsPath -Raw -Encoding UTF8
+        if ($wsText -notmatch 'root_goal:\s*GOAL-001-pilot-vision') {
+            Write-Host 'FAIL: workspace.md missing bound root_goal GOAL-001-pilot-vision'
+            $contentOk = $false
+        }
+        if ($wsText -notmatch 'canonical_scope:\s*docs/workspace-001-pilot-app/') {
+            Write-Host 'FAIL: workspace.md missing canonical_scope'
+            $contentOk = $false
+        }
+    }
+    # Scaffold must NOT create Root five-pack
+    if (Test-Path -LiteralPath (Join-Path $TempRoot 'docs\workspace-001-pilot-app\GOAL-001-pilot-vision') -PathType Container) {
+        Write-Host 'FAIL: init-workspace must not create GOAL-* five-pack'
+        $contentOk = $false
+    }
+
     if ($missing.Count -gt 0) {
         Write-Host 'FAIL: missing required install outputs:'
         $missing | ForEach-Object { Write-Host "  - $_" }
@@ -98,7 +132,7 @@ try {
         exit 1
     }
 
-    Write-Host 'PASS: isolated -All install produced /govern + /audit surface; no form-fill primitives.'
+    Write-Host 'PASS: isolated -All + InitWorkspace produced /govern+/audit+core+workspace skeleton; no GOAL five-pack; no tech-stack.'
     Write-Host "  evidence_dir=$TempRoot"
     exit 0
 }
